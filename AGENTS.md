@@ -59,14 +59,25 @@ src/
 tests/            # ROM-free tests; MutableRamEmulator for graph integration
 ```
 
-## Commands
+## How to run
 
 ```bash
 uv sync                                          # install deps
-uv run pytest tests/ -q                          # run tests (expect ~60+)
 uv run python -m src.run.verify_setup            # check env, LLM, PyBoy, ROM
-uv run python -m src.run.cli --rom roms/pokemon_gold.gb --steps 500 --langsmith
+
+# Run the agent (headless by default)
+uv run python -m src.run.cli --steps 500
 uv run python -m src.run.autonomous_runner --resume latest --max-steps 5000
+
+# Shorter entry points (python -m always works reliably)
+uv run python -m src.run.cli --steps 500
+uv run python -m src.run.autonomous_runner --resume latest --max-steps 5000
+
+# Headed mode: watch visible PyBoy window while agent plays (not default)
+uv run python -m src.run.cli --headed --steps 200
+uv run python -m src.run.autonomous_runner --headed --resume latest --max-steps 1000
+
+uv run pytest tests/ -q                          # run tests (expect ~60+)
 ```
 
 System deps (Ubuntu): `libsdl2-dev`, `build-essential`, `python3-dev`

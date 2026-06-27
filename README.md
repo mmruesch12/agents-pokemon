@@ -12,12 +12,35 @@ This project is an independent experiment and is **not affiliated with, endorsed
 
 ## Features
 
-- **Emulator Control Plane**: Headless PyBoy wrapper with save/load states
+- **Emulator Control Plane**: PyBoy wrapper (headless by default; --headed for visible SDL2 window) with save/load states
 - **Structured Perception**: Gen 2 RAM parsers producing rich `GameState`
 - **Multi-Agent Graph**: Supervisor, Planner, Navigator, Battler, Critic, Memory Manager
 - **Persistence**: SQLite checkpointer + emulator save states for pause/resume
 - **Evaluation**: Progress, stuck frequency, and coherence metrics
 - **LangSmith**: Full tracing support
+
+## Quick Start
+
+```bash
+# After `uv sync`, placing your ROM, and editing `.env`
+uv run python -m src.run.verify_setup
+
+# Run the agent (headless by default)
+uv run python -m src.run.cli --steps 500                 # short / dev run
+uv run python -m src.run.autonomous_runner --max-steps 5000 --resume latest
+
+# Watch the agent play (headed/visible PyBoy SDL2 window)
+uv run python -m src.run.cli --headed --steps 500
+uv run python -m src.run.autonomous_runner --headed --max-steps 10000 --resume latest
+```
+
+Using --headed enables a visible emulator window (headless by default; use --headed to watch the agent play). The poke-* entry points (if functional in your env) also accept it.
+
+Other commands:
+```bash
+uv run python -m src.run.cli eval --dataset early_game   # evaluators
+uv run pytest tests/ -q                                  # tests (no ROM needed)
+```
 
 ## Setup (Ubuntu/Debian)
 
@@ -37,25 +60,6 @@ cp /path/to/pokemon_gold.gb roms/pokemon_gold.gb
 # Environment
 cp .env.example .env
 # Edit .env: XAI_API_KEY or OPENAI_API_KEY, LANGSMITH_API_KEY, ROM_PATH
-
-# Verify setup (LLM ping, PyBoy, ROM)
-uv run python -m src.run.verify_setup
-```
-
-## Usage
-
-```bash
-# Development run
-uv run python -m src.run.cli --rom roms/pokemon_gold.gb --steps 2000 --langsmith
-
-# Autonomous long-running
-uv run python -m src.run.autonomous_runner --resume latest --max-steps 50000
-
-# Evaluators
-uv run python -m src.run.cli eval --dataset early_game
-
-# Tests
-uv run python -m pytest tests/ -q
 ```
 
 ## Architecture

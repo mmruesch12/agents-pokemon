@@ -35,6 +35,15 @@ class PyBoyWrapper:
         window: str = "null",
         save_dir: str | Path = "saves",
     ):
+        """Initialize PyBoy emulator wrapper.
+
+        Args:
+            rom_path: Path to the Pokemon ROM (.gb/.gbc).
+            window: PyBoy window mode. "null" (default) for headless operation.
+                Use "SDL2" for headed/visible emulator window so you can watch
+                the agent play. Other valid values: "OpenGL", "GLFW".
+            save_dir: Directory for emulator save states.
+        """
         from pyboy import PyBoy
 
         self.rom_path = Path(rom_path)

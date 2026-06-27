@@ -37,6 +37,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         save_dir=args.save_dir,
         langsmith=args.langsmith,
         thread_id=args.thread_id,
+        headed=getattr(args, "headed", False),
     )
     result = runner.run(resume=args.resume)
     print(f"Run complete: {result['steps']} steps, milestones={result['milestones']}")
@@ -65,34 +66,43 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    # Common options so --headed / --steps etc. work in all these forms:
+    #   cli --headed
+    #   cli run --headed
+    #   cli resume --headed
+    #   cli --headed run ...
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--rom", default=os.environ.get("ROM_PATH", "roms/pokemon_gold.gb"))
+    common.add_argument("--steps", type=int, default=int(os.environ.get("MAX_STEPS", "2000")))
+    common.add_argument("--resume", default=None, help="Resume from checkpoint thread_id or 'latest'")
+    common.add_argument("--langsmith", action="store_true", help="Enable LangSmith tracing")
+    common.add_argument("--checkpoint-db", default=os.environ.get("CHECKPOINT_DB", "data/checkpoints.sqlite"))
+    common.add_argument("--save-dir", default=os.environ.get("SAVE_DIR", "saves"))
+    common.add_argument("--thread-id", default="default")
+    common.add_argument("-v", "--verbose", action="store_true")
+    common.add_argument("--max-steps", type=int, dest="steps", help="Alias for --steps")
+    common.add_argument("--headed", action="store_true", help="Enable visible SDL2 window so you can watch the agent play (default is headless)")
+
     parser = argparse.ArgumentParser(
         prog="pokemon-gold-agent",
         description="Autonomous multi-agent Pokemon Gold/Silver player",
+        parents=[common],
     )
-    parser.add_argument("--rom", default=os.environ.get("ROM_PATH", "roms/pokemon_gold.gb"))
-    parser.add_argument("--steps", type=int, default=int(os.environ.get("MAX_STEPS", "2000")))
-    parser.add_argument("--resume", default=None, help="Resume from checkpoint thread_id or 'latest'")
-    parser.add_argument("--langsmith", action="store_true", help="Enable LangSmith tracing")
-    parser.add_argument("--checkpoint-db", default=os.environ.get("CHECKPOINT_DB", "data/checkpoints.sqlite"))
-    parser.add_argument("--save-dir", default=os.environ.get("SAVE_DIR", "saves"))
-    parser.add_argument("--thread-id", default="default")
-    parser.add_argument("-v", "--verbose", action="store_true")
-    parser.add_argument("--max-steps", type=int, dest="steps", help="Alias for --steps")
 
     sub = parser.add_subparsers(dest="command")
 
-    run_p = sub.add_parser("run", help="Run agent for N steps")
+    run_p = sub.add_parser("run", parents=[common], help="Run agent for N steps")
     run_p.set_defaults(func=cmd_run)
 
-    sub.add_parser("resume", help="Resume latest run").set_defaults(
-        func=cmd_run, resume="latest"
-    )
+    resume_p = sub.add_parser("resume", parents=[common], help="Resume latest run")
+    resume_p.set_defaults(func=cmd_run, resume="latest")
 
-    eval_p = sub.add_parser("eval", help="Run evaluators on dataset")
+    eval_p = sub.add_parser("eval", parents=[common], help="Run evaluators on dataset")
     eval_p.add_argument("--dataset", default="early_game")
     eval_p.set_defaults(func=cmd_eval)
 
-    sub.add_parser("dashboard", help="Dashboard info").set_defaults(func=cmd_dashboard)
+    dashboard_p = sub.add_parser("dashboard", parents=[common], help="Dashboard info")
+    dashboard_p.set_defaults(func=cmd_dashboard)
 
     parser.set_defaults(func=cmd_run)
     return parser
