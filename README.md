@@ -82,7 +82,7 @@ src/
 └── run/          # CLI and autonomous runner
 ```
 
-See [spec.md](spec.md) for the full design document.
+See [spec.md](spec.md) for the full design document. AI agents: read [AGENTS.md](AGENTS.md) first.
 
 ## License
 
