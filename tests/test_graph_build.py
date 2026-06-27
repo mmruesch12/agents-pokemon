@@ -23,8 +23,8 @@ def test_compile_graph_with_checkpointer():
         assert compiled is not None
 
 
-def test_graph_invoke_without_emulator_frozen_state(new_bark_ram: dict):
-    """No emulator: state frozen, stuck stays 0 (documents no-op apply_action)."""
+def test_graph_invoke_without_emulator_increments_stuck(new_bark_ram: dict):
+    """No emulator: position frozen but stuck meter rises on failed navigation."""
     gs = GoldStateReader(ByteArrayReader(new_bark_ram)).read()
     state = initial_agent_state(gs)
     state["run_max_steps"] = 3
@@ -34,7 +34,7 @@ def test_graph_invoke_without_emulator_frozen_state(new_bark_ram: dict):
         result = compiled.invoke(state, config={"configurable": {"thread_id": "frozen"}})
         assert result["metrics"]["steps"] == 3
         assert result["game_state"]["player"]["x"] == 8
-        assert result["stuck_count"] == 0
+        assert result["stuck_count"] == 3
 
 
 def test_create_initial_state():

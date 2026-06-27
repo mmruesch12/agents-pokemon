@@ -13,6 +13,20 @@ from src.state.models import GameState
 
 logger = logging.getLogger(__name__)
 
+_BATTLE_ACTIONS = ("fight", "run", "switch", "item")
+
+
+def _match_token(choice: str, candidates: tuple[str, ...] | list[str]) -> str | None:
+    """Match LLM output to a candidate by exact token, not substring."""
+    normalized = choice.strip().lower().strip("\"'.,")
+    if normalized in candidates:
+        return normalized
+    for token in normalized.split():
+        cleaned = token.strip("\"'.,")
+        if cleaned in candidates:
+            return cleaned
+    return None
+
 
 def get_chat_model():
     """Return ChatOpenAI model if OPENAI_API_KEY is set, else None."""
@@ -77,10 +91,9 @@ def llm_navigate(gs: GameState, state: AgentState, candidates: list[str]) -> str
                 HumanMessage(content=prompt),
             ]
         )
-        choice = resp.content.strip().lower()
-        for c in candidates:
-            if c in choice:
-                return c
+        matched = _match_token(resp.content, candidates)
+        if matched:
+            return matched
     except Exception as exc:
         logger.warning("Navigator LLM call failed: %s", exc)
     return None
@@ -105,10 +118,9 @@ def llm_battle(gs: GameState) -> str | None:
                 HumanMessage(content=prompt),
             ]
         )
-        action = resp.content.strip().lower()
-        for valid in ("fight", "run", "switch", "item"):
-            if valid in action:
-                return valid
+        matched = _match_token(resp.content, _BATTLE_ACTIONS)
+        if matched:
+            return matched
     except Exception as exc:
         logger.warning("Battler LLM call failed: %s", exc)
     return None

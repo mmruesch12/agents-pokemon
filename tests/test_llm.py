@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.graph.llm import get_chat_model, llm_battle, llm_navigate, llm_plan
+from src.graph.llm import _match_token, get_chat_model, llm_battle, llm_navigate, llm_plan
 from src.graph.nodes import _navigation_candidates, navigator_node
 from src.graph.pathfinding import find_path
 from src.graph.state import initial_agent_state
@@ -10,19 +10,28 @@ from src.state.gold_state_reader import ByteArrayReader, GoldStateReader
 from src.state.models import GameState
 
 
+def test_match_token_exact_not_substring():
+    assert _match_token("right", ["right", "up"]) == "right"
+    assert _match_token("upright", ["right", "up"]) is None
+    assert _match_token("go right", ["right", "up"]) == "right"
+    assert _match_token("flight", ("fight", "run")) is None
+
+
 def test_get_chat_model_without_api_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     assert get_chat_model() is None
 
 
-def test_llm_plan_heuristic_fallback(new_bark_ram: dict):
+def test_llm_plan_heuristic_fallback(new_bark_ram: dict, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     gs = GoldStateReader(ByteArrayReader(new_bark_ram)).read()
     state = initial_agent_state(gs)
     result = llm_plan(gs, state)
     assert result is None
 
 
-def test_llm_battle_heuristic_fallback(battle_ram: dict):
+def test_llm_battle_heuristic_fallback(battle_ram: dict, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     gs = GoldStateReader(ByteArrayReader(battle_ram)).read()
     result = llm_battle(gs)
     assert result is None

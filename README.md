@@ -19,7 +19,7 @@ sudo apt update
 sudo apt install -y libsdl2-dev build-essential python3-dev git tmux
 
 # Project
-cd pokemon-gold-agent
+cd agents-pokemon
 uv sync
 
 # ROM (user-provided legal dump)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from src.tools import pokemon_tools
 from src.state.gold_state_reader import (
     ADDR_BATTLE_MODE,
     ADDR_ENEMY_HP,
@@ -25,6 +26,13 @@ from src.state.gold_state_reader import (
     PARTYMON_HP_OFFSET,
     PARTYMON_LEVEL_OFFSET,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_emulator_binding():
+    pokemon_tools.unbind_emulator()
+    yield
+    pokemon_tools.unbind_emulator()
 
 
 @pytest.fixture

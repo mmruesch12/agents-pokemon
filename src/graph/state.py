@@ -40,6 +40,7 @@ class AgentState(TypedDict, total=False):
     should_replan: bool
     replan_count: int
     maps_visited: list[str]
+    badges_at_last_check: int
     error: str
 
 
@@ -70,6 +71,7 @@ def initial_agent_state(game_state: GameState | dict | None = None) -> AgentStat
         should_replan=False,
         replan_count=0,
         maps_visited=[],
+        badges_at_last_check=0,
         error="",
     )
 

@@ -25,6 +25,15 @@ def test_supervisor_routes_to_navigator():
     assert result["next_node"] == "navigator"
 
 
+def test_supervisor_routes_to_planner_when_stuck():
+    gs = GameState()
+    state = _state_with_game(gs)
+    state["stuck_count"] = 12
+    result = supervisor_node(state)
+    assert result["next_node"] == "planner"
+    assert result["should_replan"] is True
+
+
 def test_supervisor_routes_to_battler_in_battle(battle_ram: dict):
     from src.state.gold_state_reader import ByteArrayReader, GoldStateReader
 
@@ -97,3 +106,12 @@ def test_memory_milestone_route_29():
     state["maps_visited"] = ["1:1"]
     result = memory_node(state)
     assert "Reached Route 29" in result["milestones"]
+
+
+def test_memory_milestone_badge_earned():
+    gs = GameState(johto_badges=1, badge_names=["Zephyr"])
+    state = _state_with_game(gs)
+    state["badges_at_last_check"] = 0
+    result = memory_node(state)
+    assert any("Earned badge" in m for m in result["milestones"])
+    assert result["badges_at_last_check"] == 1

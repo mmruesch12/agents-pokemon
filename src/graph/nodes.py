@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from src.graph.llm import llm_battle, llm_navigate, llm_plan
@@ -12,7 +13,7 @@ from src.state.models import GameState
 
 logger = logging.getLogger(__name__)
 
-STUCK_THRESHOLD = 10
+STUCK_THRESHOLD = int(os.getenv("STUCK_THRESHOLD", "10"))
 EARLY_GAME_OBJECTIVES = {
     "0:0": "Explore New Bark Town and head east toward Route 29",
     "1:1": "Travel north through Route 29 toward Cherrygrove City",
@@ -31,7 +32,8 @@ def supervisor_node(state: AgentState) -> AgentState:
     elif state.get("should_replan"):
         state["next_node"] = "planner"
     elif state.get("stuck_count", 0) >= STUCK_THRESHOLD:
-        state["next_node"] = "critic"
+        state["next_node"] = "planner"
+        state["should_replan"] = True
     elif state.get("phase") == "plan":
         state["next_node"] = "planner"
     else:
@@ -205,6 +207,7 @@ def memory_node(state: AgentState) -> AgentState:
         logger.info("Milestone: %s", milestone)
 
     state["milestones"] = milestones
+    state["badges_at_last_check"] = gs.total_badges
     metrics = dict(state.get("metrics", {}))
     metrics["steps"] = metrics.get("steps", 0) + 1
     state["metrics"] = metrics
@@ -226,7 +229,7 @@ def _check_milestone(
         if wild_key not in state.get("milestones", []):
             return "Wild Pokemon encounter"
     badges = gs.total_badges
-    if badges > state.get("metrics", {}).get("badges_earned", 0):
+    if badges > state.get("badges_at_last_check", 0):
         return f"Earned badge (total: {badges})"
     return None
 
@@ -236,10 +239,14 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
     from src.tools import pokemon_tools
 
     action = state.get("last_action", "")
-    if not action or emulator is None:
+    if not action:
         return state
 
     pos_before = state.get("position_before_action", "")
+    if emulator is None:
+        if action.startswith("navigate_") and pos_before:
+            _update_stuck_from_movement(state, action, pos_before, pos_before)
+        return state
     if not pos_before:
         gs_before = GameState.model_validate(state.get("game_state", {}))
         pos_before = gs_before.position_key

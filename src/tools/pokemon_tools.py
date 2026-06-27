@@ -17,6 +17,11 @@ def bind_emulator(emu: PyBoyWrapper) -> None:
     _emulator = emu
 
 
+def unbind_emulator() -> None:
+    global _emulator
+    _emulator = None
+
+
 def get_bound_emulator() -> PyBoyWrapper:
     if _emulator is None:
         raise RuntimeError("Emulator not bound. Call bind_emulator() first.")
