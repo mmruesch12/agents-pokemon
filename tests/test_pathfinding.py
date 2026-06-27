@@ -1,0 +1,26 @@
+"""Tests for navigation pathfinding."""
+
+from __future__ import annotations
+
+from src.graph.pathfinding import find_path, direction_to_button
+
+
+def test_find_path_same_position():
+    assert find_path(5, 5, 5, 5) == []
+
+
+def test_find_path_simple():
+    path = find_path(0, 0, 3, 0, map_key="")
+    assert len(path) == 3
+    assert all(d == "right" for d in path)
+
+
+def test_find_path_with_obstacles():
+    path = find_path(0, 0, 5, 0, map_key="0:0")
+    assert len(path) > 0
+    assert path[-1] in ("up", "down", "left", "right")
+
+
+def test_direction_to_button():
+    assert direction_to_button("up") == "up"
+    assert direction_to_button("right") == "right"

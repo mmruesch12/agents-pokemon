@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# Environment
+.env
+
+# Game data (user-provided)
+roms/*.gb
+roms/*.gbc
+roms/*.gb*
+!roms/.gitkeep
+saves/*
+!saves/.gitkeep
+data/*
+!data/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# LangGraph / memory stores
+*.sqlite
+*.sqlite3
+data/chroma/
+data/faiss/

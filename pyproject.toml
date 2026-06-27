@@ -1,0 +1,36 @@
+[project]
+name = "pokemon-gold-agent"
+version = "0.1.0"
+description = "Autonomous multi-agent Pokemon Gold/Silver player using PyBoy + LangGraph + LangSmith"
+readme = "README.md"
+requires-python = ">=3.12"
+packages = ["src"]
+dependencies = [
+    "chromadb>=1.5.9",
+    "faiss-cpu>=1.14.3",
+    "fastapi>=0.138.1",
+    "langchain>=1.3.11",
+    "langchain-openai>=1.3.3",
+    "langgraph>=1.2.6",
+    "langgraph-checkpoint-sqlite>=3.1.0",
+    "langsmith>=0.9.3",
+    "numpy>=2.5.0",
+    "pillow>=12.2.0",
+    "pyboy>=2.7.0",
+    "pydantic>=2.13.4",
+    "python-dotenv>=1.2.2",
+    "uvicorn>=0.49.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[project.scripts]
+poke-agent = "src.run.cli:main"
+poke-runner = "src.run.autonomous_runner:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
