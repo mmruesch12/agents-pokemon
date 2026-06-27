@@ -2,6 +2,14 @@
 
 Autonomous multi-agent Pokemon Gold/Silver (Gen 2) player using PyBoy + LangGraph + LangSmith.
 
+## Disclaimer
+
+This project is an independent experiment and is **not affiliated with, endorsed by, or sponsored by Nintendo or The Pokemon Company**.
+
+- **No game ROM is included.** You must supply your own legal dump of Pokemon Gold or Silver.
+- Do not commit ROM files, API keys, or runtime data (`roms/*.gb`, `.env`, `data/`, `saves/`).
+- Pokemon names and game data references are used for interoperability with user-provided ROMs.
+
 ## Features
 
 - **Emulator Control Plane**: Headless PyBoy wrapper with save/load states
@@ -28,7 +36,10 @@ cp /path/to/pokemon_gold.gb roms/pokemon_gold.gb
 
 # Environment
 cp .env.example .env
-# Edit .env: LANGSMITH_API_KEY, OPENAI_API_KEY, ROM_PATH
+# Edit .env: XAI_API_KEY or OPENAI_API_KEY, LANGSMITH_API_KEY, ROM_PATH
+
+# Verify setup (LLM ping, PyBoy, ROM)
+uv run python -m src.run.verify_setup
 ```
 
 ## Usage
@@ -70,3 +81,9 @@ src/
 ├── eval/         # Datasets and evaluators
 └── run/          # CLI and autonomous runner
 ```
+
+See [spec.md](spec.md) for the full design document.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
