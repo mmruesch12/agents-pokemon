@@ -69,7 +69,7 @@ uv run python -m src.run.verify_setup            # check env, LLM, PyBoy, ROM
 uv run python -m src.run.cli --steps 500
 uv run python -m src.run.autonomous_runner --resume latest --max-steps 5000
 
-# Shorter entry points (python -m always works reliably)
+# Shorter entry points (python -m always works; poke after `uv run poke-fix`)
 uv run python -m src.run.cli --steps 500
 uv run python -m src.run.autonomous_runner --resume latest --max-steps 5000
 
