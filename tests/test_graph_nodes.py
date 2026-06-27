@@ -44,11 +44,12 @@ def test_planner_decomposes_subgoals(gold_reader):
     assert result["next_node"] == "navigator"
 
 
-def test_navigator_produces_action(gold_reader):
+def test_navigator_new_bark_moves_right(gold_reader):
     gs = gold_reader.read()
     state = _state_with_game(gs)
     result = navigator_node(state)
-    assert result["last_action"].startswith("navigate_")
+    assert result["last_action"] == "navigate_right"
+    assert result["last_action_result"]["direction"] == "right"
     assert result["next_node"] == "critic"
 
 
@@ -61,14 +62,25 @@ def test_battler_fight_when_healthy(battle_ram: dict):
     assert result["last_action"] == "battle_fight"
 
 
-def test_critic_detects_loop():
+def test_critic_replan_routes_to_memory_not_planner():
     gs = GameState()
     state = _state_with_game(gs)
-    state["short_term_history"] = ["navigate:right"] * 5
+    state["short_term_history"] = ["navigate:right@8,12"] * 5
     state["stuck_count"] = 12
     result = critic_node(state)
     assert result["critic_verdict"] == "replan"
     assert result["should_replan"] is True
+    assert result["next_node"] == "memory"
+
+
+def test_critic_repetition_requires_stuck_count():
+    gs = GameState()
+    state = _state_with_game(gs)
+    state["short_term_history"] = ["navigate:right@8,12"] * 3
+    state["stuck_count"] = 1
+    result = critic_node(state)
+    assert result["critic_verdict"] == "proceed"
+    assert result["next_node"] == "memory"
 
 
 def test_memory_increments_steps(gold_reader):
@@ -77,3 +89,11 @@ def test_memory_increments_steps(gold_reader):
     result = memory_node(state)
     assert result["metrics"]["steps"] == 1
     assert result["next_node"] == "supervisor"
+
+
+def test_memory_milestone_route_29():
+    gs = GameState(player={"map_group": 1, "map_id": 1, "x": 10, "y": 20})
+    state = _state_with_game(gs)
+    state["maps_visited"] = ["1:1"]
+    result = memory_node(state)
+    assert "Reached Route 29" in result["milestones"]

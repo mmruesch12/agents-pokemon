@@ -37,6 +37,8 @@ class AgentState(TypedDict, total=False):
     critic_verdict: str
     critic_notes: str
     should_replan: bool
+    replan_count: int
+    maps_visited: Annotated[list[str], _merge_lists]
     error: str
 
 
@@ -64,6 +66,8 @@ def initial_agent_state(game_state: GameState | dict | None = None) -> AgentStat
         critic_verdict="proceed",
         critic_notes="",
         should_replan=False,
+        replan_count=0,
+        maps_visited=[],
         error="",
     )
 

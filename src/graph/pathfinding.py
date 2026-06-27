@@ -40,11 +40,27 @@ def _in_bounds(grid: list[list[int]], x: int, y: int) -> bool:
 
 
 def _is_walkable(grid: list[list[int]] | None, x: int, y: int) -> bool:
+    """Out-of-grid coordinates are walkable (open-world fallback)."""
     if grid is None:
         return True
     if not _in_bounds(grid, x, y):
-        return False
+        return True
     return grid[y][x] == 0
+
+
+def direction_toward(start_x: int, start_y: int, end_x: int, end_y: int) -> str:
+    """Primary direction toward target; 'a' only when already at target."""
+    if start_x == end_x and start_y == end_y:
+        return "a"
+    if end_x > start_x:
+        return "right"
+    if end_x < start_x:
+        return "left"
+    if end_y > start_y:
+        return "down"
+    if end_y < start_y:
+        return "up"
+    return "a"
 
 
 def find_path(
@@ -88,7 +104,6 @@ def find_path(
             h = abs(end_x - nx) + abs(end_y - ny)
             heapq.heappush(open_set, (h + len(new_path), nx, ny, new_path))
 
-    # Greedy fallback toward target
     return _greedy_directions(start_x, start_y, end_x, end_y, grid)
 
 
@@ -100,17 +115,21 @@ def _greedy_directions(
     for _ in range(20):
         if cx == tx and cy == ty:
             break
-        dx = tx - cx
-        dy = ty - cy
-        candidates: list[Direction] = []
+        primary = direction_toward(cx, cy, tx, ty)
+        if primary == "a":
+            break
+        candidates: list[Direction] = [primary]  # type: ignore[list-item]
+        dx, dy = tx - cx, ty - cy
         if abs(dx) >= abs(dy):
-            candidates.append("right" if dx > 0 else "left")
-            if dy != 0:
-                candidates.append("down" if dy > 0 else "up")
+            if dy > 0:
+                candidates.append("down")
+            elif dy < 0:
+                candidates.append("up")
         else:
-            candidates.append("down" if dy > 0 else "up")
-            if dx != 0:
-                candidates.append("right" if dx > 0 else "left")
+            if dx > 0:
+                candidates.append("right")
+            elif dx < 0:
+                candidates.append("left")
 
         moved = False
         for d in candidates:
@@ -126,5 +145,5 @@ def _greedy_directions(
     return directions
 
 
-def direction_to_button(direction: Direction) -> str:
+def direction_to_button(direction: Direction | str) -> str:
     return direction

@@ -23,7 +23,7 @@ def test_compile_graph_with_checkpointer():
         assert compiled is not None
 
 
-def test_graph_invoke_without_emulator(new_bark_ram: dict):
+def test_graph_invoke_single_step(new_bark_ram: dict):
     gs = GoldStateReader(ByteArrayReader(new_bark_ram)).read()
     state = initial_agent_state(gs)
     state["run_max_steps"] = 1
@@ -32,8 +32,21 @@ def test_graph_invoke_without_emulator(new_bark_ram: dict):
         compiled = compile_graph(checkpoint_path=Path(tmp) / "test.sqlite")
         config = {"configurable": {"thread_id": "test"}}
         result = compiled.invoke(state, config=config)
-        assert result["metrics"]["steps"] >= 1
-        assert "next_node" in result
+        assert result["metrics"]["steps"] == 1
+        assert result["last_action"] == "navigate_right"
+
+
+def test_graph_invoke_multi_step_terminates(new_bark_ram: dict):
+    gs = GoldStateReader(ByteArrayReader(new_bark_ram)).read()
+    state = initial_agent_state(gs)
+    state["run_max_steps"] = 5
+
+    with tempfile.TemporaryDirectory() as tmp:
+        compiled = compile_graph(checkpoint_path=Path(tmp) / "multi.sqlite")
+        config = {"configurable": {"thread_id": "multi"}}
+        result = compiled.invoke(state, config=config)
+        assert result["metrics"]["steps"] == 5
+        assert result["last_action"].startswith("navigate_")
 
 
 def test_create_initial_state():

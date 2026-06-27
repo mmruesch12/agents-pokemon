@@ -90,32 +90,41 @@ class AutonomousRunner:
                 state = create_initial_state(emu)
 
             start_steps = state.get("metrics", {}).get("steps", 0)
+            target_steps = start_steps + self.max_steps
             milestones: list[str] = list(state.get("milestones", []))
-            state["run_max_steps"] = start_steps + self.max_steps
 
-            state = graph.invoke(state, config=config)
-            steps = state.get("metrics", {}).get("steps", 0)
+            while state.get("metrics", {}).get("steps", 0) < target_steps:
+                current = state.get("metrics", {}).get("steps", 0)
+                state["run_max_steps"] = current + 1
+                state = graph.invoke(state, config=config)
+                steps = state.get("metrics", {}).get("steps", 0)
 
-            for m in state.get("milestones", []):
-                if m not in milestones:
-                    milestones.append(m)
-                    logger.info("MILESTONE: %s", m)
-                    self.memory.add_fact(f"milestone:{m}")
+                for m in state.get("milestones", []):
+                    if m not in milestones:
+                        milestones.append(m)
+                        logger.info("MILESTONE: %s", m)
+                        self.memory.add_fact(f"milestone:{m}")
 
-            if state.get("stuck_count", 0) >= self.stuck_threshold:
-                logger.warning("Stuck count=%d, saving state", state["stuck_count"])
-                emu.save_state(f"stuck_{steps}")
+                if state.get("stuck_count", 0) >= self.stuck_threshold:
+                    logger.warning("Stuck count=%d, saving state", state["stuck_count"])
+                    emu.save_state(f"stuck_{steps}")
+                    state["should_replan"] = True
+                    state["stuck_count"] = 0
 
-            if steps > 0 and steps % 100 == 0:
-                scores = evaluate_run(state)
-                logger.info(
-                    "Step %d: progress=%.3f stuck=%.3f coherence=%.2f",
-                    steps,
-                    scores["progress_per_steps"],
-                    scores["stuck_frequency"],
-                    scores["coherence"],
-                )
-                self.memory.summarize_history(state.get("short_term_history", []))
+                if steps > 0 and steps % 100 == 0:
+                    scores = evaluate_run(state)
+                    logger.info(
+                        "Step %d: progress=%.3f stuck=%.3f coherence=%.2f",
+                        steps,
+                        scores["progress_per_steps"],
+                        scores["stuck_frequency"],
+                        scores["coherence"],
+                    )
+                    self.memory.summarize_history(state.get("short_term_history", []))
+
+                if state.get("error"):
+                    logger.error("Error: %s", state["error"])
+                    break
 
             final_steps = state.get("metrics", {}).get("steps", 0)
             emu.save_state(f"final_{final_steps}")
