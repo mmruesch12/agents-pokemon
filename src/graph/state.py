@@ -41,6 +41,9 @@ class AgentState(TypedDict, total=False):
     replan_count: int
     maps_visited: list[str]
     badges_at_last_check: int
+    bootstrap_complete: bool
+    bootstrap_action_index: int
+    loaded_map_key: tuple[int, int]
     error: str
 
 
@@ -72,6 +75,8 @@ def initial_agent_state(game_state: GameState | dict | None = None) -> AgentStat
         replan_count=0,
         maps_visited=[],
         badges_at_last_check=0,
+        bootstrap_complete=False,
+        bootstrap_action_index=0,
         error="",
     )
 

@@ -18,16 +18,18 @@ def _state_with_game(gs: GameState) -> dict:
     return initial_agent_state(gs)
 
 
-def test_supervisor_routes_to_navigator():
-    gs = GameState()
+def test_supervisor_routes_to_navigator(gold_reader):
+    gs = gold_reader.read()
     state = _state_with_game(gs)
+    state["bootstrap_complete"] = True
     result = supervisor_node(state)
     assert result["next_node"] == "navigator"
 
 
-def test_supervisor_routes_to_planner_when_stuck():
-    gs = GameState()
+def test_supervisor_routes_to_planner_when_stuck(gold_reader):
+    gs = gold_reader.read()
     state = _state_with_game(gs)
+    state["bootstrap_complete"] = True
     state["stuck_count"] = 12
     result = supervisor_node(state)
     assert result["next_node"] == "planner"

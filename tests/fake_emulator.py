@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from src.emulator.bootstrap import MOVEMENT_PROBE_ADDR
 from src.state.gold_state_reader import (
     ADDR_MAP_GROUP,
     ADDR_MAP_NUMBER,
@@ -34,6 +35,7 @@ class MutableRamEmulator:
             y -= 1
         self._memory[ADDR_X_COORD] = max(0, x)
         self._memory[ADDR_Y_COORD] = max(0, y)
+        self._memory[MOVEMENT_PROBE_ADDR] = self._memory.get(MOVEMENT_PROBE_ADDR, 0) + 1
         if (
             self._memory.get(ADDR_MAP_GROUP) == 0
             and self._memory.get(ADDR_MAP_NUMBER) == 0
@@ -48,6 +50,9 @@ class MutableRamEmulator:
     def advance_frames(self, n: int = 1) -> int:
         self._frame_count += n
         return self._frame_count
+
+    def tick(self, frames: int = 1) -> int:
+        return self.advance_frames(frames)
 
     @property
     def frame_count(self) -> int:

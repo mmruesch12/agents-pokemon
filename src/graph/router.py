@@ -8,6 +8,7 @@ from src.graph.state import AgentState
 
 NODE_NAMES = (
     "supervisor",
+    "bootstrap",
     "planner",
     "navigator",
     "battler",
@@ -20,6 +21,10 @@ NODE_NAMES = (
 
 def route_from_supervisor(state: AgentState) -> str:
     return state.get("next_node", "navigator")
+
+
+def route_from_bootstrap(state: AgentState) -> str:
+    return "apply_action"
 
 
 def route_from_planner(state: AgentState) -> str:

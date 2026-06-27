@@ -6,6 +6,7 @@ import logging
 import os
 from typing import Any
 
+from src.emulator.bootstrap import needs_bootstrap, pick_bootstrap_button
 from src.graph.llm import llm_battle, llm_navigate, llm_plan
 from src.graph.pathfinding import direction_toward, find_path
 from src.graph.state import AgentState, update_game_state
@@ -29,6 +30,9 @@ def supervisor_node(state: AgentState) -> AgentState:
     if gs.battle.in_battle:
         state["next_node"] = "battler"
         state["phase"] = "battle"
+    elif needs_bootstrap(gs, state):
+        state["next_node"] = "bootstrap"
+        state["phase"] = "bootstrap"
     elif state.get("should_replan"):
         state["next_node"] = "planner"
     elif state.get("stuck_count", 0) >= STUCK_THRESHOLD:
@@ -40,6 +44,25 @@ def supervisor_node(state: AgentState) -> AgentState:
         state["next_node"] = "navigator"
 
     logger.debug("Supervisor routing to %s", state["next_node"])
+    return state
+
+
+def bootstrap_node(state: AgentState) -> AgentState:
+    """Press through title screens, dialogs, name entry, and clock setup."""
+    gs = GameState.model_validate(state.get("game_state", {}))
+    idx = state.get("bootstrap_action_index", 0)
+    loaded_map = state.get("loaded_map_key")
+    if isinstance(loaded_map, list):
+        loaded_map = tuple(loaded_map)
+    button = pick_bootstrap_button(idx, loaded_map=loaded_map)
+    state["bootstrap_action_index"] = idx + 1
+    state["last_action"] = f"bootstrap_{button}"
+    state["last_action_result"] = {"button": button, "bootstrap_index": idx}
+    state["position_before_action"] = gs.position_key
+    history = list(state.get("short_term_history", []))
+    history.append(f"bootstrap:{button}@{gs.player.x},{gs.player.y}")
+    state["short_term_history"] = history[-20:]
+    state["next_node"] = "critic"
     return state
 
 
@@ -253,16 +276,65 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
 
     pokemon_tools.bind_emulator(emulator)
     try:
-        if action.startswith("navigate_"):
-            direction = action.replace("navigate_", "")
+        from src.emulator.bootstrap import MOVEMENT_PROBE_ADDR, read_memory_byte
+
+        probe_before = None
+        if action.startswith(("navigate_", "bootstrap_")):
+            probe_before = read_memory_byte(emulator, MOVEMENT_PROBE_ADDR)
+
+        if action.startswith("navigate_") or action.startswith("bootstrap_"):
+            direction = action.split("_", 1)[1]
             if direction in ("up", "down", "left", "right", "a", "b", "start", "select"):
-                pokemon_tools.press_button.invoke({"button": direction})
+                hold = 12 if direction in ("up", "down", "left", "right") else 8
+                emulator.press_button(direction, hold_frames=hold)  # type: ignore[arg-type]
+                if direction in ("up", "down", "left", "right"):
+                    emulator.tick(30)
         elif action.startswith("battle_"):
             battle_action = action.replace("battle_", "")
             pokemon_tools.battle_decide.invoke({"action": battle_action})
         gs = emulator.get_game_state()
         state = update_game_state(state, gs)
-        _update_stuck_from_movement(state, action, pos_before, gs.position_key)
+        if action.startswith("bootstrap_"):
+            from src.emulator.bootstrap import (
+                BootstrapResult,
+                apply_bootstrap_metadata,
+                is_bootstrap_done,
+                read_loaded_map,
+            )
+
+            loaded_map = read_loaded_map(emulator)
+            state["loaded_map_key"] = loaded_map
+            if is_bootstrap_done(emulator, gs, state):
+                gs = apply_bootstrap_metadata(
+                    gs,
+                    BootstrapResult(
+                        success=True,
+                        movement_ready=True,
+                        map_loaded=True,
+                        actions_taken=state.get("bootstrap_action_index", 0),
+                        frames_elapsed=0,
+                    ),
+                )
+                state = update_game_state(state, gs)
+                state["bootstrap_complete"] = True
+                state["phase"] = "explore"
+                state["stuck_count"] = 0
+            else:
+                state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
+        else:
+            probe_after = (
+                read_memory_byte(emulator, MOVEMENT_PROBE_ADDR)
+                if probe_before is not None
+                else None
+            )
+            _update_stuck_from_movement(
+                state,
+                action,
+                pos_before,
+                gs.position_key,
+                probe_before=probe_before,
+                probe_after=probe_after,
+            )
     except Exception as exc:
         state["error"] = str(exc)
         logger.error("Action execution failed: %s", exc)
@@ -271,12 +343,21 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
 
 
 def _update_stuck_from_movement(
-    state: AgentState, action: str, pos_before: str, pos_after: str
+    state: AgentState,
+    action: str,
+    pos_before: str,
+    pos_after: str,
+    *,
+    probe_before: int | None = None,
+    probe_after: int | None = None,
 ) -> None:
     """Increment stuck only when a navigation action fails to change position."""
     if not action.startswith("navigate_"):
         return
-    if pos_before == pos_after:
-        state["stuck_count"] = state.get("stuck_count", 0) + 1
-    else:
+    moved = pos_before != pos_after
+    if not moved and probe_before is not None and probe_after is not None:
+        moved = probe_before != probe_after
+    if moved:
         state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
+    else:
+        state["stuck_count"] = state.get("stuck_count", 0) + 1

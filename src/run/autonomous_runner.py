@@ -34,6 +34,8 @@ class AutonomousRunner:
         langsmith: bool = False,
         thread_id: str = "default",
         stuck_threshold: int = 10,
+        headed: bool = False,
+        window: str | None = None,
     ):
         self.rom_path = Path(rom_path)
         self.max_steps = max_steps
@@ -42,11 +44,45 @@ class AutonomousRunner:
         self.langsmith = langsmith
         self.thread_id = thread_id
         self.stuck_threshold = stuck_threshold
+        self.headed = headed
+        self.window = window
         self.memory = LongTermMemory()
 
         if langsmith:
             os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
             os.environ.setdefault("LANGSMITH_PROJECT", "pokemon-gold-agent")
+
+    def _bootstrap_if_needed(self, emu: Any, state: AgentState) -> AgentState:
+        from src.emulator.bootstrap import (
+            apply_bootstrap_metadata,
+            needs_bootstrap,
+            run_bootstrap,
+        )
+        from src.graph.state import update_game_state
+        from src.state.models import GameState
+
+        gs = GameState.model_validate(state.get("game_state", {}))
+        if not needs_bootstrap(gs, state):
+            return state
+
+        logger.info("Cold boot detected — running intro bootstrap")
+        result = run_bootstrap(emu)
+        gs = apply_bootstrap_metadata(emu.get_game_state(), result)
+        state = update_game_state(state, gs)
+        state["bootstrap_complete"] = False
+        state["phase"] = "bootstrap"
+        if result.map_loaded:
+            logger.info(
+                "Bootstrap map loaded in %d actions (%d frames); graph bootstrap will continue",
+                result.actions_taken,
+                result.frames_elapsed,
+            )
+        else:
+            logger.warning(
+                "Bootstrap incomplete after %d actions; graph bootstrap node will continue",
+                result.actions_taken,
+            )
+        return state
 
     def _resolve_thread_id(self, resume: str | None) -> str:
         if resume == "latest":
@@ -74,7 +110,8 @@ class AutonomousRunner:
                 f"ROM not found: {self.rom_path}. Place a legal ROM at roms/pokemon_gold.gb"
             )
 
-        with PyBoyWrapper(self.rom_path, save_dir=self.save_dir) as emu:
+        effective_window = self.window if self.window is not None else ("SDL2" if self.headed else "null")
+        with PyBoyWrapper(self.rom_path, window=effective_window, save_dir=self.save_dir) as emu:
             bind_emulator(emu)
             graph = compile_graph(emu, checkpoint_path=self.checkpoint_db)
             config = {"configurable": {"thread_id": thread_id}}
@@ -88,6 +125,7 @@ class AutonomousRunner:
                     state = create_initial_state(emu)
             else:
                 state = create_initial_state(emu)
+                state = self._bootstrap_if_needed(emu, state)
 
             start_steps = state.get("metrics", {}).get("steps", 0)
             target_steps = start_steps + self.max_steps
@@ -150,6 +188,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--save-dir", default=os.environ.get("SAVE_DIR", "saves"))
     parser.add_argument("--thread-id", default="default")
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("--headed", action="store_true", help="Enable visible SDL2 window so you can watch the agent play (default is headless)")
     return parser
 
 
@@ -175,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
             save_dir=args.save_dir,
             langsmith=args.langsmith,
             thread_id=args.thread_id,
+            headed=getattr(args, "headed", False),
         )
         result = runner.run(resume=args.resume)
         print(f"Completed {result['steps']} steps")

@@ -12,6 +12,7 @@ from langgraph.graph import END, StateGraph
 from src.graph.nodes import (
     apply_action_node,
     battler_node,
+    bootstrap_node,
     critic_node,
     memory_node,
     navigator_node,
@@ -20,6 +21,7 @@ from src.graph.nodes import (
 )
 from src.graph.router import (
     route_from_battler,
+    route_from_bootstrap,
     route_from_critic,
     route_from_memory,
     route_from_navigator,
@@ -46,6 +48,7 @@ def build_graph(
     graph = StateGraph(AgentState)
 
     graph.add_node("supervisor", supervisor_node)
+    graph.add_node("bootstrap", bootstrap_node)
     graph.add_node("planner", planner_node)
     graph.add_node("navigator", navigator_node)
     graph.add_node("battler", battler_node)
@@ -56,6 +59,7 @@ def build_graph(
     graph.set_entry_point("supervisor")
 
     graph.add_conditional_edges("supervisor", route_from_supervisor)
+    graph.add_conditional_edges("bootstrap", route_from_bootstrap)
     graph.add_conditional_edges("planner", route_from_planner)
     graph.add_conditional_edges("navigator", route_from_navigator)
     graph.add_conditional_edges("battler", route_from_battler)
@@ -101,6 +105,7 @@ def create_initial_state(emulator: Any = None) -> AgentState:
 
 EXPECTED_NODES = {
     "supervisor",
+    "bootstrap",
     "planner",
     "navigator",
     "battler",
