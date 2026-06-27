@@ -21,24 +21,25 @@ class AgentState(TypedDict, total=False):
     current_plan: list[str]
     subgoals: list[str]
     active_subgoal: str
-    short_term_history: Annotated[list[str], _merge_lists]
-    visited_positions: Annotated[list[str], _merge_lists]
+    short_term_history: list[str]
+    visited_positions: list[str]
     memory_retrievals: list[str]
     long_term_facts: list[str]
     phase: str
     next_node: str
     last_action: str
     last_action_result: dict[str, Any]
+    position_before_action: str
     metrics: dict[str, Any]
     stuck_count: int
     session_id: str
     run_max_steps: int
-    milestones: Annotated[list[str], _merge_lists]
+    milestones: list[str]
     critic_verdict: str
     critic_notes: str
     should_replan: bool
     replan_count: int
-    maps_visited: Annotated[list[str], _merge_lists]
+    maps_visited: list[str]
     error: str
 
 
@@ -58,6 +59,7 @@ def initial_agent_state(game_state: GameState | dict | None = None) -> AgentStat
         next_node="supervisor",
         last_action="",
         last_action_result={},
+        position_before_action="",
         metrics={"steps": 0, "badges_earned": 0, "battles_won": 0},
         stuck_count=0,
         session_id="",

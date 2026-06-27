@@ -23,30 +23,18 @@ def test_compile_graph_with_checkpointer():
         assert compiled is not None
 
 
-def test_graph_invoke_single_step(new_bark_ram: dict):
+def test_graph_invoke_without_emulator_frozen_state(new_bark_ram: dict):
+    """No emulator: state frozen, stuck stays 0 (documents no-op apply_action)."""
     gs = GoldStateReader(ByteArrayReader(new_bark_ram)).read()
     state = initial_agent_state(gs)
-    state["run_max_steps"] = 1
+    state["run_max_steps"] = 3
 
     with tempfile.TemporaryDirectory() as tmp:
-        compiled = compile_graph(checkpoint_path=Path(tmp) / "test.sqlite")
-        config = {"configurable": {"thread_id": "test"}}
-        result = compiled.invoke(state, config=config)
-        assert result["metrics"]["steps"] == 1
-        assert result["last_action"] == "navigate_right"
-
-
-def test_graph_invoke_multi_step_terminates(new_bark_ram: dict):
-    gs = GoldStateReader(ByteArrayReader(new_bark_ram)).read()
-    state = initial_agent_state(gs)
-    state["run_max_steps"] = 5
-
-    with tempfile.TemporaryDirectory() as tmp:
-        compiled = compile_graph(checkpoint_path=Path(tmp) / "multi.sqlite")
-        config = {"configurable": {"thread_id": "multi"}}
-        result = compiled.invoke(state, config=config)
-        assert result["metrics"]["steps"] == 5
-        assert result["last_action"].startswith("navigate_")
+        compiled = compile_graph(checkpoint_path=Path(tmp) / "frozen.sqlite")
+        result = compiled.invoke(state, config={"configurable": {"thread_id": "frozen"}})
+        assert result["metrics"]["steps"] == 3
+        assert result["game_state"]["player"]["x"] == 8
+        assert result["stuck_count"] == 0
 
 
 def test_create_initial_state():

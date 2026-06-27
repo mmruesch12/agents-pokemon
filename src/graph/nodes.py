@@ -87,21 +87,20 @@ def _decompose_subgoals(gs: GameState) -> list[str]:
 
 
 def navigator_node(state: AgentState) -> AgentState:
-    """Navigate with visited memory, pathfinding, and optional LLM direction pick."""
+    """Navigate with pathfinding and LLM direction pick among candidates."""
     gs = GameState.model_validate(state.get("game_state", {}))
-    visited = set(state.get("visited_positions", []))
 
     target = _navigation_target(gs)
     path = find_path(gs.player.x, gs.player.y, target[0], target[1], map_key=gs.map_key)
+    candidates = _navigation_candidates(gs, target, path)
 
-    if path:
+    llm_choice = llm_navigate(gs, state, candidates)
+    if llm_choice and llm_choice in candidates:
+        action = llm_choice
+    elif path:
         action = path[0]
     else:
-        candidates = _direction_candidates(gs.player.x, gs.player.y, target[0], target[1])
-        llm_choice = llm_navigate(gs, state, candidates)
-        action = llm_choice or direction_toward(
-            gs.player.x, gs.player.y, target[0], target[1]
-        )
+        action = direction_toward(gs.player.x, gs.player.y, target[0], target[1])
 
     history = list(state.get("short_term_history", []))
     history.append(f"navigate:{action}@{gs.player.x},{gs.player.y}")
@@ -111,15 +110,26 @@ def navigator_node(state: AgentState) -> AgentState:
         "direction": action,
         "target": target,
         "path_length": len(path),
+        "candidates": candidates,
     }
+    state["position_before_action"] = gs.position_key
     state["next_node"] = "critic"
-
-    if gs.position_key in visited:
-        state["stuck_count"] = state.get("stuck_count", 0) + 1
-    else:
-        state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
-
     return state
+
+
+def _navigation_candidates(
+    gs: GameState, target: tuple[int, int], path: list
+) -> list[str]:
+    """Build direction candidates for pathfinding + LLM selection."""
+    primary = direction_toward(gs.player.x, gs.player.y, target[0], target[1])
+    candidates: list[str] = []
+    if path:
+        candidates.extend(path[:3])
+    if primary != "a" and primary not in candidates:
+        candidates.append(primary)
+    if not candidates:
+        candidates = _direction_candidates(gs.player.x, gs.player.y, target[0], target[1])
+    return list(dict.fromkeys(candidates))
 
 
 def _direction_candidates(sx: int, sy: int, tx: int, ty: int) -> list[str]:
@@ -222,12 +232,17 @@ def _check_milestone(
 
 
 def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
-    """Execute last_action against emulator if bound."""
+    """Execute last_action against emulator and update stuck meter from movement."""
     from src.tools import pokemon_tools
 
     action = state.get("last_action", "")
     if not action or emulator is None:
         return state
+
+    pos_before = state.get("position_before_action", "")
+    if not pos_before:
+        gs_before = GameState.model_validate(state.get("game_state", {}))
+        pos_before = gs_before.position_key
 
     pokemon_tools.bind_emulator(emulator)
     try:
@@ -240,8 +255,21 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
             pokemon_tools.battle_decide.invoke({"action": battle_action})
         gs = emulator.get_game_state()
         state = update_game_state(state, gs)
+        _update_stuck_from_movement(state, action, pos_before, gs.position_key)
     except Exception as exc:
         state["error"] = str(exc)
         logger.error("Action execution failed: %s", exc)
 
     return state
+
+
+def _update_stuck_from_movement(
+    state: AgentState, action: str, pos_before: str, pos_after: str
+) -> None:
+    """Increment stuck only when a navigation action fails to change position."""
+    if not action.startswith("navigate_"):
+        return
+    if pos_before == pos_after:
+        state["stuck_count"] = state.get("stuck_count", 0) + 1
+    else:
+        state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)

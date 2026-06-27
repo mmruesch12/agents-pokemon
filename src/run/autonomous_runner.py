@@ -106,10 +106,11 @@ class AutonomousRunner:
                         self.memory.add_fact(f"milestone:{m}")
 
                 if state.get("stuck_count", 0) >= self.stuck_threshold:
-                    logger.warning("Stuck count=%d, saving state", state["stuck_count"])
+                    logger.warning(
+                        "Stuck count=%d (failed moves), saving state", state["stuck_count"]
+                    )
                     emu.save_state(f"stuck_{steps}")
                     state["should_replan"] = True
-                    state["stuck_count"] = 0
 
                 if steps > 0 and steps % 100 == 0:
                     scores = evaluate_run(state)
