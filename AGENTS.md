@@ -69,9 +69,11 @@ uv run python -m src.run.verify_setup            # check env, LLM, PyBoy, ROM
 uv run python -m src.run.cli --steps 500
 uv run python -m src.run.autonomous_runner --resume latest --max-steps 5000
 
-# Shorter entry points (python -m always works; poke after `uv run poke-fix`)
+# Shorter entry points (python -m and poke-* both work after `uv sync`)
 uv run python -m src.run.cli --steps 500
 uv run python -m src.run.autonomous_runner --resume latest --max-steps 5000
+uv run poke-agent --steps 500
+uv run poke-runner --resume latest --max-steps 5000
 
 # Headed mode: watch visible PyBoy window while agent plays (not default)
 uv run python -m src.run.cli --headed --steps 200

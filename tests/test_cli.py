@@ -67,3 +67,23 @@ def test_cli_headed_works_after_subcommand():
     a2 = parser.parse_args(["resume", "--headed"])
     assert a2.headed is True
     assert a2.resume == "latest"
+
+
+import pytest
+
+
+@pytest.mark.parametrize(
+    "argv,expected_steps",
+    [
+        (["--headed", "--steps", "10"], 10),
+        (["run", "--headed", "--steps", "10"], 10),
+        (["--headed", "run", "--steps", "10"], 10),
+    ],
+)
+def test_cli_headed_any_position(argv, expected_steps):
+    """--headed is honored in any position (pre-sub, post-sub, pre+sub)."""
+    from src.run.cli import _parse_cli
+    a = _parse_cli(argv)
+    assert a.headed is True
+    # the namespace is the one passed to cmd_run / runner
+    assert a.steps == expected_steps

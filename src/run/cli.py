@@ -10,6 +10,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from src.run._cli_flags import pop_store_true_flag
+
 logger = logging.getLogger(__name__)
 
 
@@ -108,10 +110,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _parse_cli(argv: list[str] | None = None):
+    """Thin wrapper for tests: returns the namespace after normalization + parse.
+
+    This is the exact namespace that would be passed to cmd_run / runner.
+    """
+    parser = build_parser()
+    raw = list(argv) if argv is not None else None
+    headed_present, cleaned = pop_store_true_flag(raw, "--headed")
+    args = parser.parse_args(cleaned if raw is not None else None)
+    if headed_present:
+        args.headed = True
+    return args
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
-    parser = build_parser()
-    args = parser.parse_args(argv)
+    args = _parse_cli(argv)
     _setup_logging(args.verbose)
     _setup_langsmith(args.langsmith)
 

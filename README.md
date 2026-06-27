@@ -32,9 +32,13 @@ uv run python -m src.run.autonomous_runner --max-steps 5000 --resume latest
 # Watch the agent play (headed/visible PyBoy SDL2 window)
 uv run python -m src.run.cli --headed --steps 500
 uv run python -m src.run.autonomous_runner --headed --max-steps 10000 --resume latest
+
+# Or using the installed entry points (work after `uv sync`)
+uv run poke-agent --headed --steps 500
+uv run poke-runner --headed --resume latest --max-steps 10000
 ```
 
-Using --headed enables a visible emulator window (headless by default; use --headed to watch the agent play). The poke-* entry points (if functional in your env) also accept it.
+Using --headed enables a visible emulator window (headless by default; use --headed to watch the agent play). The poke-* entry points work out of the box after `uv sync`.
 
 Other commands:
 ```bash
