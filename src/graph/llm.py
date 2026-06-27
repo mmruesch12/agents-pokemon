@@ -29,15 +29,26 @@ def _match_token(choice: str, candidates: tuple[str, ...] | list[str]) -> str | 
 
 
 def get_chat_model():
-    """Return ChatOpenAI model if OPENAI_API_KEY is set, else None."""
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    """Return ChatOpenAI-compatible model (xAI Grok or OpenAI) when configured."""
+    xai_key = os.getenv("XAI_API_KEY", "").strip()
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    api_key = xai_key or openai_key
     if not api_key:
         return None
     try:
         from langchain_openai import ChatOpenAI
 
+        if xai_key:
+            model = os.getenv("XAI_MODEL", "grok-4-1-fast-reasoning")
+            base_url = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1")
+            return ChatOpenAI(
+                model=model,
+                api_key=xai_key,
+                base_url=base_url,
+                temperature=0,
+            )
         model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        return ChatOpenAI(model=model, temperature=0)
+        return ChatOpenAI(model=model, api_key=openai_key, temperature=0)
     except Exception as exc:
         logger.warning("LLM init failed: %s", exc)
         return None

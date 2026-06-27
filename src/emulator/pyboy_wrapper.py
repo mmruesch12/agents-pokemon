@@ -32,7 +32,7 @@ class PyBoyWrapper:
         self,
         rom_path: str | Path,
         *,
-        window: str = "headless",
+        window: str = "null",
         save_dir: str | Path = "saves",
     ):
         from pyboy import PyBoy

@@ -19,7 +19,17 @@ def test_match_token_exact_not_substring():
 
 def test_get_chat_model_without_api_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
     assert get_chat_model() is None
+
+
+def test_get_chat_model_prefers_xai(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
+    monkeypatch.setenv("XAI_MODEL", "grok-4-1-fast-reasoning")
+    model = get_chat_model()
+    assert model is not None
+    assert model.model_name == "grok-4-1-fast-reasoning"
 
 
 def test_llm_plan_heuristic_fallback(new_bark_ram: dict, monkeypatch):
