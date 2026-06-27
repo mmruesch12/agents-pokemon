@@ -12,7 +12,7 @@ Guidelines for AI coding agents working in this repository.
 |----------|----------|-------|
 | API keys & tokens | `XAI_API_KEY`, `OPENAI_API_KEY`, `LANGSMITH_API_KEY`, `gho_*`, `sk-*`, `xai-*`, `lsv2_pt_*` | Use `.env` only (gitignored) |
 | Environment files | `.env`, `.env.local`, `.env.production` | Copy from `.env.example` with empty placeholders |
-| Game ROMs | `roms/*.gb`, `roms/*.gbc` | User must supply their own legal dump |
+| Game ROMs | `roms/*` (`.gb`, `.gbc`, `.zip`, etc.) | User must supply their own legal dump |
 | Runtime data | `data/*` (except `.gitkeep`), `saves/*`, `*.sqlite`, `data/chroma/`, `data/faiss/` | Checkpoints, memory, emulator saves |
 | Virtualenv / caches | `.venv/`, `__pycache__/`, `.pytest_cache/` | Local tooling only |
 

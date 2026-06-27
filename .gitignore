@@ -1,32 +1,45 @@
 # Python
 __pycache__/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 *.py[cod]
 *.egg-info/
 .venv/
 dist/
 build/
+.coverage
+htmlcov/
 
-# Environment
+# Environment / secrets
 .env
+.env.local
+.env.production
+.env.*
+!.env.example
 
-# Game data (user-provided)
-roms/*.gb
-roms/*.gbc
-roms/*.gb*
+# Game data (user-provided ROMs and runtime artifacts)
+roms/*
 !roms/.gitkeep
 saves/*
 !saves/.gitkeep
+*.sav
+*.state
 data/*
 !data/.gitkeep
 
-# IDE
+# IDE / OS
 .idea/
 .vscode/
 *.swp
+.DS_Store
+Thumbs.db
 
 # LangGraph / memory stores
 *.sqlite
 *.sqlite3
 data/chroma/
 data/faiss/
+
+# Run logs
+*.log
