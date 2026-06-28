@@ -21,6 +21,15 @@ def test_cli_rom_and_steps():
     args = parser.parse_args(["--rom", "roms/test.gb", "--steps", "100"])
     assert args.rom == "roms/test.gb"
     assert args.steps == 100
+    assert args.resume is None
+
+
+def test_cli_default_run_does_not_implicitly_resume():
+    from src.run.cli import _parse_cli
+
+    args = _parse_cli(["--steps", "10", "--thread-id", "fresh"])
+    assert args.resume is None
+    assert args.thread_id == "fresh"
 
 
 def test_cli_langsmith_flag():
@@ -67,7 +76,7 @@ def test_cli_headed_works_after_subcommand():
     assert a.steps == 42
     a2 = parser.parse_args(["resume", "--headed"])
     assert a2.headed is True
-    assert a2.resume == "latest"
+    assert a2.func.__name__ == "cmd_resume"
 
 
 def test_watch_normalizes_headed_and_resume_latest():

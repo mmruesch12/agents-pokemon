@@ -10,6 +10,7 @@ import sys
 from dotenv import load_dotenv
 
 from src.run._cli_flags import pop_store_true_flag
+from src.run._langsmith import configure_tracing
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +23,15 @@ def _setup_logging(verbose: bool = False) -> None:
     )
 
 
-def _setup_langsmith(enable: bool) -> None:
-    if enable:
-        os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
-        os.environ.setdefault("LANGSMITH_PROJECT", "pokemon-gold-agent")
+def _setup_langsmith(enable: bool, *, headed: bool = False) -> None:
+    configure_tracing(langsmith=enable, headed=headed)
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    """Resume subcommand: default --resume to latest when omitted."""
+    if args.resume is None:
+        args.resume = "latest"
+    return cmd_run(args)
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -96,7 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.set_defaults(func=cmd_run)
 
     resume_p = sub.add_parser("resume", parents=[common], help="Resume latest run")
-    resume_p.set_defaults(func=cmd_run, resume="latest")
+    resume_p.set_defaults(func=cmd_resume)
 
     eval_p = sub.add_parser("eval", parents=[common], help="Run evaluators on dataset")
     eval_p.add_argument("--dataset", default="early_game")
@@ -127,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     args = _parse_cli(argv)
     _setup_logging(args.verbose)
-    _setup_langsmith(args.langsmith)
+    _setup_langsmith(args.langsmith, headed=getattr(args, "headed", False))
 
     if not hasattr(args, "func"):
         build_parser().print_help()

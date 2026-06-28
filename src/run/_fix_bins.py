@@ -22,7 +22,7 @@ def fix() -> None:
         venv = str(Path.cwd() / ".venv")
     bin_dir = Path(venv) / "bin"
     patched = []
-    for name in ("poke-agent", "poke-runner"):
+    for name in ("poke-agent", "poke-runner", "poke-watch", "poke-fix"):
         bin_path = bin_dir / name
         if not bin_path.exists():
             continue
@@ -54,6 +54,10 @@ def fix() -> None:
         print("No poke bins needed patching (or not present)")
 
 
-if __name__ == "__main__":
+def main() -> int:
     fix()
-    sys.exit(0)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

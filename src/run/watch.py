@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_cli(watch_argv)
     args.headed = True
     _setup_logging(args.verbose)
-    _setup_langsmith(args.langsmith)
+    _setup_langsmith(args.langsmith, headed=True)
 
     if not hasattr(args, "func"):
         build_parser().print_help()

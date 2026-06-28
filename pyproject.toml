@@ -30,6 +30,7 @@ dev = [
 poke-agent = "src.run.cli:main"
 poke-runner = "src.run.autonomous_runner:main"
 poke-watch = "src.run.watch:main"
+poke-fix = "src.run._fix_bins:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
