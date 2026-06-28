@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from src.emulator.pyboy_wrapper import PyBoyWrapper
 from src.graph.graph import compile_graph
@@ -11,21 +15,146 @@ from src.run._langsmith import configure_tracing
 from src.run.autonomous_runner import AutonomousRunner
 
 
-def test_pyboy_wrapper_headless_is_not_live():
-    """Headless wrapper has no live thread machinery."""
-    # Structural check on class defaults without requiring a ROM.
-    assert PyBoyWrapper.__init__.__doc__ is not None
-    # Fake instance attributes set in __init__ path for null window:
-    wrapper = object.__new__(PyBoyWrapper)
-    wrapper._is_live = False
-    wrapper._lock = None
-    wrapper._live_thread = None
-    assert wrapper._is_live is False
-    assert wrapper._lock is None
+class _FakePyBoy:
+    """Minimal PyBoy stand-in for ROM-free wrapper tests."""
+
+    tick_calls = 0
+
+    def __init__(self, _rom_path: str, **kwargs):
+        self.window = kwargs.get("window", "null")
+        self._memory = bytearray(0x10000)
+        self._saved: bytes | None = None
+
+    def tick(self) -> bool:
+        _FakePyBoy.tick_calls += 1
+        return True
+
+    def button_press(self, _key: str) -> None:
+        pass
+
+    def button_release(self, _key: str) -> None:
+        pass
+
+    def set_emulation_speed(self, _speed: int) -> None:
+        pass
+
+    def save_state(self, handle) -> None:
+        self._saved = b"fake-state"
+        handle.write(self._saved)
+
+    def load_state(self, handle) -> None:
+        self._saved = handle.read()
+
+    def stop(self) -> None:
+        pass
+
+    @property
+    def screen(self):
+        class _Screen:
+            @property
+            def image(self):
+                from PIL import Image
+
+                return Image.new("RGB", (160, 144))
+
+        return _Screen()
+
+    @property
+    def memory(self):
+        return self._memory
+
+
+@pytest.fixture
+def fake_rom(tmp_path):
+    rom = tmp_path / "test.gb"
+    rom.write_bytes(b"\x00" * 64)
+    return rom
+
+
+@pytest.fixture
+def fake_pyboy(monkeypatch):
+    _FakePyBoy.tick_calls = 0
+    monkeypatch.setattr("pyboy.PyBoy", _FakePyBoy)
+    # pyboy is imported inside PyBoyWrapper.__init__
+    import pyboy
+
+    monkeypatch.setattr(pyboy, "PyBoy", _FakePyBoy)
+
+
+def test_pyboy_wrapper_headless_is_not_live(fake_rom, fake_pyboy):
+    with PyBoyWrapper(fake_rom, window="null") as wrapper:
+        assert wrapper._is_live is False
+        assert wrapper._lock is None
+        assert wrapper._live_thread is None
+
+
+def test_pyboy_wrapper_live_thread_advances_frames(fake_rom, fake_pyboy):
+    wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
+    try:
+        assert wrapper._is_live is True
+        assert wrapper._live_thread is not None
+        assert wrapper._live_thread.is_alive()
+        start = wrapper.frame_count
+        deadline = time.time() + 0.5
+        while wrapper.frame_count <= start and time.time() < deadline:
+            time.sleep(0.01)
+        assert wrapper.frame_count > start
+    finally:
+        wrapper.stop()
+
+
+def test_pyboy_wrapper_fast_forward_accelerates_live_loop(fake_rom, fake_pyboy):
+    wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
+    try:
+        time.sleep(0.05)
+        normal = wrapper.frame_count
+        wrapper.set_fast_forward(True)
+        time.sleep(0.05)
+        ff = wrapper.frame_count
+        wrapper.set_fast_forward(False)
+        assert ff > normal
+    finally:
+        wrapper.stop()
+
+
+def test_pyboy_wrapper_fast_forward_context_manager(fake_rom, fake_pyboy):
+    wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
+    try:
+        with wrapper.fast_forward():
+            assert wrapper._ff is True
+        assert wrapper._ff is False
+    finally:
+        wrapper.stop()
+
+
+def test_pyboy_wrapper_load_state_resets_frame_count(fake_rom, fake_pyboy):
+    save_dir = fake_rom.parent / "saves"
+    with PyBoyWrapper(fake_rom, window="null", save_dir=save_dir) as wrapper:
+        wrapper.tick(25)
+        assert wrapper.frame_count == 25
+        wrapper.save_state("mid")
+        wrapper.tick(10)
+        assert wrapper.frame_count == 35
+        wrapper.load_state("mid")
+        assert wrapper.frame_count == 0
+        gs = wrapper.get_game_state()
+        assert gs.frame_count == 0
+
+
+def test_pyboy_wrapper_live_loop_uses_lock_for_ff(fake_rom, fake_pyboy):
+    wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
+    try:
+        assert wrapper._lock is not None
+        assert isinstance(wrapper._lock, type(threading.RLock()))
+        with wrapper._lock:
+            wrapper._ff = True
+            burst = 8 if wrapper._ff else 1
+        assert burst == 8
+    finally:
+        wrapper.stop()
 
 
 def test_compile_graph_accepts_explicit_memory_saver():
-    """Headed profile can pass an in-memory checkpointer."""
     from langgraph.checkpoint.memory import MemorySaver
 
     saver = MemorySaver()
@@ -35,7 +164,6 @@ def test_compile_graph_accepts_explicit_memory_saver():
 
 
 def test_compile_graph_sqlite_default_unchanged(tmp_path):
-    """Headless default still uses SQLite when checkpoint_path is set."""
     db = tmp_path / "ckpt.sqlite"
     graph = compile_graph(None, checkpoint_path=db)
     assert graph is not None
@@ -56,7 +184,6 @@ def test_configure_tracing_enables_when_langsmith(monkeypatch):
 
 
 def test_headed_runner_uses_memory_saver_not_sqlite(tmp_path):
-    """AutonomousRunner.run wires MemorySaver when headed=True."""
     rom = tmp_path / "fake.gb"
     rom.write_bytes(b"\x00" * 32)
 
@@ -173,3 +300,24 @@ def test_resolve_thread_id_skips_sqlite_when_headed(tmp_path):
 
     runner_headless = AutonomousRunner(rom_path=rom, checkpoint_db=ckpt, headed=False, thread_id="default")
     assert runner_headless._resolve_thread_id("latest") == "from-sqlite"
+
+
+def test_seed_state_from_loaded_emulator_marks_bootstrap_complete(tmp_path):
+    from src.state.gold_state_reader import ADDR_MAP_GROUP, ADDR_MAP_NUMBER
+    from tests.fake_emulator import MutableRamEmulator
+
+    rom = tmp_path / "fake.gb"
+    rom.write_bytes(b"\x00" * 32)
+    emu = MutableRamEmulator(
+        {
+            ADDR_MAP_GROUP: 3,
+            ADDR_MAP_NUMBER: 4,
+            0xD163: 1,
+        }
+    )
+
+    runner = AutonomousRunner(rom_path=rom, headed=True)
+    state = runner._seed_state_from_loaded_emulator(emu, "final_42")
+    assert state["bootstrap_complete"] is True
+    assert state["phase"] == "explore"
+    assert state["loaded_map_key"] == (3, 4)

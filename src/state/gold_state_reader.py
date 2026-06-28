@@ -152,6 +152,11 @@ class GoldStateReader:
         self._reader = reader
         self._frame_count = frame_count
 
+    def read_at(self, frame_count: int) -> GameState:
+        """Read GameState tagging the supplied emulation frame counter."""
+        self._frame_count = frame_count
+        return self.read()
+
     def read_player(self) -> PlayerState:
         r = self._reader
         map_group = r.read_byte(ADDR_MAP_GROUP)

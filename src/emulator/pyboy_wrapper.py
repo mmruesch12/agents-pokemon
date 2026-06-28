@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Iterator, Literal
 
 from src.state.gold_state_reader import GoldStateReader, PyBoyMemoryReader
 from src.state.models import GameState
@@ -85,6 +86,23 @@ class PyBoyWrapper:
                 return self._frame_count
         return self._frame_count
 
+    def set_fast_forward(self, enabled: bool) -> None:
+        """Accelerate the live background tick loop (headed mode only)."""
+        if self._lock:
+            with self._lock:
+                self._ff = enabled
+        else:
+            self._ff = enabled
+
+    @contextmanager
+    def fast_forward(self) -> Iterator[None]:
+        """Context manager for temporary fast-forward during long frame waits."""
+        self.set_fast_forward(True)
+        try:
+            yield
+        finally:
+            self.set_fast_forward(False)
+
     def _advance_locked(self, frames: int = 1) -> int:
         for _ in range(frames):
             if not self._pyboy.tick():
@@ -151,10 +169,8 @@ class PyBoyWrapper:
     def get_game_state(self) -> GameState:
         if self._lock:
             with self._lock:
-                self._reader._frame_count = self._frame_count
-                return self._reader.read()
-        self._reader._frame_count = self._frame_count
-        return self._reader.read()
+                return self._reader.read_at(self._frame_count)
+        return self._reader.read_at(self._frame_count)
 
     def save_state(self, name: str) -> Path:
         path = self.save_dir / f"{name}.state"
@@ -176,9 +192,11 @@ class PyBoyWrapper:
             with self._lock:
                 with open(path, "rb") as f:
                     self._pyboy.load_state(f)
+                self._frame_count = 0
         else:
             with open(path, "rb") as f:
                 self._pyboy.load_state(f)
+            self._frame_count = 0
         logger.info("Loaded emulator state from %s", path)
 
     def screenshot(self) -> bytes:
@@ -208,8 +226,8 @@ class PyBoyWrapper:
     def _live_loop(self) -> None:
         assert self._lock is not None
         while not self._stop_live.is_set():
-            burst = 8 if self._ff else 1
             with self._lock:
+                burst = 8 if self._ff else 1
                 if self._held_key and self._hold_remaining > 0:
                     steps = min(self._hold_remaining, burst)
                     self._advance_locked(steps)
@@ -220,7 +238,8 @@ class PyBoyWrapper:
                         self._advance_locked(1)
                 else:
                     self._advance_locked(burst)
-            time.sleep(0.001 if self._ff else 0.016)
+                ff_sleep = self._ff
+            time.sleep(0.001 if ff_sleep else 0.016)
 
     def __enter__(self):
         return self

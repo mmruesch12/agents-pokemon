@@ -17,7 +17,7 @@ Pragmatic dual-path implementation:
   - For `window != "null"`, a daemon thread continuously calls `tick()` (bursts of 8 during `_ff` fast-forward).
   - `RLock` protects *every* access (`tick`, `press_button`, `get_game_state`, `read_memory_byte`, save/load, screenshot, set_speed).
   - Button holds are scheduled (`_held_key` / `_hold_remaining`) so the live thread does press/release/tick timing; main thread waits briefly.
-  - `_ff` flag accelerates title waits in bootstrap (`run_bootstrap`).
+  - `set_fast_forward()` / `fast_forward()` context accelerates title waits in bootstrap (`run_bootstrap`).
 - **MemorySaver instead of SqliteSaver** for headed runs:
   - In `AutonomousRunner.run()`: if `headed` then `MemorySaver()` (in-proc dict) else normal sqlite path.
   - `compile_graph(emu, checkpointer=...)` supports explicit checkpointer.
@@ -35,7 +35,7 @@ Pragmatic dual-path implementation:
 
 **Trade-offs / Complexity (Why We Can Do Better Later)**
 - Large amount of `if self._is_live` branching + duplicated logic in `tick`/`press_button`.
-- Direct private attr access (`emu._ff`, `_held_key`) leaks implementation.
+- Button-hold scheduling via `_held_key` is still internal to the wrapper.
 - Lock held around PyBoy calls; potential for subtle races or deadlocks under load (though `RLock` + daemon helps).
 - Approximate hold semantics in live mode (main waits via sleep polling).
 - Divergent semantics: headed uses in-memory checkpoint (cross-process `get_state` on resume is a no-op), headless uses persistent sqlite. Resume thread-id logic in `_resolve_thread_id` always peeks sqlite.

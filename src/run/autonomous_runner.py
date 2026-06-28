@@ -127,6 +127,45 @@ class AutonomousRunner:
             )
         return state
 
+    def _seed_state_from_loaded_emulator(self, emu: Any, save_name: str) -> AgentState:
+        """Build agent state from emulator RAM after loading a .state file."""
+        from src.emulator.bootstrap import (
+            INDOOR_BOOTSTRAP_ACTIONS,
+            MIN_GRAPH_BOOTSTRAP_ACTIONS,
+            in_loaded_map,
+            is_bootstrap_done,
+            read_loaded_map,
+        )
+        from src.graph.state import update_game_state
+
+        gs = emu.get_game_state()
+        state = create_initial_state(emu)
+        state = update_game_state(state, gs)
+        loaded_map = read_loaded_map(emu)
+        state["loaded_map_key"] = loaded_map
+
+        if gs.party_count > 0:
+            state["bootstrap_complete"] = True
+            state["phase"] = "explore"
+            state["bootstrap_action_index"] = MIN_GRAPH_BOOTSTRAP_ACTIONS
+        elif in_loaded_map(emu):
+            state["bootstrap_action_index"] = INDOOR_BOOTSTRAP_ACTIONS
+            bootstrap_done = is_bootstrap_done(emu, gs, state)
+            state["bootstrap_complete"] = bootstrap_done
+            state["phase"] = "explore" if bootstrap_done else "bootstrap"
+        else:
+            state["bootstrap_complete"] = False
+            state["phase"] = "bootstrap"
+
+        state["should_replan"] = False
+        logger.info(
+            "Seeded agent from emulator save %s (map=%s, bootstrap_complete=%s)",
+            save_name,
+            loaded_map,
+            state["bootstrap_complete"],
+        )
+        return state
+
     def _load_latest_emulator_state(self, emu: Any) -> str | None:
         """Load the newest emulator .state file (headed watch resume)."""
         states = sorted(
@@ -191,14 +230,23 @@ class AutonomousRunner:
             config = {"configurable": {"thread_id": thread_id}}
 
             if resume:
+                loaded_name = None
                 if self.headed:
-                    self._load_latest_emulator_state(emu)
+                    loaded_name = self._load_latest_emulator_state(emu)
+                state = None
                 try:
                     snapshot = graph.get_state(config)
-                    state = snapshot.values if snapshot.values else create_initial_state(emu)
-                    logger.info("Resumed from checkpoint thread_id=%s", thread_id)
+                    if snapshot.values:
+                        state = snapshot.values
+                        logger.info("Resumed agent checkpoint thread_id=%s", thread_id)
                 except Exception:
-                    state = create_initial_state(emu)
+                    state = None
+                if state is None:
+                    if loaded_name:
+                        state = self._seed_state_from_loaded_emulator(emu, loaded_name)
+                    else:
+                        state = create_initial_state(emu)
+                        logger.info("Fresh agent state thread_id=%s", thread_id)
             else:
                 state = create_initial_state(emu)
                 state = self._bootstrap_if_needed(emu, state)

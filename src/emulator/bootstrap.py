@@ -171,14 +171,12 @@ def run_bootstrap(
         )
 
     logger.info("Running bootstrap: waiting %d frames for title screen", title_wait)
-    ff = getattr(emu, "_ff", None)
-    if ff is not None:
-        emu._ff = True
-    try:
+    fast_forward = getattr(emu, "fast_forward", None)
+    if callable(fast_forward):
+        with fast_forward():
+            emu.tick(title_wait)
+    else:
         emu.tick(title_wait)
-    finally:
-        if ff is not None:
-            emu._ff = False
 
     emu.press_button("start", hold_frames=12)
     emu.tick(120)
