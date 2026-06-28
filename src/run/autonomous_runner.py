@@ -15,7 +15,9 @@ from dotenv import load_dotenv
 
 from src.eval.evaluators import evaluate_run
 from src.graph.graph import compile_graph, create_initial_state
+from src.graph.phases import house_exit
 from src.graph.state import AgentState
+from src.state.models import GameState
 from src.memory.long_term_memory import LongTermMemory
 from src.run._langsmith import build_invoke_config, configure_tracing
 
@@ -50,14 +52,12 @@ def format_intent_card(state: AgentState) -> str:
     subgoal = _subgoal_label(state)
     critic = state.get("critic_verdict", "proceed")
 
-    player = state.get("game_state", {}).get("player", {})
-    map_name = player.get("map_name", "unknown")
-    x = player.get("x", "?")
-    y = player.get("y", "?")
+    gs = GameState.model_validate(state.get("game_state", {}))
+    map_ctx = house_exit.format_map_context(gs)
 
     return (
         f"[step {steps}] {specialist} → {last_action} | "
-        f"subgoal: {subgoal} | map: {map_name} ({x},{y}) | critic: {critic}"
+        f"subgoal: {subgoal} | map: {map_ctx} | critic: {critic}"
     )
 
 
@@ -109,11 +109,15 @@ class AutonomousRunner:
             return state
 
         logger.info("Cold boot detected — running intro bootstrap")
-        result = run_bootstrap(emu)
+        from src.emulator.bootstrap import INDOOR_BOOTSTRAP_ACTIONS
+
+        result = run_bootstrap(emu, rom_path=self.rom_path)
         gs = apply_bootstrap_metadata(emu.get_game_state(), result)
         state = update_game_state(state, gs)
-        state["bootstrap_complete"] = False
-        state["phase"] = "bootstrap"
+        state["bootstrap_complete"] = result.movement_ready
+        state["phase"] = "explore" if result.movement_ready else "bootstrap"
+        if result.movement_ready:
+            state["bootstrap_action_index"] = INDOOR_BOOTSTRAP_ACTIONS
         if result.map_loaded:
             logger.info(
                 "Bootstrap map loaded in %d actions (%d frames); graph bootstrap will continue",
@@ -214,99 +218,109 @@ class AutonomousRunner:
 
         effective_window = self.window if self.window is not None else ("SDL2" if self.headed else "null")
         configure_tracing(langsmith=self.langsmith, headed=self.headed)
-        with PyBoyWrapper(self.rom_path, window=effective_window, save_dir=self.save_dir) as emu:
-            bind_emulator(emu)
+        from src.emulator.battery_save import isolated_battery_files
 
-            if self.headed:
-                try:
-                    from langgraph.checkpoint.memory import MemorySaver
+        with isolated_battery_files(self.rom_path):
+            with PyBoyWrapper(
+                self.rom_path, window=effective_window, save_dir=self.save_dir
+            ) as emu:
+                bind_emulator(emu)
 
-                    checkpointer = MemorySaver()
-                except ImportError:
-                    checkpointer = None
-                graph = compile_graph(
-                    emu, checkpoint_path=None, checkpointer=checkpointer
-                )
-            else:
-                graph = compile_graph(emu, checkpoint_path=self.checkpoint_db)
-            checkpoint_config = {"configurable": {"thread_id": thread_id}}
-            if resume:
-                loaded_name = None
                 if self.headed:
-                    loaded_name = self._load_latest_emulator_state(emu)
-                state = None
-                try:
-                    snapshot = graph.get_state(checkpoint_config)
-                    if snapshot.values:
-                        state = snapshot.values
-                        logger.info("Resumed agent checkpoint thread_id=%s", thread_id)
-                except Exception:
+                    try:
+                        from langgraph.checkpoint.memory import MemorySaver
+
+                        checkpointer = MemorySaver()
+                    except ImportError:
+                        checkpointer = None
+                    graph = compile_graph(
+                        emu, checkpoint_path=None, checkpointer=checkpointer
+                    )
+                else:
+                    graph = compile_graph(emu, checkpoint_path=self.checkpoint_db)
+                checkpoint_config = {"configurable": {"thread_id": thread_id}}
+                if resume:
+                    loaded_name = None
+                    if self.headed:
+                        loaded_name = self._load_latest_emulator_state(emu)
                     state = None
-                if state is None:
-                    if loaded_name:
-                        state = self._seed_state_from_loaded_emulator(emu, loaded_name)
-                    else:
-                        state = create_initial_state(emu)
-                        logger.info("Fresh agent state thread_id=%s", thread_id)
-            else:
-                state = create_initial_state(emu)
-                state = self._bootstrap_if_needed(emu, state)
+                    try:
+                        snapshot = graph.get_state(checkpoint_config)
+                        if snapshot.values:
+                            state = snapshot.values
+                            logger.info("Resumed agent checkpoint thread_id=%s", thread_id)
+                    except Exception:
+                        state = None
+                    if state is None:
+                        if loaded_name:
+                            state = self._seed_state_from_loaded_emulator(emu, loaded_name)
+                        else:
+                            state = create_initial_state(emu)
+                            logger.info("Fresh agent state thread_id=%s", thread_id)
+                else:
+                    state = create_initial_state(emu)
+                    state = self._bootstrap_if_needed(emu, state)
 
-            start_steps = state.get("metrics", {}).get("steps", 0)
-            target_steps = start_steps + self.max_steps
-            milestones: list[str] = list(state.get("milestones", []))
+                start_steps = state.get("metrics", {}).get("steps", 0)
+                target_steps = start_steps + self.max_steps
+                milestones: list[str] = list(state.get("milestones", []))
 
-            while state.get("metrics", {}).get("steps", 0) < target_steps:
-                current = state.get("metrics", {}).get("steps", 0)
-                state["run_max_steps"] = current + 1
-                invoke_config = build_invoke_config(
-                    state,
-                    thread_id=thread_id,
-                    headed=self.headed,
-                )
-                state = graph.invoke(state, config=invoke_config)
-                steps = state.get("metrics", {}).get("steps", 0)
-                log_intent_card(state)
-
-                for m in state.get("milestones", []):
-                    if m not in milestones:
-                        milestones.append(m)
-                        logger.info("MILESTONE: %s", m)
-                        self.memory.add_fact(f"milestone:{m}")
-
-                if state.get("stuck_count", 0) >= self.stuck_threshold:
-                    logger.warning(
-                        "Stuck count=%d (failed moves), saving state", state["stuck_count"]
+                while state.get("metrics", {}).get("steps", 0) < target_steps:
+                    current = state.get("metrics", {}).get("steps", 0)
+                    state["run_max_steps"] = current + 1
+                    invoke_config = build_invoke_config(
+                        state,
+                        thread_id=thread_id,
+                        headed=self.headed,
                     )
-                    emu.save_state(f"stuck_{steps}")
-                    state["should_replan"] = True
+                    state = graph.invoke(state, config=invoke_config)
+                    steps = state.get("metrics", {}).get("steps", 0)
+                    log_intent_card(state)
 
-                if steps > 0 and steps % 100 == 0:
-                    scores = evaluate_run(state)
-                    logger.info(
-                        "Step %d: progress=%.3f stuck=%.3f coherence=%.2f",
-                        steps,
-                        scores["progress_per_steps"],
-                        scores["stuck_frequency"],
-                        scores["coherence"],
-                    )
-                    self.memory.summarize_history(state.get("short_term_history", []))
+                    for m in state.get("milestones", []):
+                        if m not in milestones:
+                            milestones.append(m)
+                            logger.info("MILESTONE: %s", m)
+                            self.memory.add_fact(f"milestone:{m}")
 
-                if state.get("error"):
-                    logger.error("Error: %s", state["error"])
-                    break
+                    if state.get("stuck_count", 0) >= self.stuck_threshold:
+                        logger.warning(
+                            "Stuck count=%d (failed moves), saving state",
+                            state["stuck_count"],
+                        )
+                        emu.save_state(f"stuck_{steps}")
+                        state["should_replan"] = True
 
-            final_steps = state.get("metrics", {}).get("steps", 0)
-            emu.save_state(f"final_{final_steps}")
-            scores = evaluate_run(state)
+                    if steps > 0 and steps % 100 == 0:
+                        scores = evaluate_run(state)
+                        logger.info(
+                            "Step %d: progress=%.3f stuck=%.3f coherence=%.2f",
+                            steps,
+                            scores["progress_per_steps"],
+                            scores["stuck_frequency"],
+                            scores["coherence"],
+                        )
+                        self.memory.summarize_history(state.get("short_term_history", []))
 
-            return {
-                "steps": final_steps,
-                "milestones": milestones,
-                "thread_id": thread_id,
-                "scores": scores,
-                "finished_at": datetime.now(timezone.utc).isoformat(),
-            }
+                    if state.get("error"):
+                        logger.error("Error: %s", state["error"])
+                        break
+
+                final_steps = state.get("metrics", {}).get("steps", 0)
+                emu.save_state(f"final_{final_steps}")
+                scores = evaluate_run(state)
+
+                player = state.get("game_state", {}).get("player", {})
+                return {
+                    "steps": final_steps,
+                    "milestones": milestones,
+                    "thread_id": thread_id,
+                    "scores": scores,
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "final_map_key": f"{player.get('map_group')}:{player.get('map_id')}",
+                    "final_map_name": player.get("map_name"),
+                    "final_position": (player.get("x"), player.get("y")),
+                }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -350,6 +364,10 @@ def main(argv: list[str] | None = None) -> int:
         result = runner.run(resume=args.resume)
         print(f"Completed {result['steps']} steps")
         print(f"Milestones: {result['milestones']}")
+        print(
+            f"Final: {result.get('final_map_name')} "
+            f"({result.get('final_map_key')}) at {result.get('final_position')}"
+        )
         print(f"Scores: {result['scores']}")
         return 0
     except FileNotFoundError as exc:

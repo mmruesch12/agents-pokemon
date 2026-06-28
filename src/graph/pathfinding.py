@@ -14,26 +14,49 @@ def _grid_from_rows(rows: list[str]) -> list[list[int]]:
 
 # Simplified walkable grids for early-game maps (0=walkable, 1=blocked)
 MAP_GRIDS: dict[str, list[list[int]]] = {
-    "3:4": _grid_from_rows(
+    "24:7": _grid_from_rows(
         [
-            "0000000000",
-            "0000000000",
-            "0000000000",
-            "0000000000",
-            "0000000000",
+            "11111110",
+            "00111100",
+            "00000000",
+            "00000000",
+            "10001100",
+            "10000000",
+            "00000000",
+            "00000000",
         ]
     ),
-    "0:0": _grid_from_rows(
+    "24:6": _grid_from_rows(
         [
-            "00000000000000000000",
-            "00000000000000000000",
-            "00001111110000000000",
-            "00001111110000000000",
-            "00000000000000000000",
-            "00000000000000000000",
+            "1111111110",  # stairs warp at (9,0)
+            "1101111010",  # block west kitchen counter at (8,1)
+            "0011111000",  # block counter column at (6,2) — not walkable in-game
+            "0001011100",  # table at (3,3), (5,3); mom NPC at (7,3)
+            "0000000100",  # block (7,4) — use x=8 corridor toward door
+            "0000000000",
+            "0000000000",
+            "1111111100",  # front door warps at (6,7) and (7,7)
         ]
     ),
-    "1:1": _grid_from_rows(
+    "24:4": _grid_from_rows(
+        [
+            "00000000000000000000",  # y=0
+            "00000000000000000000",  # y=1
+            "00001111110000000000",  # y=2 lab/houses north
+            "00001111110000000000",  # y=3
+            "00000000000000000000",  # y=4
+            "00000000000000000000",  # y=5 house exit warp ~(13,5)
+            "00000000000000000000",  # y=6 east corridor row
+            "00000000000000000000",  # y=7
+            "00000000000000000000",  # y=8
+            "00000000000000000000",  # y=9 south corridor at x=17
+            "00000000000001111100",  # y=10 south edge / cliff
+            "00000000000001111100",  # y=11
+            "00000000000000000000",  # y=12 route gate row
+            "00000000000000000000",  # y=13
+        ]
+    ),
+    "24:3": _grid_from_rows(
         [
             "00000000000000000000",
             "00000000000000000000",
@@ -48,12 +71,20 @@ def _in_bounds(grid: list[list[int]], x: int, y: int) -> bool:
     return 0 <= y < len(grid) and 0 <= x < len(grid[0])
 
 
-def _is_walkable(grid: list[list[int]] | None, x: int, y: int) -> bool:
-    """Out-of-grid coordinates are walkable (open-world fallback)."""
+def _is_walkable(
+    grid: list[list[int]] | None,
+    x: int,
+    y: int,
+    *,
+    goal: tuple[int, int] | None = None,
+) -> bool:
+    """Walkable check; defined grids treat out-of-bounds as blocked."""
+    if goal is not None and (x, y) == goal:
+        return True
     if grid is None:
         return True
     if not _in_bounds(grid, x, y):
-        return True
+        return False
     return grid[y][x] == 0
 
 
@@ -86,6 +117,7 @@ def find_path(
         return []
 
     grid = MAP_GRIDS.get(map_key)
+    goal = (end_x, end_y)
     open_set: list[tuple[int, int, int, list[Direction]]] = []
     heapq.heappush(open_set, (0, start_x, start_y, []))
     visited: set[tuple[int, int]] = {(start_x, start_y)}
@@ -104,7 +136,7 @@ def find_path(
             nx, ny = x + dx, y + dy
             if (nx, ny) in visited:
                 continue
-            if not _is_walkable(grid, nx, ny):
+            if not _is_walkable(grid, nx, ny, goal=goal):
                 continue
             new_path = path + [direction]  # type: ignore[list-item]
             if nx == end_x and ny == end_y:
@@ -121,6 +153,7 @@ def _greedy_directions(
 ) -> list[Direction]:
     directions: list[Direction] = []
     cx, cy = x, y
+    goal = (tx, ty)
     for _ in range(20):
         if cx == tx and cy == ty:
             break
@@ -144,7 +177,7 @@ def _greedy_directions(
         for d in candidates:
             ndx, ndy = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}[d]
             nx, ny = cx + ndx, cy + ndy
-            if _is_walkable(grid, nx, ny):
+            if _is_walkable(grid, nx, ny, goal=goal):
                 directions.append(d)
                 cx, cy = nx, ny
                 moved = True

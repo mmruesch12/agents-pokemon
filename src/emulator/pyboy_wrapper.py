@@ -220,7 +220,7 @@ class PyBoyWrapper:
     def _owner_setup(self, rom_path: str, window: str) -> None:
         from pyboy import PyBoy
 
-        self._pyboy = PyBoy(rom_path, window=window, sound=False)
+        self._pyboy = PyBoy(rom_path, window=window)
         if window not in (None, "null"):
             try:
                 self._pyboy.set_emulation_speed(1)
@@ -231,8 +231,7 @@ class PyBoyWrapper:
     def _init_direct_pyboy(self, window: str) -> None:
         from pyboy import PyBoy
 
-        pyboy_args = {"window": window, "sound": False}
-        self._pyboy = PyBoy(str(self.rom_path), **pyboy_args)
+        self._pyboy = PyBoy(str(self.rom_path), window=window)
         if window not in (None, "null"):
             try:
                 self._pyboy.set_emulation_speed(1)

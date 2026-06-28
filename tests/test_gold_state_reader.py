@@ -6,13 +6,26 @@ from src.state.gold_state_reader import (
     ADDR_JOHTO_BADGES,
     ByteArrayReader,
     GoldStateReader,
+    MAP_KEY_NEW_BARK_TOWN,
+    MAP_KEY_PLAYERS_HOUSE_1F,
+    MAP_KEY_PLAYERS_HOUSE_2F,
 )
+
+
+def test_canonical_map_keys_match_pret():
+    """New Bark exterior is group 24 map 4 (not boot placeholder 0:0)."""
+    from src.state.gold_state_reader import MAP_KEY_UNINITIALIZED
+
+    assert MAP_KEY_NEW_BARK_TOWN == "24:4"
+    assert MAP_KEY_PLAYERS_HOUSE_1F == "24:6"
+    assert MAP_KEY_PLAYERS_HOUSE_2F == "24:7"
+    assert MAP_KEY_UNINITIALIZED == "0:0"
 
 
 def test_read_player_position(gold_reader: GoldStateReader):
     player = gold_reader.read_player()
-    assert player.map_group == 0
-    assert player.map_id == 0
+    assert player.map_group == 24
+    assert player.map_id == 4
     assert player.map_name == "New Bark Town"
     assert player.x == 8
     assert player.y == 12
@@ -64,5 +77,5 @@ def test_full_game_state(gold_reader: GoldStateReader):
     state = gold_reader.read()
     assert state.party_count == 1
     assert state.battle.in_battle is False
-    assert state.map_key == "0:0"
-    assert state.position_key == "0:0:8:12"
+    assert state.map_key == "24:4"
+    assert state.position_key == "24:4:8:12"

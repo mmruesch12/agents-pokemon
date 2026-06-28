@@ -55,6 +55,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
     result = runner.run(resume=args.resume)
     print(f"Run complete: {result['steps']} steps, milestones={result['milestones']}")
+    print(
+        f"Final: {result.get('final_map_name')} "
+        f"({result.get('final_map_key')}) at {result.get('final_position')}"
+    )
     return 0
 
 

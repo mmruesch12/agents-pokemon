@@ -95,10 +95,10 @@ def llm_plan(gs: GameState, state: AgentState) -> dict[str, Any] | None:
         return None
 
     prompt = (
-        f"Map: {gs.player.map_name} ({gs.player.x},{gs.player.y})\n"
+        f"Map: {gs.player.map_name} ({gs.map_key}) at ({gs.player.x},{gs.player.y})\n"
         f"Party: {gs.party_count}, Badges: {gs.total_badges}\n"
         f"Battle: {gs.battle.in_battle}\n"
-        f"Goal: progress from New Bark Town toward Route 29 / Violet City.\n"
+        f"Current map only — subgoals must be achievable on {gs.player.map_name} now.\n"
         "Reply with exactly 3 short subgoals, one per line, no numbering."
     )
     try:

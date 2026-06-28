@@ -5,9 +5,23 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from src.state.gold_state_reader import ADDR_MAP_GROUP, ADDR_MAP_NUMBER
+from src.state.gold_state_reader import (
+    ADDR_FACING,
+    ADDR_MAP_GROUP,
+    ADDR_MAP_NUMBER,
+    ADDR_SCRIPT_FLAGS,
+    ADDR_X_COORD,
+    ADDR_Y_COORD,
+    EVENT_INITIALIZED_EVENTS,
+    MAP_PLAYERS_HOUSE_2F,
+    MAPGROUP_NEW_BARK,
+    coords_playable,
+    has_event_flag,
+)
+from src.state.script_constants import SCRIPT_FLAG_SCRIPT_RUNNING
 from src.state.models import GameState
 
 if TYPE_CHECKING:
@@ -19,10 +33,10 @@ TITLE_WAIT_FRAMES = int(os.getenv("BOOT_TITLE_WAIT_FRAMES", "3000"))
 BOOTSTRAP_MAX_ACTIONS = int(os.getenv("BOOTSTRAP_MAX_ACTIONS", "700"))
 MIN_GRAPH_BOOTSTRAP_ACTIONS = int(os.getenv("MIN_GRAPH_BOOTSTRAP_ACTIONS", "15"))
 INDOOR_BOOTSTRAP_ACTIONS = int(os.getenv("INDOOR_BOOTSTRAP_ACTIONS", "80"))
-MOVEMENT_PROBE_ADDR = 0xC007
+INIT_EVENTS_WAIT_FRAMES = int(os.getenv("INIT_EVENTS_WAIT_FRAMES", "360"))
 MAP_GROUP_ADDR = ADDR_MAP_GROUP
 MAP_NUMBER_ADDR = ADDR_MAP_NUMBER
-PLAYERS_HOUSE_2F = (3, 4)
+PLAYERS_HOUSE_2F = (MAPGROUP_NEW_BARK, MAP_PLAYERS_HOUSE_2F)
 
 
 class MemoryReadable(Protocol):
@@ -56,27 +70,56 @@ def read_loaded_map(emu: PyBoyWrapper) -> tuple[int, int]:
     )
 
 
+def sync_player_map_from_wram(gs: GameState, emu: PyBoyWrapper) -> GameState:
+    """Patch game_state map fields from WRAM when the reader still shows 0:0."""
+    from src.state.gold_state_reader import MAP_KEY_UNINITIALIZED, MAP_NAMES
+
+    if not in_loaded_map(emu):
+        return gs
+    loaded = read_loaded_map(emu)
+    if loaded == (0, 0) or gs.map_key != MAP_KEY_UNINITIALIZED:
+        return gs
+    mg, mid = loaded
+    return gs.model_copy(
+        update={
+            "player": gs.player.model_copy(
+                update={
+                    "map_group": mg,
+                    "map_id": mid,
+                    "map_name": MAP_NAMES.get(loaded, f"Map {mg}:{mid}"),
+                }
+            )
+        }
+    )
+
+
+def read_player_coords(emu: PyBoyWrapper) -> tuple[int, int]:
+    return (
+        read_memory_byte(emu, ADDR_X_COORD),
+        read_memory_byte(emu, ADDR_Y_COORD),
+    )
+
+
 def in_loaded_map(emu: PyBoyWrapper) -> bool:
     """True once the game has left the title/menu and loaded a map."""
     return read_loaded_map(emu) != (0, 0)
 
 
 def movement_responsive(emu: PyBoyWrapper, *, probe_button: str = "down") -> bool:
-    """Return True when a direction press changes movement-related WRAM on a loaded map."""
+    """Return True when a direction press changes wXCoord/wYCoord on a loaded map."""
     if not in_loaded_map(emu):
         return False
+    x_before, y_before = read_player_coords(emu)
+    if not coords_playable(x_before, y_before):
+        return False
 
-    before = read_memory_byte(emu, MOVEMENT_PROBE_ADDR)
-    emu.press_button(probe_button, hold_frames=8)  # type: ignore[arg-type]
-    emu.tick(45)
-    after = read_memory_byte(emu, MOVEMENT_PROBE_ADDR)
-    if before != after:
-        return True
-
-    snap = {addr: read_memory_byte(emu, addr) for addr in range(0xC000, 0xC020)}
-    emu.press_button(probe_button, hold_frames=8)  # type: ignore[arg-type]
-    emu.tick(45)
-    return any(read_memory_byte(emu, addr) != snap[addr] for addr in snap)
+    for direction in (probe_button, "right", "left", "up", "down"):
+        emu.press_button(direction, hold_frames=12)  # type: ignore[arg-type]
+        emu.tick(45)
+        x_after, y_after = read_player_coords(emu)
+        if (x_before, y_before) != (x_after, y_after):
+            return True
+    return False
 
 
 def is_bootstrap_done(emu: PyBoyWrapper, gs: GameState, state: dict) -> bool:
@@ -89,10 +132,16 @@ def is_bootstrap_done(emu: PyBoyWrapper, gs: GameState, state: dict) -> bool:
     if not in_loaded_map(emu):
         return False
 
+    x, y = read_player_coords(emu)
+    if not coords_playable(x, y):
+        return False
+    if not state.get("movement_observed") and not movement_responsive(emu):
+        return False
+
     loaded_map = read_loaded_map(emu)
     if loaded_map == PLAYERS_HOUSE_2F and idx < INDOOR_BOOTSTRAP_ACTIONS:
         return False
-    if gs.party_count == 0 and loaded_map == (0, 0):
+    if gs.party_count == 0 and loaded_map == (MAPGROUP_NEW_BARK, 0):
         return False
     return True
 
@@ -120,9 +169,37 @@ def needs_bootstrap(
         return False
 
     if gs.player.x == 0 and gs.player.y == 0 and gs.party_count == 0:
-        return True
+        from src.state.gold_state_reader import MAP_KEY_UNINITIALIZED
+
+        if gs.map_key == MAP_KEY_UNINITIALIZED or not gs.player.map_name:
+            return True
 
     return state.get("phase") == "bootstrap"
+
+
+def map_script_active(emu: PyBoyWrapper) -> bool:
+    """True while pret's script engine is executing (wScriptFlags bit 2)."""
+    return bool(read_memory_byte(emu, ADDR_SCRIPT_FLAGS) & SCRIPT_FLAG_SCRIPT_RUNNING)
+
+
+def wait_for_init_events(emu: PyBoyWrapper, *, max_frames: int | None = None) -> bool:
+    """Let PlayersHouse2F map callbacks finish without pressing buttons."""
+    max_frames = INIT_EVENTS_WAIT_FRAMES if max_frames is None else max_frames
+    ticks = 0
+    while ticks < max_frames:
+        if has_event_flag(_EmuByteReader(emu), EVENT_INITIALIZED_EVENTS):
+            return True
+        emu.tick(30)
+        ticks += 30
+    return has_event_flag(_EmuByteReader(emu), EVENT_INITIALIZED_EVENTS)
+
+
+class _EmuByteReader:
+    def __init__(self, emu: PyBoyWrapper):
+        self._emu = emu
+
+    def read_byte(self, address: int) -> int:
+        return read_memory_byte(self._emu, address)
 
 
 def pick_bootstrap_button(
@@ -149,11 +226,17 @@ def pick_bootstrap_button(
     return "a"
 
 
+def _rom_has_battery_save(rom_path: str | Path) -> bool:
+    path = Path(rom_path)
+    return path.with_suffix(path.suffix + ".ram").exists()
+
+
 def run_bootstrap(
     emu: PyBoyWrapper,
     *,
     max_actions: int | None = None,
     title_wait_frames: int | None = None,
+    rom_path: str | Path | None = None,
 ) -> BootstrapResult:
     """Advance from cold boot through title and new-game setup."""
     max_actions = BOOTSTRAP_MAX_ACTIONS if max_actions is None else max_actions
@@ -163,9 +246,10 @@ def run_bootstrap(
     gs = emu.get_game_state()
     if not needs_bootstrap(gs, {"bootstrap_complete": False}):
         map_loaded = in_loaded_map(emu)
+        movement_ready = movement_responsive(emu) if map_loaded else False
         return BootstrapResult(
             success=map_loaded,
-            movement_ready=False,
+            movement_ready=movement_ready,
             map_loaded=map_loaded,
             actions_taken=0,
             frames_elapsed=emu.frame_count - start_frames,
@@ -181,39 +265,63 @@ def run_bootstrap(
 
     emu.press_button("start", hold_frames=12)
     emu.tick(120)
+    rom = rom_path or getattr(emu, "rom_path", None)
+    if rom is None:
+        rom = getattr(emu, "_rom_path", None)
+    if rom is not None and _rom_has_battery_save(rom):
+        emu.press_button("down", hold_frames=12)
+        emu.tick(120)
     emu.press_button("a", hold_frames=12)
     emu.tick(120)
 
     actions = 2
+    logged_map = False
     for i in range(max_actions):
-        if in_loaded_map(emu):
+        loaded_map = read_loaded_map(emu) if in_loaded_map(emu) else None
+        if loaded_map and not logged_map:
             logger.info(
                 "Bootstrap map loaded after %d actions (map=%s)",
                 actions,
-                read_loaded_map(emu),
+                loaded_map,
             )
-            return BootstrapResult(
-                success=True,
-                movement_ready=False,
-                map_loaded=True,
-                actions_taken=actions,
-                frames_elapsed=emu.frame_count - start_frames,
-            )
+            logged_map = True
+        if loaded_map == PLAYERS_HOUSE_2F and map_script_active(emu):
+            emu.tick(30)
+            actions += 1
+            continue
+        if in_loaded_map(emu):
+            x, y = read_player_coords(emu)
+            if coords_playable(x, y) and movement_responsive(emu):
+                logger.info(
+                    "Bootstrap movement ready after %d actions (pos=(%d,%d))",
+                    actions,
+                    x,
+                    y,
+                )
+                return BootstrapResult(
+                    success=True,
+                    movement_ready=True,
+                    map_loaded=True,
+                    actions_taken=actions,
+                    frames_elapsed=emu.frame_count - start_frames,
+                )
 
-        button = pick_bootstrap_button(i)
+        button = pick_bootstrap_button(i, loaded_map=loaded_map)
         emu.press_button(button, hold_frames=8)  # type: ignore[arg-type]
         emu.tick(30)
         actions += 1
 
     map_loaded = in_loaded_map(emu)
+    movement_ready = movement_responsive(emu) if map_loaded else False
     logger.warning(
-        "Bootstrap finished without loaded map (actions=%d, map_loaded=%s)",
+        "Bootstrap finished (actions=%d, map_loaded=%s, movement_ready=%s)",
         actions,
         map_loaded,
+        movement_ready,
     )
     return BootstrapResult(
-        success=map_loaded,
-        movement_ready=False,
+        success=map_loaded and movement_ready,
+        movement_ready=movement_ready,
         map_loaded=map_loaded,
         actions_taken=actions,
         frames_elapsed=emu.frame_count - start_frames,

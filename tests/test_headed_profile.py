@@ -71,18 +71,18 @@ class _FakePyBoy:
 class _MutatingRamPyBoy(_FakePyBoy):
     """PyBoy fake whose tick() mutates WRAM map bytes (exercises owner-thread reads)."""
 
-    MAP_GROUP = 0xD087
-    MAP_NUMBER = 0xD088
+    MAP_GROUP = 0xDA00
+    MAP_NUMBER = 0xDA01
 
     def tick(self) -> bool:
         self._tick_n += 1
         _FakePyBoy.tick_calls += 1
         mem = self.memory
         if self._tick_n >= 6:
-            mem[self.MAP_GROUP] = 3
-            mem[self.MAP_NUMBER] = 4
+            mem[self.MAP_GROUP] = 24
+            mem[self.MAP_NUMBER] = 7
         if self._tick_n == 4:
-            mem[0xD087] = 7
+            mem[self.MAP_GROUP] = 7
         return True
 
 
@@ -274,9 +274,9 @@ def test_read_byte_observes_ram_after_explicit_tick(fake_rom, mutating_pyboy):
     try:
         assert read_loaded_map(wrapper) == (0, 0)
         wrapper.tick(4)
-        assert wrapper.read_byte(0xD087) == 7
+        assert wrapper.read_byte(0xDA00) == 7
         wrapper.tick(2)
-        assert read_loaded_map(wrapper) == (3, 4)
+        assert read_loaded_map(wrapper) == (24, 7)
         read_memory_byte(wrapper, ADDR_MAP_GROUP)
         read_memory_byte(wrapper, ADDR_MAP_NUMBER)
     finally:
@@ -458,8 +458,8 @@ def test_seed_state_from_loaded_emulator_marks_bootstrap_complete(tmp_path):
     rom.write_bytes(b"\x00" * 32)
     emu = MutableRamEmulator(
         {
-            ADDR_MAP_GROUP: 3,
-            ADDR_MAP_NUMBER: 4,
+            ADDR_MAP_GROUP: 24,
+            ADDR_MAP_NUMBER: 7,
             0xD163: 1,
         }
     )
@@ -468,4 +468,4 @@ def test_seed_state_from_loaded_emulator_marks_bootstrap_complete(tmp_path):
     state = runner._seed_state_from_loaded_emulator(emu, "final_42")
     assert state["bootstrap_complete"] is True
     assert state["phase"] == "explore"
-    assert state["loaded_map_key"] == (3, 4)
+    assert state["loaded_map_key"] == (24, 7)

@@ -44,6 +44,7 @@ class AgentState(TypedDict, total=False):
     bootstrap_complete: bool
     bootstrap_action_index: int
     loaded_map_key: tuple[int, int]
+    house_exit_complete: bool
     error: str
 
 
@@ -77,12 +78,24 @@ def initial_agent_state(game_state: GameState | dict | None = None) -> AgentStat
         badges_at_last_check=0,
         bootstrap_complete=False,
         bootstrap_action_index=0,
+        house_exit_complete=False,
         error="",
     )
 
 
+_BOOTSTRAP_META_KEYS = ("movement_ready", "map_loaded", "bootstrap_actions")
+
+
 def update_game_state(state: AgentState, game_state: GameState) -> AgentState:
-    state["game_state"] = game_state.model_dump()
+    prev_meta = (state.get("game_state") or {}).get("raw_metadata") or {}
+    gs_dump = game_state.model_dump()
+    meta = dict(gs_dump.get("raw_metadata") or {})
+    if not state.get("bootstrap_complete"):
+        for key in _BOOTSTRAP_META_KEYS:
+            if prev_meta.get(key) is not None:
+                meta[key] = prev_meta[key]
+    gs_dump["raw_metadata"] = meta
+    state["game_state"] = gs_dump
     pos_key = game_state.position_key
     visited = list(state.get("visited_positions", []))
     if pos_key not in visited:

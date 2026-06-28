@@ -46,8 +46,8 @@ def _reset_emulator_binding():
 def new_bark_ram() -> dict[int, int]:
     """Synthetic RAM snapshot: player in New Bark Town with starter."""
     mem: dict[int, int] = {}
-    mem[ADDR_MAP_GROUP] = 0
-    mem[ADDR_MAP_NUMBER] = 0
+    mem[ADDR_MAP_GROUP] = 24
+    mem[ADDR_MAP_NUMBER] = 4
     mem[ADDR_X_COORD] = 8
     mem[ADDR_Y_COORD] = 12
     mem[ADDR_MONEY] = 0x00
@@ -72,8 +72,8 @@ def new_bark_ram() -> dict[int, int]:
 @pytest.fixture
 def battle_ram(new_bark_ram: dict[int, int]) -> dict[int, int]:
     mem = dict(new_bark_ram)
-    mem[ADDR_MAP_GROUP] = 1
-    mem[ADDR_MAP_NUMBER] = 1
+    mem[ADDR_MAP_GROUP] = 24
+    mem[ADDR_MAP_NUMBER] = 3
     mem[ADDR_BATTLE_MODE] = 1
     mem[ADDR_ENEMY_SPECIES] = 161  # Sentret
     mem[ADDR_ENEMY_HP] = 15

@@ -42,7 +42,7 @@ def test_full_graph_single_step_updates_position(new_bark_ram: dict):
     assert result["last_action"] == "navigate_right"
     assert result["game_state"]["player"]["x"] == 9
     assert result["stuck_count"] == 0
-    assert result["visited_positions"] == ["0:0:9:12"]
+    assert result["visited_positions"] == ["24:4:9:12"]
 
 
 def test_full_graph_milestone_on_map_transition(new_bark_ram: dict):
@@ -57,7 +57,8 @@ def test_full_graph_milestone_on_map_transition(new_bark_ram: dict):
         result = compiled.invoke(state, config={"configurable": {"thread_id": "milestone"}})
 
     assert "Reached Route 29" in result["milestones"]
-    assert result["game_state"]["player"]["map_group"] == 1
+    assert result["game_state"]["player"]["map_group"] == 24
+    assert result["game_state"]["player"]["map_id"] == 3
 
 
 def test_stuck_increments_on_failed_movement(new_bark_ram: dict):

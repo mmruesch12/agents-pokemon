@@ -15,7 +15,7 @@ from src.graph.state import initial_agent_state
 
 def test_progress_per_steps():
     state = initial_agent_state()
-    state["visited_positions"] = ["0:0:1:1", "0:0:2:2", "0:0:3:3"]
+    state["visited_positions"] = ["24:4:1:1", "24:4:2:2", "24:4:3:3"]
     state["metrics"] = {"steps": 10}
     assert progress_per_steps(state) == 0.3
 

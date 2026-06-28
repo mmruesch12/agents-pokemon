@@ -23,13 +23,19 @@ def test_format_intent_card_navigator_example_shape():
         "active_subgoal": "Exit New Bark Town east",
         "critic_verdict": "proceed",
         "game_state": {
-            "player": {"map_name": "New Bark Town", "x": 8, "y": 12},
+            "player": {
+                "map_group": 24,
+                "map_id": 4,
+                "map_name": "New Bark Town",
+                "x": 8,
+                "y": 12,
+            },
         },
     }
     card = format_intent_card(state)
     assert card == (
         "[step 42] navigator → navigate_right | "
-        "subgoal: Exit New Bark Town east | map: New Bark Town (8,12) | critic: proceed"
+        "subgoal: Exit New Bark Town east | map: 24:4 New Bark Town (8,12) | critic: proceed"
     )
 
 

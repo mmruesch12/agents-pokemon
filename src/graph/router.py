@@ -11,7 +11,9 @@ NODE_NAMES = (
     "bootstrap",
     "planner",
     "navigator",
+    "interactor",
     "battler",
+    "waiter",
     "critic",
     "memory",
     "apply_action",
@@ -35,7 +37,15 @@ def route_from_navigator(state: AgentState) -> str:
     return "apply_action"
 
 
+def route_from_interactor(state: AgentState) -> str:
+    return "apply_action"
+
+
 def route_from_battler(state: AgentState) -> str:
+    return "apply_action"
+
+
+def route_from_waiter(state: AgentState) -> str:
     return "apply_action"
 
 

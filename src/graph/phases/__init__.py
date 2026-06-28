@@ -1,0 +1,1 @@
+"""Early-game phase helpers (house exit, etc.)."""

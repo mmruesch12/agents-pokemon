@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from src.emulator.bootstrap import MOVEMENT_PROBE_ADDR
 from src.state.gold_state_reader import (
+    MAP_NEW_BARK_TOWN,
+    MAP_ROUTE_29,
+    MAPGROUP_NEW_BARK,
     ADDR_MAP_GROUP,
     ADDR_MAP_NUMBER,
     ADDR_X_COORD,
@@ -35,14 +37,13 @@ class MutableRamEmulator:
             y -= 1
         self._memory[ADDR_X_COORD] = max(0, x)
         self._memory[ADDR_Y_COORD] = max(0, y)
-        self._memory[MOVEMENT_PROBE_ADDR] = self._memory.get(MOVEMENT_PROBE_ADDR, 0) + 1
         if (
-            self._memory.get(ADDR_MAP_GROUP) == 0
-            and self._memory.get(ADDR_MAP_NUMBER) == 0
+            self._memory.get(ADDR_MAP_GROUP) == MAPGROUP_NEW_BARK
+            and self._memory.get(ADDR_MAP_NUMBER) == MAP_NEW_BARK_TOWN
             and self._memory[ADDR_X_COORD] >= self._route_29_at_x
         ):
-            self._memory[ADDR_MAP_GROUP] = 1
-            self._memory[ADDR_MAP_NUMBER] = 1
+            self._memory[ADDR_MAP_GROUP] = MAPGROUP_NEW_BARK
+            self._memory[ADDR_MAP_NUMBER] = MAP_ROUTE_29
             self._memory[ADDR_X_COORD] = 10
             self._memory[ADDR_Y_COORD] = 20
         self._frame_count += hold_frames + 1

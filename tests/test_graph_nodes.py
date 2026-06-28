@@ -103,9 +103,9 @@ def test_memory_increments_steps(gold_reader):
 
 
 def test_memory_milestone_route_29():
-    gs = GameState(player={"map_group": 1, "map_id": 1, "x": 10, "y": 20})
+    gs = GameState(player={"map_group": 24, "map_id": 3, "x": 10, "y": 20})
     state = _state_with_game(gs)
-    state["maps_visited"] = ["1:1"]
+    state["maps_visited"] = ["24:3"]
     result = memory_node(state)
     assert "Reached Route 29" in result["milestones"]
 
