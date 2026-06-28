@@ -9,7 +9,8 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from src.graph.state import AgentState
-from src.memory.landmarks import format_landmarks_for_prompt
+from src.memory.landmarks import format_landmarks_for_prompt, memory_data_dir
+from src.memory.long_term_memory import LongTermMemory
 from src.state.models import GameState
 
 logger = logging.getLogger(__name__)
@@ -89,23 +90,88 @@ def _llm_invoke_config():
         return None
 
 
+def describe_last_failed_action(state: AgentState) -> str:
+    """Last navigate action at the current tile (did not advance position)."""
+    gs = state.get("game_state", {})
+    player = gs.get("player", {})
+    current = f"{player.get('x')},{player.get('y')}"
+    for entry in reversed(state.get("short_term_history", [])):
+        if not entry.startswith("navigate:") or "@" not in entry:
+            continue
+        action_part, pos_part = entry.rsplit("@", 1)
+        if pos_part == current:
+            return action_part.replace("navigate:", "", 1)
+    return ""
+
+
+def format_short_term_context(state: AgentState) -> str:
+    """Terse short-term block for planner/navigator prompts."""
+    lines: list[str] = []
+    history = list(state.get("short_term_history", []))[-5:]
+    if history:
+        lines.append("Recent actions: " + "; ".join(history))
+    lines.append(f"Stuck count: {state.get('stuck_count', 0)}")
+    critic_verdict = state.get("critic_verdict", "")
+    critic_notes = state.get("critic_notes", "")
+    if critic_verdict or critic_notes:
+        lines.append(f"Critic: {critic_verdict} — {critic_notes}")
+    failed = describe_last_failed_action(state)
+    if failed:
+        lines.append(f"Last failed move: {failed}")
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def _is_replan_context(state: AgentState) -> bool:
+    return bool(
+        state.get("should_replan")
+        or state.get("critic_verdict") == "replan"
+        or state.get("stuck_count", 0) >= 3
+    )
+
+
+def format_episode_memory_for_prompt(
+    state: AgentState,
+    gs: GameState,
+    *,
+    memory: LongTermMemory | None = None,
+) -> str:
+    """Hydrated facts + keyword-matched summaries for replan / high-stuck prompts."""
+    if not _is_replan_context(state):
+        return ""
+    lines: list[str] = []
+    facts = list(state.get("long_term_facts", []))[:5]
+    if facts:
+        lines.append("Known facts: " + "; ".join(facts))
+    mem = memory
+    if mem is None:
+        try:
+            mem = LongTermMemory(data_dir=memory_data_dir())
+        except OSError:
+            mem = None
+    if mem is not None:
+        query = f"{gs.map_key} {gs.player.map_name} stuck"
+        retrieved = mem.retrieve_relevant(query, k=2)
+        if retrieved:
+            lines.append("Past episodes: " + "; ".join(retrieved))
+    return "\n".join(lines) + "\n" if lines else ""
+
+
 def llm_plan(gs: GameState, state: AgentState, landmarks: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
     """Ask Planner LLM for hierarchical subgoals."""
     llm = get_chat_model()
     if llm is None:
         return None
 
-    prompt = (
-        f"Map: {gs.player.map_name} ({gs.map_key}) at ({gs.player.x},{gs.player.y})\n"
-        f"Party: {gs.party_count}, Badges: {gs.total_badges}\n"
-        f"Battle: {gs.battle.in_battle}\n"
-    )
     landmark_text = format_landmarks_for_prompt(landmarks or [])
     prompt = (
         f"Map: {gs.player.map_name} ({gs.map_key}) at ({gs.player.x},{gs.player.y})\n"
         f"Party: {gs.party_count}, Badges: {gs.total_badges}\n"
         f"Battle: {gs.battle.in_battle}\n"
     )
+    prompt += format_short_term_context(state)
+    episode_text = format_episode_memory_for_prompt(state, gs)
+    if episode_text:
+        prompt += episode_text
     if landmark_text:
         prompt += f"{landmark_text}\n"
     prompt += (
@@ -141,6 +207,10 @@ def llm_navigate(gs: GameState, state: AgentState, candidates: list[str], landma
         f"Party: {gs.party_count} | In dialog: {gs.in_text_box}\n"
         f"Visited count: {len(state.get('visited_positions', []))}\n"
     )
+    prompt += format_short_term_context(state)
+    episode_text = format_episode_memory_for_prompt(state, gs)
+    if episode_text:
+        prompt += episode_text
     if landmark_text:
         prompt += f"{landmark_text}\n"
     elif target:

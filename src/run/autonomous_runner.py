@@ -332,6 +332,8 @@ class AutonomousRunner:
                         )
                         emu.save_state(f"stuck_{steps}")
                         state["should_replan"] = True
+                        gs = GameState.model_validate(state.get("game_state", {}))
+                        self.memory.capture_stuck_episode(state, gs)
 
                     if steps > 0 and steps % 100 == 0:
                         scores = evaluate_run(state)

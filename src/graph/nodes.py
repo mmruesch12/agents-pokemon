@@ -38,7 +38,6 @@ from src.state.gold_state_reader import (
     MAP_KEY_PLAYERS_HOUSE_1F,
     MAP_KEY_PLAYERS_HOUSE_2F,
     MAP_KEY_ROUTE_29,
-    MAP_KEY_ROUTE_30,
     PLAYERS_HOUSE_1F_DOOR,
 )
 from src.state.models import GameState
@@ -53,8 +52,17 @@ from src.state.script_constants import (
 logger = logging.getLogger(__name__)
 
 STUCK_THRESHOLD = int(os.getenv("STUCK_THRESHOLD", "10"))
+STUCK_ARBITRATION_THRESHOLD = 3
 INTERACT_HOLD_FRAMES = int(os.getenv("INTERACT_HOLD_FRAMES", "30"))
 SCRIPT_WAIT_TICKS = int(os.getenv("SCRIPT_WAIT_TICKS", "45"))
+
+_DIRECTION_DELTA = {
+    "up": (0, -1),
+    "down": (0, 1),
+    "left": (-1, 0),
+    "right": (1, 0),
+}
+_OPPOSITE_DIRECTIONS = frozenset({("left", "right"), ("right", "left"), ("up", "down"), ("down", "up")})
 
 _LANDMARK_GATED_INTERIOR_TARGETS = frozenset(
     {starter_quest.STARTER_BALL_TILE, starter_quest.ELM_DESK_TILE}
@@ -64,6 +72,80 @@ _LAB_DOOR_TILES = frozenset({starter_quest.NEW_BARK_LAB_WARP, (5, 3)})
 
 def _long_term_memory() -> LongTermMemory:
     return LongTermMemory(data_dir=memory_data_dir())
+
+
+def score_visit_aware_candidate(
+    direction: str,
+    gs: GameState,
+    state: AgentState,
+) -> float:
+    """Prefer unvisited adjacent tiles; penalize immediate backtrack oscillation."""
+    if direction == "a":
+        return 0.0
+    dx, dy = _DIRECTION_DELTA.get(direction, (0, 0))
+    nx, ny = gs.player.x + dx, gs.player.y + dy
+    pos_key = f"{gs.map_key}:{nx}:{ny}"
+    visited = set(state.get("visited_positions", []))
+    score = 2.0 if pos_key not in visited else -1.0
+    nav_history = [
+        entry.split(":")[1].split("@")[0]
+        for entry in state.get("short_term_history", [])
+        if entry.startswith("navigate:")
+    ]
+    if len(nav_history) >= 2:
+        last_dir = nav_history[-1]
+        prev_dir = nav_history[-2]
+        if (prev_dir, direction) in _OPPOSITE_DIRECTIONS or (last_dir, direction) in _OPPOSITE_DIRECTIONS:
+            score -= 1.5
+    return score
+
+
+def reorder_candidates_visit_aware(
+    gs: GameState,
+    candidates: list[str],
+    state: AgentState,
+) -> list[str]:
+    """Stable reorder: higher visit-aware score first."""
+    ranked = sorted(
+        candidates,
+        key=lambda direction: score_visit_aware_candidate(direction, gs, state),
+        reverse=True,
+    )
+    return list(dict.fromkeys(ranked))
+
+
+def select_navigation_action(
+    *,
+    door_exit: str | None,
+    path: list[str],
+    llm_choice: str | None,
+    candidates: list[str],
+    stuck_count: int,
+    gs: GameState,
+    target: tuple[int, int],
+) -> str:
+    """Pick direction: door priority, stuck override, path, LLM, fallback."""
+    if door_exit:
+        return door_exit
+    stuck_override = (
+        stuck_count >= STUCK_ARBITRATION_THRESHOLD
+        and llm_choice
+        and llm_choice in candidates
+    )
+    if stuck_override:
+        return llm_choice
+    if path:
+        return path[0]
+    if llm_choice and llm_choice in candidates:
+        return llm_choice
+    return direction_toward(gs.player.x, gs.player.y, target[0], target[1])
+
+
+def _capture_stuck_episode(state: AgentState, gs: GameState) -> None:
+    try:
+        _long_term_memory().capture_stuck_episode(state, gs)
+    except OSError as exc:
+        logger.warning("Could not capture stuck episode: %s", exc)
 
 
 def _attach_landmark_context(state: AgentState, gs: GameState) -> list[dict[str, Any]]:
@@ -381,17 +463,23 @@ def navigator_node(state: AgentState) -> AgentState:
     target = _navigation_target(gs, map_key=map_key, state=state)
     path = find_path(gs.player.x, gs.player.y, target[0], target[1], map_key=map_key)
     candidates = _navigation_candidates(gs, target, path, state)
+    candidates = reorder_candidates_visit_aware(gs, candidates, state)
 
     door_exit = _players_house_door_exit(gs, state)
     llm_choice = llm_navigate(gs, state, candidates, relevant_landmarks, target=target)
-    if door_exit:
-        action = door_exit
-    elif path:
-        action = path[0]
-    elif llm_choice and llm_choice in candidates:
-        action = llm_choice
-    else:
-        action = direction_toward(gs.player.x, gs.player.y, target[0], target[1])
+    stuck_count = state.get("stuck_count", 0)
+    if stuck_count >= STUCK_ARBITRATION_THRESHOLD and candidates:
+        if llm_choice not in candidates:
+            llm_choice = candidates[0]
+    action = select_navigation_action(
+        door_exit=door_exit,
+        path=path,
+        llm_choice=llm_choice,
+        candidates=candidates,
+        stuck_count=stuck_count,
+        gs=gs,
+        target=target,
+    )
 
     history = list(state.get("short_term_history", []))
     history.append(f"navigate:{action}@{gs.player.x},{gs.player.y}")
@@ -496,6 +584,7 @@ def battler_node(state: AgentState) -> AgentState:
 
 def critic_node(state: AgentState) -> AgentState:
     """Post-action review: loop detection and risk veto. Always routes through memory."""
+    gs = GameState.model_validate(state.get("game_state", {}))
     history = state.get("short_term_history", [])
     stuck = state.get("stuck_count", 0)
 
@@ -507,6 +596,7 @@ def critic_node(state: AgentState) -> AgentState:
         state["critic_notes"] = "Detected loop or high stuck count"
         state["should_replan"] = True
         state["replan_count"] = state.get("replan_count", 0) + 1
+        _capture_stuck_episode(state, gs)
     elif state.get("last_action", "").startswith("battle_run"):
         state["critic_verdict"] = "caution"
         state["critic_notes"] = "Retreated from battle"
