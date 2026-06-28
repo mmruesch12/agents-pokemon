@@ -159,3 +159,4 @@ System deps (Ubuntu): `libsdl2-dev`, `build-essential`, `python3-dev`
 - **Headed/watch profile:** `MemorySaver` (in-proc) instead of sqlite; `_resolve_thread_id("latest")` peeks sqlite only when **not** headed; LangSmith off unless `--langsmith` (see `docs/future-headed-optimizations.md`)
 - `--start-bedroom` is incompatible with `--resume` (fresh bedroom state each run)
 - Dashboard needs `cd dashboard && npm run build` before `poke-agent dashboard` serves the React UI
+- If untracked WIP `.py` files appear under `src/` or `tests/` after local runs, they are **not shipped** — run `git checkout HEAD -- src/ tests/` and delete orphans before committing
