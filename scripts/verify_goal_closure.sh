@@ -9,12 +9,31 @@ cd "$ROOT"
 mkdir -p "$SCRATCH"
 rm -f "$SCRATCH"/*.log
 
-echo "== git status =="
-if git status --porcelain | tee "$SCRATCH/final_status.log" | grep -q .; then
+echo "== initial git status =="
+git status --porcelain | tee "$SCRATCH/initial_status.log"
+
+echo "== git status (must be clean) =="
+git status --porcelain | tee "$SCRATCH/final_status.log"
+if [ -s "$SCRATCH/final_status.log" ]; then
   echo "FAIL: working tree not clean (see $SCRATCH/final_status.log)" >&2
   exit 1
 fi
-echo "(clean working tree)" >"$SCRATCH/final_status.log"
+echo "(clean working tree)" >>"$SCRATCH/final_status.log"
+git status -sb >>"$SCRATCH/final_status.log"
+
+echo "== stray scaffold check =="
+if [ -d langsmith-app ]; then
+  if git check-ignore -q langsmith-app/ 2>/dev/null; then
+    echo "WARN: langsmith-app/ exists locally but is gitignored (remove locally)" | tee "$SCRATCH/stray_scaffold.log"
+    echo "FAIL: remove local langsmith-app/ scaffold before closure" >&2
+    exit 1
+  else
+    echo "FAIL: langsmith-app/ exists and is not gitignored" >&2
+    exit 1
+  fi
+else
+  echo "OK: no langsmith-app/ directory" | tee "$SCRATCH/stray_scaffold.log"
+fi
 
 echo "== pytest x2 =="
 uv run pytest tests/ -q --tb=line 2>&1 | tee "$SCRATCH/pytest_pass_1.log"
@@ -48,12 +67,23 @@ done
 echo "== ruff =="
 uv run ruff check src tests 2>&1 | tee "$SCRATCH/ruff.log"
 
-echo "== staged secret scan (dry-run) =="
-git diff --cached | head -100 | tee "$SCRATCH/staged_scan.log" || true
+echo "== staged secret scan =="
+if git diff --cached --stat | grep -q .; then
+  git diff --cached | head -200 | tee "$SCRATCH/staged_scan.log"
+else
+  echo "(no staged changes — working tree clean)" | tee "$SCRATCH/staged_scan.log"
+fi
 if git diff --cached | grep -qiE 'xai-|sk-|lsv2_pt_|gho_|Bearer '; then
   echo "FAIL: possible secrets in staged diff" >&2
   exit 1
 fi
 
-git log -3 --oneline | tee "$SCRATCH/commits.log"
+echo "== recent commit secret scan =="
+git log -7 -p --no-color 2>&1 | head -500 | tee "$SCRATCH/recent_commit_scan.log"
+if git log -7 -p --no-color | grep -qiE 'xai-|sk-|lsv2_pt_|gho_|Bearer '; then
+  echo "FAIL: possible secrets in recent commits" >&2
+  exit 1
+fi
+
+git log -5 --oneline | tee "$SCRATCH/commits.log"
 echo "OK: goal closure checks passed ($(date -u +%Y-%m-%dT%H:%M:%SZ))" | tee "$SCRATCH/closure_ok.log"
