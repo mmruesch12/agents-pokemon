@@ -21,9 +21,11 @@ def main() -> int:
     print(f"ROM path: {rom} ({'found' if rom.exists() else 'MISSING'})")
 
     xai = bool(os.getenv("XAI_API_KEY", "").strip())
+    openrouter = bool(os.getenv("OPENROUTER_API_KEY", "").strip())
     openai = bool(os.getenv("OPENAI_API_KEY", "").strip())
     langsmith = bool(os.getenv("LANGSMITH_API_KEY", "").strip())
     print(f"XAI_API_KEY: {'set' if xai else 'missing'}")
+    print(f"OPENROUTER_API_KEY: {'set' if openrouter else 'missing'}")
     print(f"OPENAI_API_KEY: {'set' if openai else 'missing'}")
     print(f"LANGSMITH_API_KEY: {'set' if langsmith else 'missing'}")
 
@@ -35,8 +37,12 @@ def main() -> int:
     else:
         from langchain_core.messages import HumanMessage
 
-        resp = llm.invoke([HumanMessage(content="Reply with one word: ok")])
-        print(f"LLM: {llm.model_name} — ping: {resp.content.strip()[:40]}")
+        try:
+            resp = llm.invoke([HumanMessage(content="Reply with one word: ok")])
+            ping = resp.content.strip()[:40]
+        except Exception as exc:
+            ping = f"configured (ping failed: {type(exc).__name__})"
+        print(f"LLM: {llm.model_name} — ping: {ping}")
 
     default_pyboy_rom = None
     cache_root = Path.home() / ".cache" / "uv"

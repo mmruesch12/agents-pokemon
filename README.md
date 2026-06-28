@@ -29,16 +29,31 @@ uv run python -m src.run.verify_setup
 uv run python -m src.run.cli --steps 500                 # short / dev run
 uv run python -m src.run.autonomous_runner --max-steps 5000 --resume latest
 
-# Watch the agent play (headed/visible PyBoy SDL2 window)
-uv run python -m src.run.cli --headed --steps 500
-uv run python -m src.run.autonomous_runner --headed --max-steps 10000 --resume latest
+# Watch the agent play — simplest command (visible SDL2 window)
+uv run poke-watch                 # defaults: headed + resume latest + ~300 steps
+uv run poke-watch --steps 150     # watch a bit more
 
-# Or using the installed entry points (work after `uv sync`)
-uv run poke-agent --headed --steps 500
-uv run poke-runner --headed --resume latest --max-steps 10000
+# Other ways (also support --headed)
+uv run poke-agent --headed --steps 200
+uv run python -m src.run.cli --headed --steps 200
 ```
 
 Using --headed enables a visible emulator window (headless by default; use --headed to watch the agent play). The poke-* entry points work out of the box after `uv sync`.
+
+**Simplest way to watch:** `uv run poke-watch` (after `uv sync`). The SDL2 window will appear on your desktop.
+
+**Note on boot/intro:** Even the title screen + naming/clock dialogs are not instant. A cold boot does an upfront frame wait (fast-forwarded in code) followed by ~dozens of individual button presses. Each press during the graph phase of bootstrap goes through the full supervisor/bootstrap/apply/critic/memory cycle + checkpoint. This creates pauses between inputs even though no LLM is involved.
+
+### Why does the game feel "laggy" or slow when watching?
+The agent is an LLM-driven multi-agent system (supervisor → planner/navigator → apply action → critic → memory).  
+Every movement decision typically requires 1+ remote LLM calls (via xAI Grok, OpenRouter or OpenAI). Even fast models introduce multi-second pauses between visible actions while the agent "thinks".
+
+During actual button presses the emulator runs at normal speed (especially nice in headed mode). The pauses are expected agent behavior, not a bug. For faster experimentation you can:
+- Use a faster model via env `XAI_MODEL=...`
+- Run headless for long training sessions
+- Use small `--steps` values when watching
+
+Press Ctrl-C in the terminal (or close the window) to stop.
 
 Other commands:
 ```bash
@@ -63,7 +78,7 @@ cp /path/to/pokemon_gold.gb roms/pokemon_gold.gb
 
 # Environment
 cp .env.example .env
-# Edit .env: XAI_API_KEY or OPENAI_API_KEY, LANGSMITH_API_KEY, ROM_PATH
+# Edit .env: XAI_API_KEY or OPENROUTER_API_KEY or OPENAI_API_KEY, LANGSMITH_API_KEY, ROM_PATH
 ```
 
 ## Architecture

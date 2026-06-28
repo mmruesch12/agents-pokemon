@@ -29,11 +29,11 @@ def _match_token(choice: str, candidates: tuple[str, ...] | list[str]) -> str | 
 
 
 def get_chat_model():
-    """Return ChatOpenAI-compatible model (xAI Grok or OpenAI) when configured."""
+    """Return ChatOpenAI-compatible model (xAI Grok, OpenRouter or OpenAI) when configured."""
     xai_key = os.getenv("XAI_API_KEY", "").strip()
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
-    api_key = xai_key or openai_key
-    if not api_key:
+    if not (xai_key or openrouter_key or openai_key):
         return None
     try:
         from langchain_openai import ChatOpenAI
@@ -45,6 +45,14 @@ def get_chat_model():
                 model=model,
                 api_key=xai_key,
                 base_url=base_url,
+                temperature=0,
+            )
+        if openrouter_key:
+            model = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+            return ChatOpenAI(
+                model=model,
+                api_key=openrouter_key,
+                base_url="https://openrouter.ai/api/v1",
                 temperature=0,
             )
         model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")

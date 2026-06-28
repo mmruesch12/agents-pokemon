@@ -20,6 +20,7 @@ def test_match_token_exact_not_substring():
 def test_get_chat_model_without_api_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("XAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     assert get_chat_model() is None
 
 
@@ -32,9 +33,30 @@ def test_get_chat_model_prefers_xai(monkeypatch):
     assert model.model_name == "grok-4-1-fast-reasoning"
 
 
+def test_get_chat_model_prefers_openrouter(monkeypatch):
+    """OpenRouter selection via OPENROUTER_API_KEY + OPENROUTER_MODEL; xai still wins if both present."""
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test-xxx")
+    monkeypatch.setenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash")
+    model = get_chat_model()
+    assert model is not None
+    assert model.model_name == "deepseek/deepseek-v4-flash"
+    base = getattr(model, "openai_api_base", "")
+    assert "openrouter" in str(base).lower()
+
+    # xai precedence: even with openrouter set, xai wins
+    monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
+    monkeypatch.setenv("XAI_MODEL", "grok-xai-wins")
+    model2 = get_chat_model()
+    assert model2 is not None
+    assert model2.model_name == "grok-xai-wins"
+
+
 def test_llm_plan_heuristic_fallback(new_bark_ram: dict, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("XAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     gs = GoldStateReader(ByteArrayReader(new_bark_ram)).read()
     state = initial_agent_state(gs)
     result = llm_plan(gs, state)
@@ -44,6 +66,7 @@ def test_llm_plan_heuristic_fallback(new_bark_ram: dict, monkeypatch):
 def test_llm_battle_heuristic_fallback(battle_ram: dict, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("XAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     gs = GoldStateReader(ByteArrayReader(battle_ram)).read()
     result = llm_battle(gs)
     assert result is None
