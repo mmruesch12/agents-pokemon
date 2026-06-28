@@ -34,6 +34,7 @@ def test_get_chat_model_prefers_xai(monkeypatch):
 
 def test_llm_plan_heuristic_fallback(new_bark_ram: dict, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
     gs = GoldStateReader(ByteArrayReader(new_bark_ram)).read()
     state = initial_agent_state(gs)
     result = llm_plan(gs, state)
@@ -42,6 +43,7 @@ def test_llm_plan_heuristic_fallback(new_bark_ram: dict, monkeypatch):
 
 def test_llm_battle_heuristic_fallback(battle_ram: dict, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
     gs = GoldStateReader(ByteArrayReader(battle_ram)).read()
     result = llm_battle(gs)
     assert result is None

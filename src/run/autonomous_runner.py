@@ -21,6 +21,45 @@ from src.memory.long_term_memory import LongTermMemory
 logger = logging.getLogger(__name__)
 
 
+def _specialist_label(state: AgentState) -> str:
+    """Infer which specialist produced last_action (not stored explicitly post-invoke)."""
+    last_action = state.get("last_action", "")
+    if last_action.startswith("bootstrap_") or state.get("phase") == "bootstrap":
+        return "bootstrap"
+    if last_action.startswith("navigate_"):
+        return "navigator"
+    if last_action.startswith("battle_"):
+        return "battler"
+    if state.get("phase") == "plan" or state.get("should_replan"):
+        return "planner"
+    return "supervisor"
+
+
+def _subgoal_label(state: AgentState) -> str:
+    if state.get("phase") == "bootstrap" or state.get("last_action", "").startswith("bootstrap_"):
+        return "intro sequence"
+    return state.get("active_subgoal", "") or "explore"
+
+
+def format_intent_card(state: AgentState) -> str:
+    """One-line HUD card from AgentState fields (post graph.invoke)."""
+    steps = state.get("metrics", {}).get("steps", 0)
+    specialist = _specialist_label(state)
+    last_action = state.get("last_action", "") or "none"
+    subgoal = _subgoal_label(state)
+    critic = state.get("critic_verdict", "proceed")
+
+    player = state.get("game_state", {}).get("player", {})
+    map_name = player.get("map_name", "unknown")
+    x = player.get("x", "?")
+    y = player.get("y", "?")
+
+    return (
+        f"[step {steps}] {specialist} → {last_action} | "
+        f"subgoal: {subgoal} | map: {map_name} ({x},{y}) | critic: {critic}"
+    )
+
+
 class AutonomousRunner:
     """Long-running autonomous agent harness."""
 
@@ -136,6 +175,7 @@ class AutonomousRunner:
                 state["run_max_steps"] = current + 1
                 state = graph.invoke(state, config=config)
                 steps = state.get("metrics", {}).get("steps", 0)
+                logger.info("%s", format_intent_card(state))
 
                 for m in state.get("milestones", []):
                     if m not in milestones:
