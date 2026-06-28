@@ -35,7 +35,8 @@ def test_format_intent_card_navigator_example_shape():
     card = format_intent_card(state)
     assert card == (
         "[step 42] navigator → navigate_right | "
-        "subgoal: Exit New Bark Town east | map: 24:4 New Bark Town (8,12) | critic: proceed"
+        "subgoal: Exit New Bark Town east | map: 24:4 New Bark Town (8,12) | critic: proceed | "
+        "stuck: 0 | facts: 0 | replan: False"
     )
 
 

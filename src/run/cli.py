@@ -16,7 +16,6 @@ from src.run._langsmith import (
     format_trace_run,
     run_langsmith_cli,
     trace_project_name,
-    trace_ui_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -85,7 +84,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     Serves the built UI (dashboard/dist) + /api/state populated from demo or live snapshots.
     Use after `cd dashboard && npm run build` (or let first run instruct).
     """
-    from src.run.dashboard_server import create_app, get_current_snapshot
+    from src.run.dashboard_server import get_current_snapshot
 
     host = getattr(args, "host", "127.0.0.1")
     port = int(getattr(args, "port", 8765))

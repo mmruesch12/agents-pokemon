@@ -233,8 +233,6 @@ def test_seed_bedroom_agent_state_skips_graph_bootstrap():
 
 
 def test_prepare_bedroom_start_loads_cached_state(tmp_path):
-    emu = ProbeEmulator(_bedroom_memory())
-
     class _SaveEmu(ProbeEmulator):
         def load_state(self, name: str) -> None:
             assert name == "bedroom_start"

@@ -114,6 +114,18 @@ def reorder_candidates_visit_aware(
     return list(dict.fromkeys(ranked))
 
 
+def visit_aware_path_step(
+    path: list[str],
+    gs: GameState,
+    state: AgentState,
+) -> str | None:
+    """Best visit-aware step from an A* path prefix (M4 normal-path bias)."""
+    if not path:
+        return None
+    ranked = reorder_candidates_visit_aware(gs, path[:3], state)
+    return ranked[0] if ranked else path[0]
+
+
 def select_navigation_action(
     *,
     door_exit: str | None,
@@ -122,9 +134,10 @@ def select_navigation_action(
     candidates: list[str],
     stuck_count: int,
     gs: GameState,
+    state: AgentState,
     target: tuple[int, int],
 ) -> str:
-    """Pick direction: door priority, stuck override, path, LLM, fallback."""
+    """Pick direction: door priority, stuck override, visit-aware path, LLM, fallback."""
     if door_exit:
         return door_exit
     stuck_override = (
@@ -135,7 +148,7 @@ def select_navigation_action(
     if stuck_override:
         return llm_choice
     if path:
-        return path[0]
+        return visit_aware_path_step(path, gs, state) or path[0]
     if llm_choice and llm_choice in candidates:
         return llm_choice
     return direction_toward(gs.player.x, gs.player.y, target[0], target[1])
@@ -478,6 +491,7 @@ def navigator_node(state: AgentState) -> AgentState:
         candidates=candidates,
         stuck_count=stuck_count,
         gs=gs,
+        state=state,
         target=target,
     )
 

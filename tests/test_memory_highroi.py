@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from src.graph.llm import (
     describe_last_failed_action,
@@ -17,6 +18,7 @@ from src.graph.nodes import (
     reorder_candidates_visit_aware,
     score_visit_aware_candidate,
     select_navigation_action,
+    visit_aware_path_step,
 )
 from src.graph.state import initial_agent_state
 from src.memory.long_term_memory import LongTermMemory
@@ -55,6 +57,7 @@ def test_format_short_term_context_includes_history_critic_stuck():
 
 def test_select_navigation_action_prefers_llm_when_stuck():
     gs = GameState(player={"x": 8, "y": 12})
+    state = initial_agent_state(gs)
     low = select_navigation_action(
         door_exit=None,
         path=["right"],
@@ -62,6 +65,7 @@ def test_select_navigation_action_prefers_llm_when_stuck():
         candidates=["right", "up"],
         stuck_count=5,
         gs=gs,
+        state=state,
         target=(10, 12),
     )
     high = select_navigation_action(
@@ -71,14 +75,41 @@ def test_select_navigation_action_prefers_llm_when_stuck():
         candidates=["right", "up"],
         stuck_count=1,
         gs=gs,
+        state=state,
         target=(10, 12),
     )
     assert low == "up"
     assert high == "right"
 
 
+def test_select_navigation_action_visit_aware_path_when_not_stuck():
+    gs = GameState(player={"map_group": 24, "map_id": 4, "x": 8, "y": 12})
+    state = initial_agent_state(gs)
+    state["visited_positions"] = [f"{gs.map_key}:9:12"]
+    action = select_navigation_action(
+        door_exit=None,
+        path=["right", "left"],
+        llm_choice=None,
+        candidates=["right", "left"],
+        stuck_count=0,
+        gs=gs,
+        state=state,
+        target=(10, 12),
+    )
+    assert action == "left"
+
+
+def test_visit_aware_path_step_prefers_unvisited_over_path_zero():
+    gs = GameState(player={"map_group": 24, "map_id": 4, "x": 8, "y": 12})
+    state = initial_agent_state(gs)
+    state["visited_positions"] = [f"{gs.map_key}:9:12"]
+    step = visit_aware_path_step(["right", "left"], gs, state)
+    assert step == "left"
+
+
 def test_select_navigation_action_preserves_door_exit_priority():
     gs = GameState(player={"x": 8, "y": 12})
+    state = initial_agent_state(gs)
     action = select_navigation_action(
         door_exit="down",
         path=["right"],
@@ -86,6 +117,7 @@ def test_select_navigation_action_preserves_door_exit_priority():
         candidates=["right", "up", "down"],
         stuck_count=10,
         gs=gs,
+        state=state,
         target=(10, 12),
     )
     assert action == "down"
@@ -108,19 +140,41 @@ def test_reorder_candidates_visit_aware_puts_unvisited_first():
     assert ordered[0] == "left"
 
 
-def test_capture_stuck_episode_records_fact_and_summary():
+def test_capture_stuck_episode_uses_summarize_history_and_retrieve_guarded():
     gs = GameState(player={"map_group": 24, "map_id": 4, "x": 8, "y": 12})
     state = _stuck_state(gs)
     with tempfile.TemporaryDirectory() as tmp:
         mem = LongTermMemory(data_dir=Path(tmp))
-        fact = mem.capture_stuck_episode(state, gs)
+        with patch.object(mem, "summarize_history", wraps=mem.summarize_history) as summarize:
+            fact = mem.capture_stuck_episode(state, gs)
+            summarize.assert_called_once()
         assert fact.startswith("stuck@24:4:")
         assert fact in state["long_term_facts"]
         assert fact in mem.get_facts()
-        assert len(mem.retrieve_relevant("24:4 stuck")) >= 1
+        assert len(mem.retrieve("24:4 stuck", allow_fallback=False)) >= 1
+        assert mem.retrieve("unrelated query xyz", allow_fallback=False) == []
 
 
-def test_format_episode_memory_includes_facts_and_guarded_retrieve():
+def test_hydrate_state_loads_facts_into_episode_prompt():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 4, "x": 8, "y": 12, "map_name": "New Bark Town"},
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        mem = LongTermMemory(data_dir=Path(tmp))
+        mem.add_fact("stuck@24:4:right-left:3")
+        mem.add_summary("24:4 stuck loop near lab")
+        state = initial_agent_state(gs)
+        state["stuck_count"] = 5
+        state["should_replan"] = True
+        hydrated = mem.hydrate_state(state)
+        assert "stuck@24:4:right-left:3" in hydrated["long_term_facts"]
+        text = format_episode_memory_for_prompt(hydrated, gs, memory=mem)
+        assert "Known facts:" in text
+        assert "stuck@24:4:right-left:3" in text
+        assert "Past episodes:" in text
+
+
+def test_format_episode_memory_uses_guarded_retrieve_not_fallback():
     gs = GameState(player={"map_group": 24, "map_id": 4, "x": 8, "y": 12, "map_name": "New Bark Town"})
     state = _stuck_state(gs)
     with tempfile.TemporaryDirectory() as tmp:

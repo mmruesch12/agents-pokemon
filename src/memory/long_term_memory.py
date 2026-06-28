@@ -67,7 +67,7 @@ class LongTermMemory:
     def retrieve_landmarks(self, query: str, *, k: int = 3) -> list[dict[str, Any]]:
         return retrieve_landmarks_from_state(self._landmarks, query, k=k)
 
-    def retrieve(self, query: str, *, k: int = 3) -> list[str]:
+    def retrieve(self, query: str, *, k: int = 3, allow_fallback: bool = True) -> list[str]:
         query_lower = query.lower()
         scored = []
         for entry in self._summaries:
@@ -77,21 +77,9 @@ class LongTermMemory:
                 scored.append((score, text))
         scored.sort(key=lambda x: -x[0])
         results = [t for _, t in scored[:k]]
-        if not results:
+        if not results and allow_fallback:
             results = [s["text"] for s in self._summaries[-k:]]
         return results
-
-    def retrieve_relevant(self, query: str, *, k: int = 3) -> list[str]:
-        """Keyword-scored summaries only — no arbitrary last-k fallback."""
-        query_lower = query.lower()
-        scored = []
-        for entry in self._summaries:
-            text = entry["text"]
-            score = sum(1 for word in query_lower.split() if word in text.lower())
-            if score > 0:
-                scored.append((score, text))
-        scored.sort(key=lambda x: -x[0])
-        return [t for _, t in scored[:k]]
 
     def summarize_history(self, history: list[str], *, max_items: int = 5) -> str:
         recent = history[-max_items:]
@@ -113,9 +101,11 @@ class LongTermMemory:
         """Summarize recent history and record a structured stuck fact."""
         history = list(state.get("short_term_history", []))
         map_key = getattr(gs, "map_key", "") or ""
-        recent = history[-5:]
-        summary = f"{map_key}: " + ("; ".join(recent) if recent else "No recent history")
-        self.add_summary(summary, metadata={"type": "stuck_episode", "map_key": map_key})
+        summary = self.summarize_history(history)
+        if self._summaries:
+            self._summaries[-1]["text"] = f"{map_key}: {summary}"
+            self._summaries[-1]["metadata"] = {"type": "stuck_episode", "map_key": map_key}
+            self._save()
         pattern = self.recent_nav_pattern(history)
         stuck_count = int(state.get("stuck_count", 0))
         fact = self.format_stuck_fact(map_key, pattern, stuck_count)

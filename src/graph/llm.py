@@ -150,7 +150,7 @@ def format_episode_memory_for_prompt(
             mem = None
     if mem is not None:
         query = f"{gs.map_key} {gs.player.map_name} stuck"
-        retrieved = mem.retrieve_relevant(query, k=2)
+        retrieved = mem.retrieve(query, k=2, allow_fallback=False)
         if retrieved:
             lines.append("Past episodes: " + "; ".join(retrieved))
     return "\n".join(lines) + "\n" if lines else ""

@@ -52,13 +52,17 @@ def format_intent_card(state: AgentState) -> str:
     last_action = state.get("last_action", "") or "none"
     subgoal = _subgoal_label(state)
     critic = state.get("critic_verdict", "proceed")
+    stuck = state.get("stuck_count", 0)
+    facts = state.get("long_term_facts", [])
+    replan = state.get("should_replan", False)
 
     gs = GameState.model_validate(state.get("game_state", {}))
     map_ctx = house_exit.format_map_context(gs)
 
     return (
         f"[step {steps}] {specialist} → {last_action} | "
-        f"subgoal: {subgoal} | map: {map_ctx} | critic: {critic}"
+        f"subgoal: {subgoal} | map: {map_ctx} | critic: {critic} | "
+        f"stuck: {stuck} | facts: {len(facts)} | replan: {replan}"
     )
 
 
