@@ -77,7 +77,10 @@ class PyBoyWrapper:
 
         if self._is_live:
             self._lock = threading.RLock()
-            self._start_live_thread()
+            # Do not start _live_loop: PyBoy creates the SDL2 window on this
+            # (main) thread, but post_tick() calls SDL_RenderPresent from the
+            # thread that invokes tick(). Background ticking leaves a frozen
+            # compositor snapshot in the window while audio/emulation continue.
 
     @property
     def frame_count(self) -> int:
@@ -117,6 +120,19 @@ class PyBoyWrapper:
             self._frame_count += 1
         return self._frame_count
 
+    def _sync_tick(self, frames: int) -> int:
+        """Tick on the calling thread; headed fast-forward uses larger bursts."""
+        burst = 8 if (self._is_live and self._ff) else 1
+        remaining = frames
+        while remaining > 0:
+            batch = min(burst, remaining)
+            for _ in range(batch):
+                if not self._pyboy.tick():
+                    return self._frame_count
+                self._frame_count += 1
+            remaining -= batch
+        return self._frame_count
+
     def tick(self, frames: int = 1) -> int:
         """Advance emulation by N frames."""
         if self._is_live and self._live_thread and self._live_thread.is_alive():
@@ -134,11 +150,10 @@ class PyBoyWrapper:
                     self._advance_locked(1)
                 return self._frame_count
 
-        for _ in range(frames):
-            if not self._pyboy.tick():
-                break
-            self._frame_count += 1
-        return self._frame_count
+        if self._lock:
+            with self._lock:
+                return self._sync_tick(frames)
+        return self._sync_tick(frames)
 
     def advance_frames(self, n: int) -> int:
         return self.tick(n)

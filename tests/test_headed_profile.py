@@ -75,11 +75,12 @@ class _MutatingRamPyBoy(_FakePyBoy):
     def tick(self) -> bool:
         self._tick_n += 1
         _FakePyBoy.tick_calls += 1
+        mem = self.memory
         if self._tick_n >= 6:
-            self._memory[self.MAP_GROUP] = 3
-            self._memory[self.MAP_NUMBER] = 4
+            mem[self.MAP_GROUP] = 3
+            mem[self.MAP_NUMBER] = 4
         if self._tick_n == 4:
-            self._memory[0xD087] = 7
+            mem[0xD087] = 7
         return True
 
 
@@ -113,31 +114,38 @@ def test_pyboy_wrapper_headless_is_not_live(fake_rom, fake_pyboy):
         assert wrapper._live_thread is None
 
 
-def test_pyboy_wrapper_live_thread_advances_frames(fake_rom, fake_pyboy):
+def test_pyboy_wrapper_headed_does_not_start_background_live_thread(fake_rom, fake_pyboy):
+    """SDL2 window must be ticked on the creating thread; no daemon live loop."""
     wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
     try:
         assert wrapper._is_live is True
-        assert wrapper._live_thread is not None
-        assert wrapper._live_thread.is_alive()
+        assert wrapper._live_thread is None
         start = wrapper.frame_count
-        deadline = time.time() + 0.5
-        while wrapper.frame_count <= start and time.time() < deadline:
-            time.sleep(0.01)
-        assert wrapper.frame_count > start
+        wrapper.tick(5)
+        assert wrapper.frame_count == start + 5
     finally:
         wrapper.stop()
 
 
-def test_pyboy_wrapper_fast_forward_accelerates_live_loop(fake_rom, fake_pyboy):
+def test_pyboy_wrapper_headed_fast_forward_sync_tick(fake_rom, fake_pyboy):
+    """Headed SDL2 ticks on the main thread; fast-forward uses burst batches."""
     wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
     try:
-        time.sleep(0.05)
-        normal = wrapper.frame_count
+        assert wrapper._live_thread is None
+        with wrapper.fast_forward():
+            wrapper.tick(16)
+        assert wrapper.frame_count == 16
+    finally:
+        wrapper.stop()
+
+
+def test_pyboy_wrapper_fast_forward_flag_stored(fake_rom, fake_pyboy):
+    wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
+    try:
         wrapper.set_fast_forward(True)
-        time.sleep(0.05)
-        ff = wrapper.frame_count
+        assert wrapper._ff is True
         wrapper.set_fast_forward(False)
-        assert ff > normal
+        assert wrapper._ff is False
     finally:
         wrapper.stop()
 
@@ -166,42 +174,20 @@ def test_pyboy_wrapper_load_state_resets_frame_count(fake_rom, fake_pyboy):
         assert gs.frame_count == 0
 
 
-def test_live_thread_memory_reads_under_concurrent_tick(fake_rom, mutating_pyboy):
+def test_read_byte_observes_ram_after_explicit_tick(fake_rom, mutating_pyboy):
     from src.emulator.bootstrap import read_loaded_map, read_memory_byte
     from src.state.gold_state_reader import ADDR_MAP_GROUP, ADDR_MAP_NUMBER
 
     wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
     try:
-        assert wrapper._live_thread is not None
-        assert wrapper._live_thread.is_alive()
+        assert wrapper._live_thread is None
         assert read_loaded_map(wrapper) == (0, 0)
-        deadline = time.time() + 1.0
-        seen = False
-        while time.time() < deadline:
-            read_memory_byte(wrapper, ADDR_MAP_GROUP)
-            read_memory_byte(wrapper, ADDR_MAP_NUMBER)
-            wrapper.get_game_state()
-            if read_loaded_map(wrapper) == (3, 4):
-                seen = True
-                break
-            time.sleep(0.005)
-        assert seen, "live thread tick should mutate map bytes observable via read_byte"
-    finally:
-        wrapper.stop()
-
-
-def test_pyboy_wrapper_read_byte_observes_mutating_ram(fake_rom, mutating_pyboy):
-    wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
-    try:
-        assert wrapper._lock is not None
-        deadline = time.time() + 0.5
-        val = 0
-        while time.time() < deadline:
-            val = wrapper.read_byte(0xD087)
-            if val == 7:
-                break
-            time.sleep(0.005)
-        assert val == 7
+        wrapper.tick(4)
+        assert wrapper.read_byte(0xD087) == 7
+        wrapper.tick(2)
+        assert read_loaded_map(wrapper) == (3, 4)
+        read_memory_byte(wrapper, ADDR_MAP_GROUP)
+        read_memory_byte(wrapper, ADDR_MAP_NUMBER)
     finally:
         wrapper.stop()
 
