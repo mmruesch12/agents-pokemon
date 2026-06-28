@@ -1,14 +1,15 @@
-"""Tests for smooth headed watch profile (live thread, MemorySaver, tracing)."""
+"""Tests for smooth headed watch profile (owner thread, MemorySaver, tracing)."""
 
 from __future__ import annotations
 
 import os
+import queue
 import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.emulator.pyboy_wrapper import PyBoyWrapper
+from src.emulator.pyboy_wrapper import PyBoyWrapper, _OwnerCommand, _OwnerDispatcher
 from src.graph.graph import compile_graph
 from src.run._langsmith import configure_tracing
 from src.run.autonomous_runner import AutonomousRunner
@@ -18,8 +19,10 @@ class _FakePyBoy:
     """Minimal PyBoy stand-in for ROM-free wrapper tests."""
 
     tick_calls = 0
+    init_threads: list[str] = []
 
     def __init__(self, _rom_path: str, **kwargs):
+        _FakePyBoy.init_threads.append(threading.current_thread().name)
         self.window = kwargs.get("window", "null")
         self._memory = bytearray(0x10000)
         self._saved: bytes | None = None
@@ -66,7 +69,7 @@ class _FakePyBoy:
 
 
 class _MutatingRamPyBoy(_FakePyBoy):
-    """PyBoy fake whose tick() mutates WRAM map bytes (exercises live-thread reads)."""
+    """PyBoy fake whose tick() mutates WRAM map bytes (exercises owner-thread reads)."""
 
     MAP_GROUP = 0xD087
     MAP_NUMBER = 0xD088
@@ -93,6 +96,7 @@ def fake_rom(tmp_path):
 @pytest.fixture
 def fake_pyboy(monkeypatch):
     _FakePyBoy.tick_calls = 0
+    _FakePyBoy.init_threads = []
     import pyboy
 
     monkeypatch.setattr(pyboy, "PyBoy", _FakePyBoy)
@@ -101,6 +105,7 @@ def fake_pyboy(monkeypatch):
 @pytest.fixture
 def mutating_pyboy(monkeypatch):
     _FakePyBoy.tick_calls = 0
+    _FakePyBoy.init_threads = []
     import pyboy
 
     monkeypatch.setattr(pyboy, "PyBoy", _MutatingRamPyBoy)
@@ -113,24 +118,112 @@ def test_pyboy_wrapper_headless_is_not_live(fake_rom, fake_pyboy):
         assert wrapper._live_thread is None
 
 
-def test_pyboy_wrapper_headed_does_not_start_background_live_thread(fake_rom, fake_pyboy):
-    """SDL2 window must be ticked on the creating thread; no daemon live loop."""
+def test_headed_pyboy_created_on_owner_thread(fake_rom, fake_pyboy):
     wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
     try:
         assert wrapper._is_live is True
-        assert wrapper._live_thread is None
-        start = wrapper.frame_count
-        wrapper.tick(5)
-        assert wrapper.frame_count == start + 5
+        assert wrapper._live_thread is not None
+        assert wrapper._live_thread.name == "pyboy-owner"
+        assert wrapper._live_thread.is_alive()
+        assert _FakePyBoy.init_threads == ["pyboy-owner"]
+        assert threading.current_thread().name != "pyboy-owner"
     finally:
         wrapper.stop()
 
 
-def test_pyboy_wrapper_headed_fast_forward_sync_tick(fake_rom, fake_pyboy):
-    """Headed SDL2 ticks on the main thread; fast-forward uses burst batches."""
+def test_owner_dispatcher_idle_handler_without_commands():
+    """Isolated queue test: idle handler runs when no commands are pending."""
+    idle_calls: list[int] = []
+    idle_ready = threading.Event()
+
+    def idle() -> None:
+        idle_calls.append(1)
+        if len(idle_calls) >= 3:
+            idle_ready.set()
+
+    def execute(_cmd: _OwnerCommand) -> None:
+        raise AssertionError("execute should not run during idle-only test")
+
+    dispatcher = _OwnerDispatcher(thread_name="test-owner")
+    dispatcher.start(setup=lambda: None, execute=execute, idle=idle, ff_getter=lambda: False)
+    dispatcher.wait_ready(timeout=2.0)
+    try:
+        assert idle_ready.wait(timeout=2.0), f"idle handler never reached 3 calls: {idle_calls}"
+        assert len(idle_calls) >= 3
+    finally:
+        dispatcher.stop()
+
+
+def test_owner_dispatcher_dispatch_round_trip():
+    """Isolated queue test: command posts, blocks caller, returns result."""
+    results: list[str] = []
+
+    def execute(cmd: _OwnerCommand) -> None:
+        results.append(cmd.op)
+        cmd.result_slot["result"] = cmd.args[0] * 2
+
+    dispatcher = _OwnerDispatcher(thread_name="test-dispatch")
+    dispatcher.start(setup=lambda: None, execute=execute, idle=lambda: None, ff_getter=lambda: False)
+    dispatcher.wait_ready(timeout=2.0)
+    try:
+        assert dispatcher.dispatch("echo", 21) == 42
+        assert results == ["echo"]
+    finally:
+        dispatcher.stop()
+
+
+def test_owner_dispatcher_raises_when_thread_dies():
+    """Dead owner thread must fail fast instead of hanging until timeout."""
+    dispatcher = _OwnerDispatcher(thread_name="test-dead")
+    dispatcher._fatal_error = RuntimeError("simulated death")
+    dispatcher._stop.set()
+    with pytest.raises(RuntimeError, match="died"):
+        dispatcher.dispatch("tick", 1, timeout=0.5)
+
+
+def test_headed_idle_ticks_advance_frame_count(fake_rom, monkeypatch):
+    """Integration: owner idle loop advances frames without explicit tick() calls."""
+    idle_ready = threading.Event()
+
+    class _SignallingPyBoy(_FakePyBoy):
+        def tick(self) -> bool:
+            result = super().tick()
+            if _FakePyBoy.tick_calls >= 3:
+                idle_ready.set()
+            return result
+
+    _FakePyBoy.tick_calls = 0
+    _FakePyBoy.init_threads = []
+    import pyboy
+
+    monkeypatch.setattr(pyboy, "PyBoy", _SignallingPyBoy)
+
     wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
     try:
-        assert wrapper._live_thread is None
+        assert wrapper._owner_thread is not None
+        assert wrapper._owner_thread.is_alive()
+        assert idle_ready.wait(timeout=2.0), f"owner idle ticks={_FakePyBoy.tick_calls}"
+        assert wrapper.frame_count >= 3
+        assert _FakePyBoy.tick_calls >= 3
+    finally:
+        wrapper.stop()
+
+
+def test_pyboy_wrapper_headed_tick_via_command_queue(fake_rom, fake_pyboy):
+    wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
+    try:
+        start = wrapper.frame_count
+        result = wrapper.tick(5)
+        assert result == start + 5
+        assert wrapper.frame_count == start + 5
+        assert isinstance(wrapper._cmd_queue, queue.Queue)
+    finally:
+        wrapper.stop()
+
+
+def test_pyboy_wrapper_headed_fast_forward_via_queue(fake_rom, fake_pyboy):
+    wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
+    try:
         with wrapper.fast_forward():
             wrapper.tick(16)
         assert wrapper.frame_count == 16
@@ -138,13 +231,13 @@ def test_pyboy_wrapper_headed_fast_forward_sync_tick(fake_rom, fake_pyboy):
         wrapper.stop()
 
 
-def test_pyboy_wrapper_fast_forward_flag_stored(fake_rom, fake_pyboy):
+def test_pyboy_wrapper_fast_forward_flag_on_owner(fake_rom, fake_pyboy):
     wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
     try:
         wrapper.set_fast_forward(True)
-        assert wrapper._ff is True
+        assert wrapper._dispatch("get_ff") is True
         wrapper.set_fast_forward(False)
-        assert wrapper._ff is False
+        assert wrapper._dispatch("get_ff") is False
     finally:
         wrapper.stop()
 
@@ -153,8 +246,8 @@ def test_pyboy_wrapper_fast_forward_context_manager(fake_rom, fake_pyboy):
     wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
     try:
         with wrapper.fast_forward():
-            assert wrapper._ff is True
-        assert wrapper._ff is False
+            assert wrapper._dispatch("get_ff") is True
+        assert wrapper._dispatch("get_ff") is False
     finally:
         wrapper.stop()
 
@@ -179,7 +272,6 @@ def test_read_byte_observes_ram_after_explicit_tick(fake_rom, mutating_pyboy):
 
     wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
     try:
-        assert wrapper._live_thread is None
         assert read_loaded_map(wrapper) == (0, 0)
         wrapper.tick(4)
         assert wrapper.read_byte(0xD087) == 7
@@ -191,15 +283,12 @@ def test_read_byte_observes_ram_after_explicit_tick(fake_rom, mutating_pyboy):
         wrapper.stop()
 
 
-def test_pyboy_wrapper_live_loop_uses_lock_for_ff(fake_rom, fake_pyboy):
+def test_headed_uses_owner_thread_not_main_lock(fake_rom, fake_pyboy):
     wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
     try:
-        assert wrapper._lock is not None
-        assert isinstance(wrapper._lock, type(threading.RLock()))
-        with wrapper._lock:
-            wrapper._ff = True
-            burst = 8 if wrapper._ff else 1
-        assert burst == 8
+        assert wrapper._lock is None
+        assert wrapper._live_thread is wrapper._owner_thread
+        assert isinstance(wrapper._live_thread, threading.Thread)
     finally:
         wrapper.stop()
 

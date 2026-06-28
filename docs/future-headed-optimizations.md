@@ -1,6 +1,6 @@
 # Future Optimizations for Headed / Live Watch Mode
 
-**Status**: Current pragmatic solution implemented (2026-06). This document outlines a cleaner, more optimal long-term architecture that could be integrated later.
+**Status**: Queue-driven owner-thread headed mode implemented (2026-06). Remaining items below are optional follow-ups.
 
 **Context / Goal Reminder**
 - The visible PyBoy SDL2 window (headed mode) must never randomly pause or freeze due to checkpoint I/O, tracing side-effects, or synchronous long ticks in the main thread.
@@ -13,11 +13,10 @@
 
 Pragmatic dual-path implementation:
 
-- **SDL2 main-thread ticking** in `PyBoyWrapper` (no background `_live_loop` for headed):
-  - PyBoy creates the SDL2 window on the thread that constructs it; `post_tick()` calls `SDL_RenderPresent` from the thread that invokes `tick()`.
-  - A background daemon `_live_loop` would advance emulation but leave a **frozen compositor snapshot** in the window, so headed mode does **not** start `_start_live_thread()`.
-  - Headed `tick()` runs synchronously on the main thread; `set_fast_forward()` / `fast_forward()` use burst batches (8 frames per inner loop) during long waits such as bootstrap title screen.
-  - `RLock` + `_live_loop` code remain for a future queue-based owner thread or non-SDL2 window modes; `read_byte`, `get_game_state`, save/load still use the lock when headed.
+- **Owner-thread + command queue** in `PyBoyWrapper` for headed (`window != "null"`):
+  - PyBoy is created on a dedicated `pyboy-owner` daemon thread; every `tick`, `press_button`, `get_game_state`, `read_byte`, save/load, screenshot, and `set_fast_forward` from agent/runner threads is posted to `queue.Queue` and blocks until the owner completes it.
+  - The owner loop drains pending commands first, otherwise performs idle tick bursts so the SDL2 window keeps animating during `graph.invoke()` / LLM waits.
+  - Headless (`window="null"`) keeps the direct zero-queue path on the calling thread.
 - **MemorySaver instead of SqliteSaver** for headed runs:
   - In `AutonomousRunner.run()`: if `headed` then `MemorySaver()` (in-proc dict) else normal sqlite path.
   - `compile_graph(emu, checkpointer=...)` supports explicit checkpointer.
@@ -31,9 +30,8 @@ Pragmatic dual-path implementation:
 **Why it works for the pause problem**
 - No `fsync`/disk per graph step → no visible stutter from `SqliteSaver`.
 - LangSmith tracing forced off unless `--langsmith` → no tracing I/O pauses between steps.
-- Main-thread ticks during `apply_action` / bootstrap keep the SDL2 window updating on every emulator operation.
-- Fast-forward burst batches shorten long synchronous title waits without a background thread.
-- **Remaining pauses**: multi-second gaps during LLM calls in `graph.invoke()` are expected (see README); fixing those needs the queue-based owner-thread design below.
+- Owner-thread idle ticks keep the SDL2 window animating during LLM calls in `graph.invoke()`.
+- Fast-forward burst batches (8 frames) shorten long title waits on the owner thread.
 
 **Trade-offs / Complexity (Why We Can Do Better Later)**
 - Large amount of `if self._is_live` branching + duplicated logic in `tick`/`press_button`.
@@ -43,7 +41,7 @@ Pragmatic dual-path implementation:
 - Divergent semantics: headed uses in-memory `MemorySaver` (agent mind resets each process; resume loads latest `.state` into the emulator and seeds agent state from RAM). Headless uses persistent sqlite. `_resolve_thread_id("latest")` peeks sqlite only when **not** headed (`autonomous_runner.py` headed branch returns `self.thread_id` directly).
 - Graph still pays full per-action cost (supervisor → specialist → apply → critic → memory) even for watch sessions; live thread only keeps the window animating during that work.
 - Testing live behavior is harder (xvfb + timing-sensitive).
-- SDL2/GL context ownership best practices are only partially followed.
+- SDL2/GL context ownership is correct for headed mode (single owner thread); headless path unchanged.
 
 Current approach is "good" (achieves the explicit `/goal` of no checkpoint-induced pauses while preserving full agent play) but is a tactical patch rather than a principled design.
 
@@ -135,7 +133,7 @@ Current approach is "good" (achieves the explicit `/goal` of no checkpoint-induc
 
 ## References (Current Code)
 
-- Headed tick profile: `src/emulator/pyboy_wrapper.py` (`_sync_tick`, `fast_forward`, optional `_live_loop`)
+- Owner thread + queue: `src/emulator/pyboy_wrapper.py` (`_owner_loop`, `_dispatch`, `_cmd_queue`)
 - MemorySaver choice: `src/run/autonomous_runner.py` (`run()` headed branch)
 - Tracing profile: `src/run/_langsmith.py` (`configure_tracing`)
 - Compile support: `src/graph/graph.py:80` (`compile_graph`)
