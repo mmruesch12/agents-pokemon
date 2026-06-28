@@ -15,7 +15,6 @@ from src.state.models import (
 from src.state.script_constants import (
     EVENT_INITIALIZED_EVENTS,
     EVENT_PLAYERS_HOUSE_MOM_1,
-    EVENT_PLAYERS_HOUSE_MOM_2,
     SCRIPT_FLAG_SCRIPT_RUNNING,
     SCRIPT_READ,
     SCRIPT_WAIT,

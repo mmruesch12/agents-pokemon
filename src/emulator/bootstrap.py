@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from src.state.gold_state_reader import (
-    ADDR_FACING,
     ADDR_MAP_GROUP,
     ADDR_MAP_NUMBER,
     ADDR_SCRIPT_FLAGS,

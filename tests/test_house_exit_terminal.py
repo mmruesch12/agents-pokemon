@@ -61,7 +61,6 @@ def test_graph_invoke_idle_after_house_exit_complete(new_bark_ram: dict):
     state["bootstrap_complete"] = True
     state["house_exit_complete"] = True
     state["run_max_steps"] = 5
-    pos_before = gs.position_key
 
     with tempfile.TemporaryDirectory() as tmp:
         compiled = compile_graph(emu, checkpoint_path=Path(tmp) / "terminal.sqlite")

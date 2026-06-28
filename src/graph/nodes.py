@@ -20,7 +20,6 @@ from src.state.gold_state_reader import (
 )
 from src.state.models import GameState
 from src.state.script_constants import (
-    MOM_SCENE_ENTRY_POS,
     SCRIPT_FLAG_SCRIPT_RUNNING,
     SCRIPT_READ,
     SCRIPT_WAIT,
@@ -347,7 +346,6 @@ def critic_node(state: AgentState) -> AgentState:
     recent = history[-5:] if history else []
     repetition = len(recent) >= 3 and len(set(recent[-3:])) == 1 and stuck >= 3
 
-    gs = GameState.model_validate(state.get("game_state", {}))
     if repetition or stuck >= STUCK_THRESHOLD:
         state["critic_verdict"] = "replan"
         state["critic_notes"] = "Detected loop or high stuck count"
@@ -470,7 +468,6 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
                 BootstrapResult,
                 apply_bootstrap_metadata,
                 is_bootstrap_done,
-                read_loaded_map,
             )
 
             if pos_before and gs.position_key != pos_before:

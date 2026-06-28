@@ -25,7 +25,6 @@ def _latest_final_save() -> Path | None:
 
 def _check_save(path: Path) -> tuple[str, tuple[int, int]] | None:
     from src.emulator.pyboy_wrapper import PyBoyWrapper
-    from src.state.gold_state_reader import MAP_KEY_NEW_BARK_TOWN as NB
 
     rom_candidates = [
         Path("roms/pokemon_silver.gbc"),

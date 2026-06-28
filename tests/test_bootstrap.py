@@ -17,8 +17,6 @@ from src.graph.state import initial_agent_state
 from src.state.gold_state_reader import (
     ADDR_EVENT_FLAGS,
     ADDR_FACING,
-    ADDR_MAP_GROUP,
-    ADDR_MAP_NUMBER,
     ADDR_X_COORD,
     ADDR_Y_COORD,
     MAP_PLAYERS_HOUSE_2F,
