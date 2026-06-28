@@ -20,6 +20,7 @@ from src.memory.landmarks import (
     ELMS_LAB_INTERIOR_ID,
     discover_elms_lab_landmarks,
     make_landmark,
+    normalize_elms_lab_entrance_coords,
 )
 from src.memory.long_term_memory import LongTermMemory
 from src.state.gold_state_reader import MAP_KEY_ELMS_LAB, MAP_KEY_NEW_BARK_TOWN
@@ -74,6 +75,37 @@ def test_navigation_uses_discovered_entrance_landmark():
     assert _navigation_target(gs, state=state) == (6, 3)
 
 
+def test_normalize_elms_lab_entrance_snaps_adjacent_tiles():
+    assert normalize_elms_lab_entrance_coords(MAP_KEY_NEW_BARK_TOWN, 6, 4) == (
+        MAP_KEY_NEW_BARK_TOWN,
+        6,
+        3,
+    )
+    assert normalize_elms_lab_entrance_coords(MAP_KEY_NEW_BARK_TOWN, 5, 4) == (
+        MAP_KEY_NEW_BARK_TOWN,
+        5,
+        3,
+    )
+    assert normalize_elms_lab_entrance_coords(MAP_KEY_NEW_BARK_TOWN, 6, 3) == (
+        MAP_KEY_NEW_BARK_TOWN,
+        6,
+        3,
+    )
+
+
+def test_discover_elms_lab_landmarks_normalizes_entrance_from_below():
+    gs = GameState(player={"map_group": 24, "map_id": 5, "x": 4, "y": 8})
+    landmarks = discover_elms_lab_landmarks(
+        gs,
+        entrance_map_key=MAP_KEY_NEW_BARK_TOWN,
+        entrance_x=6,
+        entrance_y=4,
+    )
+    entrance = next(entry for entry in landmarks if entry.get("id") == ELMS_LAB_ENTRANCE_ID)
+    assert entrance["x"] == 6
+    assert entrance["y"] == 3
+
+
 def test_memory_node_discovers_lab_landmarks_on_first_visit(monkeypatch):
     gs = GameState(
         player={"map_group": 24, "map_id": 5, "x": 4, "y": 8, "map_name": "Elm's Lab"},
@@ -83,7 +115,7 @@ def test_memory_node_discovers_lab_landmarks_on_first_visit(monkeypatch):
     state["maps_visited"] = [MAP_KEY_NEW_BARK_TOWN]
     state["last_map_transition"] = {
         "from_map": MAP_KEY_NEW_BARK_TOWN,
-        "from_pos": {"map_key": MAP_KEY_NEW_BARK_TOWN, "x": 6, "y": 3},
+        "from_pos": {"map_key": MAP_KEY_NEW_BARK_TOWN, "x": 6, "y": 4},
         "to_map": MAP_KEY_ELMS_LAB,
         "to_pos": {"x": 4, "y": 8},
     }

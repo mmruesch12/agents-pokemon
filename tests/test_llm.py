@@ -86,7 +86,7 @@ def test_llm_navigate_called_with_path_candidates(new_bark_ram: dict, monkeypatc
     """Navigator builds candidates even when path is found (LLM hook exercised)."""
     calls: list[list[str]] = []
 
-    def fake_navigate(gs, state, candidates):
+    def fake_navigate(gs, state, candidates, landmarks=None, *, target=None):
         calls.append(candidates)
         return None
 
