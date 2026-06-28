@@ -73,14 +73,18 @@ def build_graph(
 def compile_graph(
     emulator: Any = None,
     *,
-    checkpoint_path: str | Path = "data/checkpoints.sqlite",
+    checkpoint_path: str | Path | None = "data/checkpoints.sqlite",
+    checkpointer: Any | None = None,
 ) -> Any:
-    """Compile graph with SQLite checkpointer."""
-    Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(checkpoint_path), check_same_thread=False)
-    checkpointer = SqliteSaver(conn)
+    """Compile graph with an optional explicit or SQLite checkpointer."""
     graph = build_graph(emulator, checkpoint_path=checkpoint_path)
-    return graph.compile(checkpointer=checkpointer)
+    if checkpointer is not None:
+        return graph.compile(checkpointer=checkpointer)
+    if checkpoint_path is not None:
+        Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(checkpoint_path), check_same_thread=False)
+        return graph.compile(checkpointer=SqliteSaver(conn))
+    return graph.compile()
 
 
 def run_graph_step(

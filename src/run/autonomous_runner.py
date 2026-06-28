@@ -17,6 +17,7 @@ from src.eval.evaluators import evaluate_run
 from src.graph.graph import compile_graph, create_initial_state
 from src.graph.state import AgentState
 from src.memory.long_term_memory import LongTermMemory
+from src.run._langsmith import configure_tracing
 
 logger = logging.getLogger(__name__)
 
@@ -92,9 +93,7 @@ class AutonomousRunner:
         self.window = window
         self.memory = LongTermMemory()
 
-        if langsmith:
-            os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
-            os.environ.setdefault("LANGSMITH_PROJECT", "pokemon-gold-agent")
+        configure_tracing(langsmith=langsmith, headed=headed)
 
     def _bootstrap_if_needed(self, emu: Any, state: AgentState) -> AgentState:
         from src.emulator.bootstrap import (
@@ -128,8 +127,28 @@ class AutonomousRunner:
             )
         return state
 
+    def _load_latest_emulator_state(self, emu: Any) -> str | None:
+        """Load the newest emulator .state file (headed watch resume)."""
+        states = sorted(
+            self.save_dir.glob("*.state"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if not states:
+            return None
+        name = states[0].stem
+        try:
+            emu.load_state(name)
+            logger.info("Loaded emulator state from latest save: %s", name)
+            return name
+        except Exception as exc:
+            logger.warning("Could not load latest emulator state %s: %s", name, exc)
+            return None
+
     def _resolve_thread_id(self, resume: str | None) -> str:
         if resume == "latest":
+            if self.headed:
+                return self.thread_id
             if self.checkpoint_db.exists():
                 conn = sqlite3.connect(str(self.checkpoint_db))
                 row = conn.execute(
@@ -155,12 +174,25 @@ class AutonomousRunner:
             )
 
         effective_window = self.window if self.window is not None else ("SDL2" if self.headed else "null")
+        configure_tracing(langsmith=self.langsmith, headed=self.headed)
         with PyBoyWrapper(self.rom_path, window=effective_window, save_dir=self.save_dir) as emu:
             bind_emulator(emu)
-            graph = compile_graph(emu, checkpoint_path=self.checkpoint_db)
+
+            if self.headed:
+                try:
+                    from langgraph.checkpoint.memory import MemorySaver
+
+                    checkpointer = MemorySaver()
+                except ImportError:
+                    checkpointer = None
+                graph = compile_graph(emu, checkpointer=checkpointer)
+            else:
+                graph = compile_graph(emu, checkpoint_path=self.checkpoint_db)
             config = {"configurable": {"thread_id": thread_id}}
 
             if resume:
+                if self.headed:
+                    self._load_latest_emulator_state(emu)
                 try:
                     snapshot = graph.get_state(config)
                     state = snapshot.values if snapshot.values else create_initial_state(emu)
