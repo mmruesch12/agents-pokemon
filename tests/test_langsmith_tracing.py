@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 
-import pytest
 
 from src.graph.state import initial_agent_state
 from src.run._langsmith import build_invoke_config, configure_tracing, format_trace_run

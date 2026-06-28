@@ -79,8 +79,8 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     print(f"  UI: {trace_ui_url()}")
     print("  Full traces (CLI):")
     print(f"    langsmith trace list --project {project} --full --show-hierarchy")
-    print(f"    poke-agent traces --full")
-    print(f"    poke-agent traces --trace-id <TRACE_ID>")
+    print("    poke-agent traces --full")
+    print("    poke-agent traces --trace-id <TRACE_ID>")
     return 0
 
 
@@ -150,7 +150,7 @@ def cmd_traces(args: argparse.Namespace) -> int:
             f"  {run.id}  step={step}  phase={phase}  "
             f"action={action}  status={run.status}  {latency_ms}ms"
         )
-    print(f"\nFull detail: poke-agent traces --trace-id <ID>")
+    print("\nFull detail: poke-agent traces --trace-id <ID>")
     return 0
 
 
