@@ -5,7 +5,8 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from src.graph.exploration import exploration_target, retired_geography_target
+from src.graph.exploration import exploration_target
+from src.graph.quest_geography import resolve_retired_geography
 from src.graph.llm import llm_navigate
 from src.graph.nodes import (
     _gate_starter_quest_target,
@@ -337,7 +338,7 @@ def test_gated_phase_target_wrong_map_east_landmark_no_recursion():
             )
         ],
     }
-    target = retired_geography_target(gs, state)
+    target = resolve_retired_geography(gs, state)
     assert target == (10, 5)
     assert target != (19, 12)
 
@@ -379,7 +380,7 @@ def test_hydrate_state_enables_east_exit_navigation():
         )
         hydrated_route = mem.hydrate_state({**hydrated, "game_state": gs_route.model_dump()})
         assert _navigation_target(gs_route, state=hydrated_route) == (10, 5)
-        assert retired_geography_target(gs_route, hydrated_route) == (10, 5)
+        assert resolve_retired_geography(gs_route, hydrated_route) == (10, 5)
 
 
 def test_hydrate_mr_entrance_enables_interior_navigation():

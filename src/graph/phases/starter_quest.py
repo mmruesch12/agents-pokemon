@@ -28,9 +28,6 @@ STARTER_BALL_TILE = (
     int(os.getenv("STARTER_BALL_X", "7")),
     int(os.getenv("STARTER_BALL_Y", "3")),
 )
-NEW_BARK_EAST_EXIT = (19, 12)
-ROUTE_29_NORTH_GATE = (10, 5)
-ROUTE_30_NORTH_GATE = (10, 3)
 MR_POKEMON_DOOR = (5, 5)
 ELM_DESK_TILE = (4, 2)
 

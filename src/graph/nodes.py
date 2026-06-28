@@ -7,7 +7,8 @@ import os
 from typing import Any
 
 from src.emulator.bootstrap import needs_bootstrap, pick_bootstrap_button
-from src.graph.exploration import exploration_target, gated_phase_target, retired_geography_target
+from src.graph.exploration import exploration_target, gated_phase_target
+from src.graph.quest_geography import resolve_retired_geography
 from src.graph.llm import llm_battle, llm_navigate, llm_plan
 from src.graph.pathfinding import direction_toward, find_path
 from src.graph.phases import house_exit, starter_quest
@@ -468,9 +469,9 @@ def _navigation_target(
         quest_target = starter_quest.navigation_target(gs, map_key=map_key, state=state)
         if quest_target is not None:
             return _gate_starter_quest_target(gs, quest_target, state=state)
-        retired = retired_geography_target(gs, state)
-        if retired is not None:
-            return retired
+        resolved = resolve_retired_geography(gs, state)
+        if resolved is not None:
+            return resolved
         return exploration_target(gs, state)
     return (gs.player.x + 1, gs.player.y)
 
