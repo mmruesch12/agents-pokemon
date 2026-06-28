@@ -10,7 +10,14 @@ import sys
 from dotenv import load_dotenv
 
 from src.run._cli_flags import pop_store_true_flag
-from src.run._langsmith import configure_tracing
+from src.run._langsmith import (
+    configure_tracing,
+    fetch_trace_details,
+    format_trace_run,
+    run_langsmith_cli,
+    trace_project_name,
+    trace_ui_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +74,83 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 
 def cmd_dashboard(args: argparse.Namespace) -> int:
-    print("Dashboard: use LangSmith at https://smith.langchain.com for traces")
-    print(f"  Project: {os.environ.get('LANGSMITH_PROJECT', 'pokemon-gold-agent')}")
+    project = trace_project_name()
+    print(f"LangSmith project: {project}")
+    print(f"  UI: {trace_ui_url()}")
+    print("  Full traces (CLI):")
+    print(f"    langsmith trace list --project {project} --full --show-hierarchy")
+    print(f"    poke-agent traces --full")
+    print(f"    poke-agent traces --trace-id <TRACE_ID>")
+    return 0
+
+
+def cmd_traces(args: argparse.Namespace) -> int:
+    if args.full:
+        args.use_cli = True
+    project = trace_project_name()
+    if not os.getenv("LANGSMITH_API_KEY", "").strip():
+        print("LANGSMITH_API_KEY is not set. Add it to .env to fetch traces.", file=sys.stderr)
+        return 1
+
+    if args.trace_id:
+        if args.use_cli:
+            return run_langsmith_cli(
+                ["trace", "get", args.trace_id, "--project", project, "--full"]
+            )
+        details = fetch_trace_details(args.trace_id, project=project)
+        root = details["root"]
+        print(f"Trace {args.trace_id} ({len(details['runs'])} runs)")
+        for line in format_trace_run(root):
+            print(line)
+        child_ids = {r["id"] for r in details["runs"]} - {root["id"]}
+        children = [r for r in details["runs"] if r["id"] in child_ids]
+        children.sort(key=lambda r: r.get("start_time") or "")
+        for child in children:
+            for line in format_trace_run(child, indent=1):
+                print(line)
+        return 0
+
+    limit = str(args.limit)
+    if args.use_cli:
+        return run_langsmith_cli(
+            [
+                "trace",
+                "list",
+                "--project",
+                project,
+                "--full",
+                "--show-hierarchy",
+                "-n",
+                limit,
+            ]
+        )
+
+    from langsmith import Client
+
+    client = Client()
+    runs = list(
+        client.list_runs(
+            project_name=project,
+            is_root=True,
+            limit=args.limit,
+        )
+    )
+    if not runs:
+        print(f"No traces in project '{project}'.")
+        return 0
+
+    print(f"Recent traces in '{project}' (use --trace-id for full IO):\n")
+    for run in runs:
+        meta = run.extra.get("metadata", {}) if run.extra else {}
+        step = meta.get("step", "?")
+        phase = meta.get("phase", meta.get("ls_integration", ""))
+        action = meta.get("last_action", "")
+        latency_ms = int((run.latency or 0) * 1000)
+        print(
+            f"  {run.id}  step={step}  phase={phase}  "
+            f"action={action}  status={run.status}  {latency_ms}ms"
+        )
+    print(f"\nFull detail: poke-agent traces --trace-id <ID>")
     return 0
 
 
@@ -110,6 +192,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     dashboard_p = sub.add_parser("dashboard", parents=[common], help="Dashboard info")
     dashboard_p.set_defaults(func=cmd_dashboard)
+
+    traces_p = sub.add_parser("traces", parents=[common], help="List or inspect LangSmith traces")
+    traces_p.add_argument("--trace-id", default=None, help="Show full IO for one trace")
+    traces_p.add_argument("--limit", type=int, default=10, help="Max traces to list")
+    traces_p.add_argument(
+        "--full",
+        action="store_true",
+        help="When listing, prefer langsmith CLI hierarchy view (implies --use-cli)",
+    )
+    traces_p.add_argument(
+        "--use-cli",
+        action="store_true",
+        help="Shell out to langsmith CLI (richer tree view)",
+    )
+    traces_p.set_defaults(func=cmd_traces)
 
     parser.set_defaults(func=cmd_run)
     return parser

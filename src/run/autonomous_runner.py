@@ -17,7 +17,7 @@ from src.eval.evaluators import evaluate_run
 from src.graph.graph import compile_graph, create_initial_state
 from src.graph.state import AgentState
 from src.memory.long_term_memory import LongTermMemory
-from src.run._langsmith import configure_tracing
+from src.run._langsmith import build_invoke_config, configure_tracing
 
 logger = logging.getLogger(__name__)
 
@@ -229,15 +229,14 @@ class AutonomousRunner:
                 )
             else:
                 graph = compile_graph(emu, checkpoint_path=self.checkpoint_db)
-            config = {"configurable": {"thread_id": thread_id}}
-
+            checkpoint_config = {"configurable": {"thread_id": thread_id}}
             if resume:
                 loaded_name = None
                 if self.headed:
                     loaded_name = self._load_latest_emulator_state(emu)
                 state = None
                 try:
-                    snapshot = graph.get_state(config)
+                    snapshot = graph.get_state(checkpoint_config)
                     if snapshot.values:
                         state = snapshot.values
                         logger.info("Resumed agent checkpoint thread_id=%s", thread_id)
@@ -260,7 +259,12 @@ class AutonomousRunner:
             while state.get("metrics", {}).get("steps", 0) < target_steps:
                 current = state.get("metrics", {}).get("steps", 0)
                 state["run_max_steps"] = current + 1
-                state = graph.invoke(state, config=config)
+                invoke_config = build_invoke_config(
+                    state,
+                    thread_id=thread_id,
+                    headed=self.headed,
+                )
+                state = graph.invoke(state, config=invoke_config)
                 steps = state.get("metrics", {}).get("steps", 0)
                 log_intent_card(state)
 

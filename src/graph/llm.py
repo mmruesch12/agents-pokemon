@@ -62,6 +62,16 @@ def get_chat_model():
         return None
 
 
+def _llm_invoke_config():
+    """Propagate LangGraph RunnableConfig so LLM calls nest under the active node."""
+    try:
+        from langgraph.config import get_config
+
+        return get_config()
+    except RuntimeError:
+        return None
+
+
 def llm_plan(gs: GameState, state: AgentState) -> dict[str, Any] | None:
     """Ask Planner LLM for hierarchical subgoals."""
     llm = get_chat_model()
@@ -80,7 +90,8 @@ def llm_plan(gs: GameState, state: AgentState) -> dict[str, Any] | None:
             [
                 SystemMessage(content="You are the Planner for a Pokemon Gold autonomous agent."),
                 HumanMessage(content=prompt),
-            ]
+            ],
+            config=_llm_invoke_config(),
         )
         lines = [ln.strip("-• ").strip() for ln in resp.content.splitlines() if ln.strip()]
         if lines:
@@ -108,7 +119,8 @@ def llm_navigate(gs: GameState, state: AgentState, candidates: list[str]) -> str
             [
                 SystemMessage(content="You are the Navigator for Pokemon Gold. Pick one direction."),
                 HumanMessage(content=prompt),
-            ]
+            ],
+            config=_llm_invoke_config(),
         )
         matched = _match_token(resp.content, candidates)
         if matched:
@@ -135,7 +147,8 @@ def llm_battle(gs: GameState) -> str | None:
             [
                 SystemMessage(content="You are the Battler for Pokemon Gold."),
                 HumanMessage(content=prompt),
-            ]
+            ],
+            config=_llm_invoke_config(),
         )
         matched = _match_token(resp.content, _BATTLE_ACTIONS)
         if matched:
