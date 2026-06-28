@@ -64,6 +64,7 @@ export interface AgentSnapshot {
   active_subgoal: string;
   current_plan: string[];
   subgoals?: string[];
+  // note: live snapshots from agent now include subgoals too
   phase: string;
   critic_verdict: "proceed" | "replan" | "caution" | string;
   critic_notes?: string;
@@ -77,6 +78,7 @@ export interface AgentSnapshot {
   // derived / server provided
   screenshot_url?: string; // relative or absolute for <img src>
   timestamp?: string;
+  source?: string; // "live_agent" when coming from a running session's snapshot
 }
 
 export type IssueFlag =

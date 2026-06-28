@@ -111,6 +111,8 @@ def get_current_snapshot() -> dict[str, Any]:
     global _latest_snapshot
     disk = _load_snapshot_from_disk()
     if disk is not None:
+        disk = dict(disk)  # don't mutate the cached read
+        disk.setdefault("source", "live_agent")
         return disk
     if _latest_snapshot is not None:
         return _latest_snapshot
@@ -135,6 +137,7 @@ def update_from_agent_state(agent_state: dict[str, Any]) -> dict[str, Any]:
         "last_action_result": agent_state.get("last_action_result", {}),
         "active_subgoal": agent_state.get("active_subgoal", ""),
         "current_plan": agent_state.get("current_plan", []),
+        "subgoals": agent_state.get("subgoals", []),
         "phase": agent_state.get("phase", "explore"),
         "critic_verdict": agent_state.get("critic_verdict", "proceed"),
         "critic_notes": agent_state.get("critic_notes", ""),
@@ -147,6 +150,7 @@ def update_from_agent_state(agent_state: dict[str, Any]) -> dict[str, Any]:
         "step": agent_state.get("metrics", {}).get("steps", 0),
         "timestamp": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
         "screenshot_url": "/api/screenshot",
+        "source": "live_agent",  # distinguishes from demo data in the UI
     }
     set_current_snapshot(snap)
     return snap
@@ -155,13 +159,25 @@ def update_from_agent_state(agent_state: dict[str, Any]) -> dict[str, Any]:
 def emit_snapshot(agent_state: dict[str, Any], screenshot_bytes: bytes | None = None) -> Path:
     """Write current.json + current.png (if provided) for live dashboard consumption.
     Returns the written json path. Creates data/watch/ if needed.
+
+    Uses atomic replace (write to .tmp then os.replace) so that readers (the
+    dashboard polling /api/state) never see a partial file. This is important
+    when a headed agent is actively emitting while the dashboard is open.
     """
     DATA_WATCH.mkdir(parents=True, exist_ok=True)
     snap = update_from_agent_state(agent_state)
+
     json_path = DATA_WATCH / "current.json"
-    json_path.write_text(json.dumps(snap, indent=2))
+    tmp_json = json_path.with_suffix(json_path.suffix + ".tmp")
+    tmp_json.write_text(json.dumps(snap, indent=2))
+    os.replace(tmp_json, json_path)
+
     if screenshot_bytes:
-        (DATA_WATCH / "current.png").write_bytes(screenshot_bytes)
+        png_path = DATA_WATCH / "current.png"
+        tmp_png = png_path.with_suffix(png_path.suffix + ".tmp")
+        tmp_png.write_bytes(screenshot_bytes)
+        os.replace(tmp_png, png_path)
+
     return json_path
 
 

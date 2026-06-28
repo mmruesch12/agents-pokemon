@@ -92,9 +92,17 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     # Touch to ensure a demo snapshot exists for immediate /api/state utility
     _ = get_current_snapshot()
 
+    # Check for live data from a running (headed or not) agent
+    from src.run.dashboard_server import DATA_WATCH
+    live_file = DATA_WATCH / "current.json"
+    if live_file.exists():
+        print("  Live agent snapshot detected (data/watch/current.json) — UI will track it.")
+    else:
+        print("  No live snapshot yet — will show demo until an agent emits one.")
+
     print(f"Starting Agent Dashboard on http://{host}:{port}")
     print("  /          -> UI (built React) or build instructions")
-    print("  /api/state -> current agent snapshot (demo or live)")
+    print("  /api/state -> current agent snapshot (demo or live from running agent)")
     print("  /api/screenshot -> current or demo frame PNG")
     print("Press Ctrl-C to stop.")
 

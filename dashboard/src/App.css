@@ -102,6 +102,13 @@ body {
 .meta { margin-left: 8px; font-size: 11px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
 .poll { color: var(--green); }
 .err { color: var(--red); }
+.live-tag {
+  background: var(--green-dim);
+  color: #c5f0c5;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+}
 
 /* Issue banner */
 .issue-banner {

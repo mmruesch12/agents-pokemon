@@ -15,8 +15,8 @@ import "./App.css";
 const POLL_MS = 1500;
 
 function App() {
-  const [snapshot, setSnapshot] = useState<AgentSnapshot | null>(getInitialDemo());
-  const [live, setLive] = useState(false);
+  const [snapshot, setSnapshot] = useState<AgentSnapshot | null>(null);
+  const [live, setLive] = useState(true); // default to tracking live agent sessions
   const [lastError, setLastError] = useState<string | null>(null);
   const [pollCount, setPollCount] = useState(0);
 
@@ -26,45 +26,46 @@ function App() {
     setLastError(null);
   };
 
-  const fetchState = useCallback(async (isLive: boolean) => {
-    if (!isLive) return;
+  // Always fetch the best available state from server (disk snapshot if running agent, else demo)
+  const fetchLatest = useCallback(async () => {
     try {
       const res = await fetch("/api/state", { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: AgentSnapshot = await res.json();
-      // ensure minimal shape
-      setSnapshot({
-        ...getInitialDemo(),
+      setSnapshot((prev) => ({
+        ...(prev || getInitialDemo()),
         ...data,
         metrics: data.metrics || { steps: data.step || 0 },
-      });
+      }));
       setLastError(null);
       setPollCount((c) => c + 1);
     } catch (e: any) {
       setLastError(e.message || "fetch failed");
-      // keep previous snapshot
+      // keep whatever we have; only seed demo on very first error
+      setSnapshot((prev) => prev || getInitialDemo());
     }
   }, []);
 
-  // polling effect
+  // Polling only when live mode is enabled (for tracking a running agent)
   useEffect(() => {
     let timer: number | null = null;
     if (live) {
-      fetchState(true);
-      timer = window.setInterval(() => fetchState(true), POLL_MS);
+      fetchLatest();
+      timer = window.setInterval(() => fetchLatest(), POLL_MS);
     }
     return () => {
       if (timer) window.clearInterval(timer);
     };
-  }, [live, fetchState]);
+  }, [live]);  // fetchLatest is now stable (no deps)
+
+  // Always attempt to load the current server state on first mount
+  useEffect(() => {
+    fetchLatest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const manualRefresh = () => {
-    if (live) {
-      fetchState(true);
-    } else if (snapshot) {
-      // re-apply current to trigger render
-      setSnapshot({ ...snapshot });
-    }
+    fetchLatest();
   };
 
   const toggleLive = () => {
@@ -90,7 +91,7 @@ function App() {
           <button
             className={`toggle ${live ? "on" : ""}`}
             onClick={toggleLive}
-            title="Toggle live polling of /api/state"
+            title="Auto-poll /api/state to track a running agent (headed or not). Turn off to freeze view."
           >
             {live ? "LIVE ●" : "LIVE ○"}
           </button>
@@ -107,6 +108,7 @@ function App() {
           <div className="meta">
             {current?.metrics?.steps != null && <span>step {current.metrics.steps}</span>}
             {pollCount > 0 && live && <span className="poll">polls:{pollCount}</span>}
+            {current?.source === "live_agent" && <span className="live-tag">LIVE (tracking agent)</span>}
             {lastError && <span className="err">err: {lastError}</span>}
           </div>
         </div>

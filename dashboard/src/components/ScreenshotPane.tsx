@@ -7,7 +7,12 @@ interface Props {
 }
 
 export const ScreenshotPane: React.FC<Props> = ({ snapshot, onRefresh }) => {
-  const url = snapshot?.screenshot_url || "/demo-screenshot.png";
+  let url = snapshot?.screenshot_url || "/demo-screenshot.png";
+  // Add cache buster so live updates (especially in headed sessions) reload the PNG
+  // even when the URL path stays the same.
+  const bust = snapshot?.timestamp ? new Date(snapshot.timestamp).getTime() : Date.now();
+  url = url + (url.includes("?") ? "&" : "?") + "t=" + bust;
+
   const p = snapshot?.game_state?.player;
 
   return (
