@@ -107,7 +107,7 @@ uv run python -m src.run.autonomous_runner --headed --resume latest --max-steps 
 uv run python -m src.run.cli --start-bedroom --steps 200
 uv run poke-watch --start-bedroom --steps 500   # headed; resume skipped
 
-uv run pytest tests/ -q                          # run tests (expect ~214)
+uv run pytest tests/ -q                          # run tests (expect ~253)
 ```
 
 System deps (Ubuntu): `libsdl2-dev`, `build-essential`, `python3-dev`
