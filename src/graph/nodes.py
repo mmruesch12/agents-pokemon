@@ -18,7 +18,9 @@ from src.memory.landmarks import (
     apply_landmark_discovery,
     discover_elms_lab_landmarks,
     discover_map_visit_landmark,
+    find_landmark,
     format_landmarks_for_prompt,
+    landmark_coords,
     landmark_known,
     memory_data_dir,
     parse_position_key,
@@ -348,8 +350,17 @@ def _decompose_subgoals(gs: GameState, state: AgentState | None = None) -> list[
     return ["Explore current map", "Progress toward next town"]
 
 
-def _players_house_door_exit(gs: GameState) -> str | None:
-    lab_exit = starter_quest.door_exit_direction(gs)
+def _players_house_door_exit(gs: GameState, state: AgentState | None = None) -> str | None:
+    state = state or {}
+    door: tuple[int, int] | None = None
+    if gs.map_key == MAP_KEY_NEW_BARK_TOWN:
+        entrance = find_landmark(
+            state.get("known_landmarks", []),
+            landmark_id=ELMS_LAB_ENTRANCE_ID,
+        )
+        if entrance is not None and entrance.get("map_key") == gs.map_key:
+            door = landmark_coords(entrance)
+    lab_exit = starter_quest.door_exit_direction(gs, door=door)
     if lab_exit:
         return lab_exit
     return house_exit.door_exit_direction(gs)
@@ -365,7 +376,7 @@ def navigator_node(state: AgentState) -> AgentState:
     path = find_path(gs.player.x, gs.player.y, target[0], target[1], map_key=map_key)
     candidates = _navigation_candidates(gs, target, path, state)
 
-    door_exit = _players_house_door_exit(gs)
+    door_exit = _players_house_door_exit(gs, state)
     llm_choice = llm_navigate(gs, state, candidates, relevant_landmarks, target=target)
     if door_exit:
         action = door_exit

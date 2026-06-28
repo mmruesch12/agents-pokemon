@@ -18,6 +18,7 @@ from src.graph.graph import compile_graph, create_initial_state
 from src.graph.phases import house_exit
 from src.graph.state import AgentState
 from src.state.models import GameState
+from src.memory.landmarks import memory_data_dir
 from src.memory.long_term_memory import LongTermMemory
 from src.run._langsmith import build_invoke_config, configure_tracing
 
@@ -95,7 +96,7 @@ class AutonomousRunner:
         self.window = window
         self.start_bedroom = start_bedroom
         self.bedroom_state_name = bedroom_state_name
-        self.memory = LongTermMemory()
+        self.memory = LongTermMemory(data_dir=memory_data_dir())
 
         configure_tracing(langsmith=langsmith, headed=headed)
 

@@ -31,6 +31,36 @@ def test_summarize_history():
         assert "navigate" in summary
 
 
+def test_hydrate_state_merges_checkpoint_and_disk_landmarks():
+    with tempfile.TemporaryDirectory() as tmp:
+        mem = LongTermMemory(data_dir=Path(tmp))
+        mem.add_landmark(
+            {
+                "id": "elms_lab_entrance",
+                "name": "Elm's Lab entrance",
+                "map_key": "24:4",
+                "x": 6,
+                "y": 3,
+                "kind": "building_entrance",
+            }
+        )
+        state = {
+            "known_landmarks": [
+                {
+                    "id": "elms_lab_interior",
+                    "name": "Elm's Lab",
+                    "map_key": "24:5",
+                    "x": 4,
+                    "y": 2,
+                    "kind": "interior",
+                }
+            ]
+        }
+        hydrated = mem.hydrate_state(state)
+        ids = {entry["id"] for entry in hydrated["known_landmarks"]}
+        assert ids == {"elms_lab_entrance", "elms_lab_interior"}
+
+
 def test_add_landmark_persists_to_disk():
     with tempfile.TemporaryDirectory() as tmp:
         mem = LongTermMemory(data_dir=Path(tmp))

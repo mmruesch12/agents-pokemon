@@ -55,6 +55,51 @@ def test_navigation_without_landmark_uses_quest_hint():
     assert not state.get("known_landmarks")
 
 
+def test_gated_phase_target_ignores_landmark_on_wrong_map():
+    gs = GameState(player={"map_group": 24, "map_id": 5, "x": 4, "y": 8})
+    state = {
+        "known_landmarks": [
+            make_landmark(
+                landmark_id=ELMS_LAB_ENTRANCE_ID,
+                name="Elm's Lab entrance",
+                map_key=MAP_KEY_NEW_BARK_TOWN,
+                x=6,
+                y=3,
+                kind="building_entrance",
+            )
+        ]
+    }
+    from src.graph.exploration import gated_phase_target
+
+    target = gated_phase_target(
+        gs,
+        starter_quest.NEW_BARK_LAB_WARP,
+        state=state,
+        landmark_id=ELMS_LAB_ENTRANCE_ID,
+    )
+    assert target != (6, 3)
+
+
+def test_navigation_uses_alt_door_entrance_landmark():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
+        raw_metadata={"has_starter": False},
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["known_landmarks"] = [
+        make_landmark(
+            landmark_id=ELMS_LAB_ENTRANCE_ID,
+            name="Elm's Lab entrance",
+            map_key=MAP_KEY_NEW_BARK_TOWN,
+            x=5,
+            y=3,
+            kind="building_entrance",
+        )
+    ]
+    assert _navigation_target(gs, state=state) == (5, 4)
+
+
 def test_navigation_uses_discovered_entrance_landmark():
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},

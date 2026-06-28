@@ -228,14 +228,16 @@ def lab_entry_navigation_target(
     return door
 
 
-def door_exit_direction(gs: GameState) -> str | None:
+def door_exit_direction(gs: GameState, *, door: tuple[int, int] | None = None) -> str | None:
     if gs.map_key == MAP_KEY_NEW_BARK_TOWN and (
         not _has_starter(gs) or (_has_egg(gs) and not _egg_delivered(gs))
     ):
         pos = (gs.player.x, gs.player.y)
-        if pos == NEW_BARK_LAB_APPROACH:
+        door = door or NEW_BARK_LAB_WARP
+        approach = (door[0], door[1] + 1)
+        if pos == approach:
             return "up"
-        if pos[1] == NEW_BARK_LAB_APPROACH[1] and pos[0] < NEW_BARK_LAB_APPROACH[0]:
+        if pos[1] == approach[1] and pos[0] < approach[0]:
             return "right"
     if gs.map_key == MAP_KEY_ELMS_LAB and _has_starter(gs):
         if (gs.player.x, gs.player.y) in (ELMS_LAB_EXIT, (5, 11)):

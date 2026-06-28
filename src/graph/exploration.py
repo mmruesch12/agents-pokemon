@@ -62,6 +62,7 @@ def gated_phase_target(gs, phase_target, *, state=None, landmark_id=None):
     landmarks = list(state.get("known_landmarks", []))
     if landmark_id:
         landmark = find_landmark(landmarks, landmark_id=landmark_id)
-        if landmark is not None: return landmark_coords(landmark)
+        if landmark is not None and landmark.get("map_key") == gs.map_key:
+            return landmark_coords(landmark)
         return exploration_target(gs, state)
     return phase_target

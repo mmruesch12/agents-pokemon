@@ -92,7 +92,10 @@ class LongTermMemory:
 
     def hydrate_state(self, state: dict[str, Any]) -> dict[str, Any]:
         state["long_term_facts"] = self.get_facts()
-        state["known_landmarks"] = self.get_landmarks()
+        merged = list(state.get("known_landmarks", []))
+        for landmark in self.get_landmarks():
+            merged = merge_landmark(merged, landmark)
+        state["known_landmarks"] = merged
         return state
 
     def sync_landmarks_from_state(self, state: dict[str, Any]) -> None:
