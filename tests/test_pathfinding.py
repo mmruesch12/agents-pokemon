@@ -36,3 +36,8 @@ def test_find_path_with_obstacles():
 def test_direction_to_button():
     assert direction_to_button("up") == "up"
     assert direction_to_button("right") == "right"
+
+
+def test_find_path_players_house_direct_south():
+    path = find_path(3, 1, 3, 3, map_key="3:4")
+    assert path == ["down", "down"]

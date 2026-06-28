@@ -39,8 +39,8 @@ def get_chat_model():
         from langchain_openai import ChatOpenAI
 
         if xai_key:
-            model = os.getenv("XAI_MODEL", "grok-4-1-fast-reasoning")
-            base_url = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1")
+            model = (os.getenv("XAI_MODEL") or "").strip() or "grok-4-1-fast-reasoning"
+            base_url = (os.getenv("XAI_BASE_URL") or "").strip() or "https://api.x.ai/v1"
             return ChatOpenAI(
                 model=model,
                 api_key=xai_key,
@@ -48,14 +48,14 @@ def get_chat_model():
                 temperature=0,
             )
         if openrouter_key:
-            model = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+            model = (os.getenv("OPENROUTER_MODEL") or "").strip() or "openai/gpt-4o-mini"
             return ChatOpenAI(
                 model=model,
                 api_key=openrouter_key,
                 base_url="https://openrouter.ai/api/v1",
                 temperature=0,
             )
-        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        model = (os.getenv("OPENAI_MODEL") or "").strip() or "gpt-4o-mini"
         return ChatOpenAI(model=model, api_key=openai_key, temperature=0)
     except Exception as exc:
         logger.warning("LLM init failed: %s", exc)

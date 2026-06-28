@@ -52,6 +52,16 @@ def test_get_chat_model_prefers_openrouter(monkeypatch):
     assert model2.model_name == "grok-xai-wins"
 
 
+def test_get_chat_model_openrouter_blank_model_falls_back(monkeypatch):
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test-xxx")
+    monkeypatch.setenv("OPENROUTER_MODEL", "")
+    model = get_chat_model()
+    assert model is not None
+    assert model.model_name == "openai/gpt-4o-mini"
+
+
 def test_llm_plan_heuristic_fallback(new_bark_ram: dict, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("XAI_API_KEY", raising=False)

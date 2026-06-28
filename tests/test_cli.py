@@ -6,6 +6,7 @@ import pytest
 
 from src.run.autonomous_runner import build_parser as runner_parser
 from src.run.cli import build_parser
+from src.run.watch import normalize_watch_argv
 
 
 def test_cli_help_flags():
@@ -67,6 +68,18 @@ def test_cli_headed_works_after_subcommand():
     a2 = parser.parse_args(["resume", "--headed"])
     assert a2.headed is True
     assert a2.resume == "latest"
+
+
+def test_watch_normalizes_headed_and_resume_latest():
+    argv = normalize_watch_argv(["--steps", "120"])
+    assert argv[0:4] == ["--resume", "latest", "--headed", "--steps"]
+    assert argv[4] == "120"
+
+
+def test_watch_no_resume_skips_resume_flag():
+    argv = normalize_watch_argv(["--no-resume", "--steps", "50"])
+    assert "--resume" not in argv
+    assert argv[0] == "--headed"
 
 
 @pytest.mark.parametrize(
