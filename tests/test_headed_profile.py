@@ -24,8 +24,10 @@ class _FakePyBoy:
         self.window = kwargs.get("window", "null")
         self._memory = bytearray(0x10000)
         self._saved: bytes | None = None
+        self._tick_n = 0
 
     def tick(self) -> bool:
+        self._tick_n += 1
         _FakePyBoy.tick_calls += 1
         return True
 
@@ -64,6 +66,23 @@ class _FakePyBoy:
         return self._memory
 
 
+class _MutatingRamPyBoy(_FakePyBoy):
+    """PyBoy fake whose tick() mutates WRAM map bytes (exercises live-thread reads)."""
+
+    MAP_GROUP = 0xD087
+    MAP_NUMBER = 0xD088
+
+    def tick(self) -> bool:
+        self._tick_n += 1
+        _FakePyBoy.tick_calls += 1
+        if self._tick_n >= 6:
+            self._memory[self.MAP_GROUP] = 3
+            self._memory[self.MAP_NUMBER] = 4
+        if self._tick_n == 4:
+            self._memory[0xD087] = 7
+        return True
+
+
 @pytest.fixture
 def fake_rom(tmp_path):
     rom = tmp_path / "test.gb"
@@ -74,11 +93,17 @@ def fake_rom(tmp_path):
 @pytest.fixture
 def fake_pyboy(monkeypatch):
     _FakePyBoy.tick_calls = 0
-    monkeypatch.setattr("pyboy.PyBoy", _FakePyBoy)
-    # pyboy is imported inside PyBoyWrapper.__init__
     import pyboy
 
     monkeypatch.setattr(pyboy, "PyBoy", _FakePyBoy)
+
+
+@pytest.fixture
+def mutating_pyboy(monkeypatch):
+    _FakePyBoy.tick_calls = 0
+    import pyboy
+
+    monkeypatch.setattr(pyboy, "PyBoy", _MutatingRamPyBoy)
 
 
 def test_pyboy_wrapper_headless_is_not_live(fake_rom, fake_pyboy):
@@ -141,32 +166,42 @@ def test_pyboy_wrapper_load_state_resets_frame_count(fake_rom, fake_pyboy):
         assert gs.frame_count == 0
 
 
-def test_live_thread_memory_reads_under_concurrent_tick(fake_rom, fake_pyboy):
+def test_live_thread_memory_reads_under_concurrent_tick(fake_rom, mutating_pyboy):
     from src.emulator.bootstrap import read_loaded_map, read_memory_byte
     from src.state.gold_state_reader import ADDR_MAP_GROUP, ADDR_MAP_NUMBER
 
     wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
-    wrapper._pyboy._memory[ADDR_MAP_GROUP] = 3
-    wrapper._pyboy._memory[ADDR_MAP_NUMBER] = 4
     try:
         assert wrapper._live_thread is not None
         assert wrapper._live_thread.is_alive()
-        for _ in range(40):
+        assert read_loaded_map(wrapper) == (0, 0)
+        deadline = time.time() + 1.0
+        seen = False
+        while time.time() < deadline:
             read_memory_byte(wrapper, ADDR_MAP_GROUP)
-            read_loaded_map(wrapper)
+            read_memory_byte(wrapper, ADDR_MAP_NUMBER)
             wrapper.get_game_state()
-            time.sleep(0.002)
-        assert read_loaded_map(wrapper) == (3, 4)
+            if read_loaded_map(wrapper) == (3, 4):
+                seen = True
+                break
+            time.sleep(0.005)
+        assert seen, "live thread tick should mutate map bytes observable via read_byte"
     finally:
         wrapper.stop()
 
 
-def test_pyboy_wrapper_read_byte_uses_lock(fake_rom, fake_pyboy):
+def test_pyboy_wrapper_read_byte_observes_mutating_ram(fake_rom, mutating_pyboy):
     wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
     try:
         assert wrapper._lock is not None
-        wrapper._pyboy._memory[0xD087] = 7
-        assert wrapper.read_byte(0xD087) == 7
+        deadline = time.time() + 0.5
+        val = 0
+        while time.time() < deadline:
+            val = wrapper.read_byte(0xD087)
+            if val == 7:
+                break
+            time.sleep(0.005)
+        assert val == 7
     finally:
         wrapper.stop()
 
@@ -219,6 +254,7 @@ def test_configure_tracing_enables_when_langsmith(monkeypatch):
     monkeypatch.delenv("LANGCHAIN_TRACING_V2", raising=False)
     configure_tracing(langsmith=True, headed=False)
     assert os.environ.get("LANGCHAIN_TRACING_V2") == "true"
+    assert os.environ.get("LANGSMITH_HIDE_INPUTS") == "false"
 
 
 def test_headed_runner_uses_memory_saver_not_sqlite(tmp_path):

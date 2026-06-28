@@ -38,7 +38,7 @@ Pragmatic dual-path implementation:
 - Button-hold scheduling via `_held_key` is still internal to the wrapper.
 - Lock held around PyBoy calls; potential for subtle races or deadlocks under load (though `RLock` + daemon helps).
 - Approximate hold semantics in live mode (main waits via sleep polling).
-- Divergent semantics: headed uses in-memory checkpoint (cross-process `get_state` on resume is a no-op), headless uses persistent sqlite. Resume thread-id logic in `_resolve_thread_id` always peeks sqlite.
+- Divergent semantics: headed uses in-memory `MemorySaver` (agent mind resets each process; resume loads latest `.state` into the emulator and seeds agent state from RAM). Headless uses persistent sqlite. `_resolve_thread_id("latest")` peeks sqlite only when **not** headed (`autonomous_runner.py` headed branch returns `self.thread_id` directly).
 - Graph still pays full per-action cost (supervisor → specialist → apply → critic → memory) even for watch sessions; live thread only keeps the window animating during that work.
 - Testing live behavior is harder (xvfb + timing-sensitive).
 - SDL2/GL context ownership best practices are only partially followed.

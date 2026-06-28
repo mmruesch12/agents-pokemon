@@ -43,3 +43,6 @@ data/faiss/
 
 # Run logs
 *.log
+
+# Local LangSmith app scaffold (user-generated, not shipped)
+/langsmith-app/

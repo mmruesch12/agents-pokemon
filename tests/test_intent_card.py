@@ -90,7 +90,7 @@ def test_log_intent_card_emits_logger_info(caplog):
 def test_runner_loop_calls_log_intent_card_after_invoke():
     """Structural: while-loop graph.invoke is immediately followed by log_intent_card."""
     source = RUNNER_SOURCE.read_text()
-    invoke = "state = graph.invoke(state, config=config)"
+    invoke = "state = graph.invoke(state, config=invoke_config)"
     assert invoke in source
     idx = source.index(invoke)
     following = source[idx : idx + 200]
