@@ -1,4 +1,4 @@
-"""Long-term memory: vector summaries + structured facts."""
+"""Long-term memory: vector summaries + structured facts + landmarks."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import json
 import logging
 from pathlib import Path
 from typing import Any
+
+from src.memory.landmarks import merge_landmark, retrieve_landmarks_from_state
 
 logger = logging.getLogger(__name__)
 
@@ -18,20 +20,25 @@ class LongTermMemory:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._summaries: list[dict[str, Any]] = []
         self._facts: list[str] = []
+        self._landmarks: list[dict[str, Any]] = []
         self._index = None
         self._load()
 
     def _load(self) -> None:
         facts_path = self.data_dir / "facts.json"
         summaries_path = self.data_dir / "summaries.json"
+        landmarks_path = self.data_dir / "landmarks.json"
         if facts_path.exists():
             self._facts = json.loads(facts_path.read_text())
         if summaries_path.exists():
             self._summaries = json.loads(summaries_path.read_text())
+        if landmarks_path.exists():
+            self._landmarks = json.loads(landmarks_path.read_text())
 
     def _save(self) -> None:
         (self.data_dir / "facts.json").write_text(json.dumps(self._facts, indent=2))
         (self.data_dir / "summaries.json").write_text(json.dumps(self._summaries, indent=2))
+        (self.data_dir / "landmarks.json").write_text(json.dumps(self._landmarks, indent=2))
 
     def add_summary(self, text: str, *, metadata: dict[str, Any] | None = None) -> str:
         entry = {"text": text, "metadata": metadata or {}}
@@ -44,8 +51,18 @@ class LongTermMemory:
             self._facts.append(fact)
             self._save()
 
+    def add_landmark(self, landmark: dict[str, Any]) -> dict[str, Any]:
+        self._landmarks = merge_landmark(self._landmarks, landmark)
+        self._save()
+        return landmark
+
+    def get_landmarks(self) -> list[dict[str, Any]]:
+        return list(self._landmarks)
+
+    def retrieve_landmarks(self, query: str, *, k: int = 3) -> list[dict[str, Any]]:
+        return retrieve_landmarks_from_state(self._landmarks, query, k=k)
+
     def retrieve(self, query: str, *, k: int = 3) -> list[str]:
-        """Simple keyword retrieval (FAISS optional when embeddings available)."""
         query_lower = query.lower()
         scored = []
         for entry in self._summaries:
@@ -68,12 +85,19 @@ class LongTermMemory:
     def get_facts(self) -> list[str]:
         return list(self._facts)
 
+    def hydrate_state(self, state: dict[str, Any]) -> dict[str, Any]:
+        state["long_term_facts"] = self.get_facts()
+        state["known_landmarks"] = self.get_landmarks()
+        return state
+
+    def sync_landmarks_from_state(self, state: dict[str, Any]) -> None:
+        for landmark in state.get("known_landmarks", []):
+            self.add_landmark(landmark)
+
     def build_faiss_index(self) -> bool:
-        """Build FAISS index if faiss-cpu is available."""
         try:
             import faiss
             import numpy as np
-
             if not self._summaries:
                 return False
             dim = 64

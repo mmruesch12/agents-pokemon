@@ -7,11 +7,26 @@ import os
 from typing import Any
 
 from src.emulator.bootstrap import needs_bootstrap, pick_bootstrap_button
+from src.graph.exploration import exploration_target, gated_phase_target
 from src.graph.llm import llm_battle, llm_navigate, llm_plan
 from src.graph.pathfinding import direction_toward, find_path
 from src.graph.phases import house_exit, starter_quest
 from src.graph.state import AgentState, update_game_state
+from src.memory.landmarks import (
+    ELMS_LAB_ENTRANCE_ID,
+    ELMS_LAB_INTERIOR_ID,
+    apply_landmark_discovery,
+    discover_elms_lab_landmarks,
+    discover_map_visit_landmark,
+    format_landmarks_for_prompt,
+    landmark_known,
+    memory_data_dir,
+    parse_position_key,
+    retrieve_landmarks_from_state,
+)
+from src.memory.long_term_memory import LongTermMemory
 from src.state.gold_state_reader import (
+    MAP_KEY_ELMS_LAB,
     MAP_KEY_NEW_BARK_TOWN,
     MAP_KEY_PLAYERS_HOUSE_1F,
     MAP_KEY_PLAYERS_HOUSE_2F,
@@ -32,6 +47,79 @@ logger = logging.getLogger(__name__)
 STUCK_THRESHOLD = int(os.getenv("STUCK_THRESHOLD", "10"))
 INTERACT_HOLD_FRAMES = int(os.getenv("INTERACT_HOLD_FRAMES", "30"))
 SCRIPT_WAIT_TICKS = int(os.getenv("SCRIPT_WAIT_TICKS", "45"))
+
+_LANDMARK_GATED_INTERIOR_TARGETS = frozenset(
+    {starter_quest.STARTER_BALL_TILE, starter_quest.ELM_DESK_TILE}
+)
+_LAB_DOOR_TILES = frozenset({starter_quest.NEW_BARK_LAB_WARP, (5, 3)})
+
+
+def _long_term_memory() -> LongTermMemory:
+    return LongTermMemory(data_dir=memory_data_dir())
+
+
+def _attach_landmark_context(state: AgentState, gs: GameState) -> list[dict[str, Any]]:
+    landmarks = list(state.get("known_landmarks", []))
+    query = f"{gs.map_key} {gs.player.map_name} {state.get('active_subgoal', '')}"
+    relevant = retrieve_landmarks_from_state(landmarks, query, k=3)
+    formatted = format_landmarks_for_prompt(relevant)
+    if formatted:
+        retrievals = list(state.get("memory_retrievals", []))
+        if formatted not in retrievals:
+            retrievals.append(formatted)
+        state["memory_retrievals"] = retrievals[-5:]
+    return relevant
+
+
+def _gate_starter_quest_target(
+    gs: GameState,
+    quest_target: tuple[int, int],
+    *,
+    state: AgentState | None = None,
+) -> tuple[int, int]:
+    state = state or {}
+    landmarks = list(state.get("known_landmarks", []))
+    if quest_target == starter_quest.NEW_BARK_LAB_WARP:
+        if landmark_known(landmarks, ELMS_LAB_ENTRANCE_ID):
+            return gated_phase_target(
+                gs, quest_target, state=state, landmark_id=ELMS_LAB_ENTRANCE_ID
+            )
+        return exploration_target(gs, state, hint_tile=starter_quest.NEW_BARK_LAB_WARP)
+    if quest_target in _LANDMARK_GATED_INTERIOR_TARGETS:
+        if landmark_known(landmarks, ELMS_LAB_INTERIOR_ID):
+            return quest_target
+        return exploration_target(gs, state)
+    return quest_target
+
+
+def _lab_door_interact_candidate(gs: GameState, state: AgentState | None = None) -> bool:
+    state = state or {}
+    if gs.map_key != MAP_KEY_NEW_BARK_TOWN:
+        return False
+    if landmark_known(state.get("known_landmarks", []), ELMS_LAB_INTERIOR_ID):
+        return False
+    return (gs.player.x, gs.player.y) in _LAB_DOOR_TILES
+
+
+def _persist_landmark_discoveries(state: AgentState, discoveries: list[dict[str, Any]]) -> None:
+    if not discoveries:
+        return
+    apply_landmark_discovery(state, discoveries)
+    try:
+        memory = _long_term_memory()
+        for landmark in discoveries:
+            memory.add_landmark(landmark)
+            logger.info(
+                "Landmark discovered: %s at %s (%s,%s)",
+                landmark.get("name"),
+                landmark.get("map_key"),
+                landmark.get("x"),
+                landmark.get("y"),
+            )
+    except OSError as exc:
+        logger.warning("Could not persist landmarks: %s", exc)
+
+
 EARLY_GAME_OBJECTIVES = {
     MAP_KEY_PLAYERS_HOUSE_2F: "Leave bedroom via stairs, talk to Mom on 1F, then head to Professor Elm",
     MAP_KEY_PLAYERS_HOUSE_1F: "Talk to Mom and leave through the front door to New Bark Town",
@@ -208,6 +296,7 @@ def planner_node(state: AgentState) -> AgentState:
     """Hierarchical planning: LLM-assisted subgoals with heuristic fallback."""
     gs = GameState.model_validate(state.get("game_state", {}))
     map_key = gs.map_key
+    relevant_landmarks = _attach_landmark_context(state, gs)
 
     objective = EARLY_GAME_OBJECTIVES.get(map_key, "Explore and progress story")
     subgoals = _decompose_subgoals(gs, state)
@@ -217,7 +306,7 @@ def planner_node(state: AgentState) -> AgentState:
     if state.get("house_exit_complete"):
         allows_llm = allows_llm and starter_quest.planner_allows_llm(gs, state)
     if allows_llm:
-        llm_result = llm_plan(gs, state)
+        llm_result = llm_plan(gs, state, relevant_landmarks)
     if llm_result and llm_result.get("subgoals"):
         subgoals = llm_result["subgoals"]
         state["memory_retrievals"] = [llm_result.get("llm_plan", "")]
@@ -270,6 +359,7 @@ def navigator_node(state: AgentState) -> AgentState:
     gs = GameState.model_validate(state.get("game_state", {}))
     map_key = gs.map_key
 
+    relevant_landmarks = _attach_landmark_context(state, gs)
     target = _navigation_target(gs, map_key=map_key, state=state)
     path = find_path(gs.player.x, gs.player.y, target[0], target[1], map_key=map_key)
     candidates = _navigation_candidates(gs, target, path, state)
@@ -278,7 +368,9 @@ def navigator_node(state: AgentState) -> AgentState:
     if door_exit:
         action = door_exit
     else:
-        llm_choice = llm_navigate(gs, state, candidates)
+        llm_choice = llm_navigate(
+            gs, state, candidates, relevant_landmarks, target=target
+        )
         if llm_choice and llm_choice in candidates:
             action = llm_choice
         elif path:
@@ -326,7 +418,11 @@ def _navigation_candidates(
             candidates.append(step)
     if primary != "a" and primary not in candidates:
         candidates.append(primary)
-    if house_exit.prefer_interact_candidate(gs) or starter_quest.prefer_interact_candidate(gs):
+    if (
+        house_exit.prefer_interact_candidate(gs)
+        or starter_quest.prefer_interact_candidate(gs)
+        or _lab_door_interact_candidate(gs, state)
+    ):
         candidates.insert(0, "a")
     elif house_exit.stuck_interact_fallback(gs, state) or starter_quest.stuck_interact_fallback(
         gs, state
@@ -357,7 +453,7 @@ def _navigation_target(
     if state and state.get("house_exit_complete"):
         quest_target = starter_quest.navigation_target(gs, map_key=map_key, state=state)
         if quest_target is not None:
-            return quest_target
+            return _gate_starter_quest_target(gs, quest_target, state=state)
     if map_key == "24:3":
         return (gs.player.x, gs.player.y - 2)
     return (gs.player.x + 1, gs.player.y)
@@ -411,9 +507,27 @@ def memory_node(state: AgentState) -> AgentState:
     milestones = list(state.get("milestones", []))
     maps_visited = list(state.get("maps_visited", []))
 
+    discoveries: list[dict[str, Any]] = []
     if gs.map_key not in maps_visited:
         maps_visited.append(gs.map_key)
+        discoveries.append(discover_map_visit_landmark(gs))
     state["maps_visited"] = maps_visited
+
+    transition = state.get("last_map_transition") or {}
+    if (
+        transition.get("to_map") == MAP_KEY_ELMS_LAB
+        and not landmark_known(state.get("known_landmarks", []), ELMS_LAB_INTERIOR_ID)
+    ):
+        entrance = transition.get("from_pos") or {}
+        discoveries.extend(
+            discover_elms_lab_landmarks(
+                gs,
+                entrance_map_key=entrance.get("map_key"),
+                entrance_x=entrance.get("x"),
+                entrance_y=entrance.get("y"),
+            )
+        )
+        state["last_map_transition"] = {}
 
     milestone = _check_milestone(gs, state, maps_visited)
     if milestone and milestone not in milestones:
@@ -423,6 +537,14 @@ def memory_node(state: AgentState) -> AgentState:
             house_exit.on_house_exit_complete(state, gs)
         elif milestone == starter_quest.MILESTONE_RIVAL_BATTLE:
             starter_quest.on_starter_quest_complete(state, gs)
+
+    if milestone == starter_quest.MILESTONE_ENTERED_LAB and not landmark_known(
+        state.get("known_landmarks", []), ELMS_LAB_INTERIOR_ID
+    ):
+        discoveries.extend(discover_elms_lab_landmarks(gs))
+
+    if discoveries:
+        _persist_landmark_discoveries(state, discoveries)
 
     state["milestones"] = milestones
     state["badges_at_last_check"] = gs.total_badges
@@ -514,6 +636,16 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
             state["bootstrap_complete"] = True
             state["phase"] = "explore"
             state["stuck_count"] = 0
+        if map_before != gs.map_key:
+            parsed = parse_position_key(pos_before)
+            if parsed is not None:
+                from_map, from_x, from_y = parsed
+                state["last_map_transition"] = {
+                    "from_map": from_map,
+                    "from_pos": {"map_key": from_map, "x": from_x, "y": from_y},
+                    "to_map": gs.map_key,
+                    "to_pos": {"x": gs.player.x, "y": gs.player.y},
+                }
         house_exit.on_map_change(map_before, gs, state, action=action)
         starter_quest.on_map_change(map_before, gs, state, action=action)
         if action.startswith("bootstrap_"):

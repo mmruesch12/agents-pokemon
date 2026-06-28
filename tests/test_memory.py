@@ -29,3 +29,21 @@ def test_summarize_history():
         mem = LongTermMemory(data_dir=Path(tmp))
         summary = mem.summarize_history(["navigate:right", "navigate:up"])
         assert "navigate" in summary
+
+
+def test_add_landmark_persists_to_disk():
+    with tempfile.TemporaryDirectory() as tmp:
+        mem = LongTermMemory(data_dir=Path(tmp))
+        mem.add_landmark(
+            {
+                "id": "elms_lab_entrance",
+                "name": "Elm's Lab",
+                "map_key": "24:5",
+                "x": 5,
+                "y": 2,
+                "kind": "interior",
+            }
+        )
+        reloaded = LongTermMemory(data_dir=Path(tmp))
+        assert reloaded.get_landmarks()[0]["name"] == "Elm's Lab"
+        assert any("Lab" in str(entry) for entry in reloaded.retrieve_landmarks("lab"))

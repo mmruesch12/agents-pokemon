@@ -283,6 +283,8 @@ class AutonomousRunner:
                     state = create_initial_state(emu)
                     state = self._bootstrap_if_needed(emu, state)
 
+                state = self.memory.hydrate_state(state)
+
                 start_steps = state.get("metrics", {}).get("steps", 0)
                 target_steps = start_steps + self.max_steps
                 milestones: list[str] = list(state.get("milestones", []))
@@ -318,6 +320,9 @@ class AutonomousRunner:
                             milestones.append(m)
                             logger.info("MILESTONE: %s", m)
                             self.memory.add_fact(f"milestone:{m}")
+
+                    if state.get("known_landmarks"):
+                        self.memory.sync_landmarks_from_state(state)
 
                     if state.get("stuck_count", 0) >= self.stuck_threshold:
                         logger.warning(

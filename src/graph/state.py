@@ -25,6 +25,8 @@ class AgentState(TypedDict, total=False):
     visited_positions: list[str]
     memory_retrievals: list[str]
     long_term_facts: list[str]
+    known_landmarks: list[dict[str, Any]]
+    last_map_transition: dict[str, Any]
     phase: str
     next_node: str
     last_action: str
@@ -66,6 +68,8 @@ def initial_agent_state(game_state: GameState | dict | None = None) -> AgentStat
         visited_positions=[],
         memory_retrievals=[],
         long_term_facts=[],
+        known_landmarks=[],
+        last_map_transition={},
         phase="explore",
         next_node="supervisor",
         last_action="",
