@@ -14,6 +14,7 @@ NODE_NAMES = (
     "interactor",
     "battler",
     "waiter",
+    "idle",
     "critic",
     "memory",
     "apply_action",
@@ -46,6 +47,10 @@ def route_from_battler(state: AgentState) -> str:
 
 
 def route_from_waiter(state: AgentState) -> str:
+    return "apply_action"
+
+
+def route_from_idle(state: AgentState) -> str:
     return "apply_action"
 
 

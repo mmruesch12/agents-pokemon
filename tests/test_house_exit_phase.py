@@ -85,16 +85,15 @@ def test_blocked_stairs_up_during_mom_at_east_end():
     assert house_exit.blocked_stairs_up(gs_done) is False
 
 
-def test_on_house_exit_complete_resets_planner_state():
+def test_on_house_exit_complete_sets_flag_only():
     gs = _gs(24, 4, 13, 5, map_name="New Bark Town")
     state = initial_agent_state(gs)
     state["stuck_count"] = 8
     state["should_replan"] = True
     house_exit.on_house_exit_complete(state, gs)
     assert state["house_exit_complete"] is True
-    assert state["stuck_count"] == 0
-    assert state["should_replan"] is False
-    assert state["active_subgoal"] == "Explore New Bark Town"
+    assert state["stuck_count"] == 8
+    assert state["should_replan"] is True
 
 
 def test_format_map_context_includes_map_key():
@@ -115,9 +114,11 @@ def test_planner_allows_llm_blocked_in_house():
     assert house_exit.planner_allows_llm(gs, state) is False
 
 
-def test_planner_allows_llm_blocked_on_post_exit_new_bark():
-    gs = _gs(24, 4, 17, 6, map_name="New Bark Town")
-    state = {"house_exit_complete": True}
-    assert house_exit.planner_allows_llm(gs, state) is False
+def test_is_satisfied_requires_new_bark_exterior():
+    gs = _gs(24, 4, 13, 5, map_name="New Bark Town")
+    assert house_exit.is_satisfied(gs, {"house_exit_complete": True}) is True
+    assert house_exit.is_satisfied(gs, {"house_exit_complete": False}) is False
+    gs_house = _gs(24, 6, 9, 1)
+    assert house_exit.is_satisfied(gs_house, {"house_exit_complete": True}) is False
 
 

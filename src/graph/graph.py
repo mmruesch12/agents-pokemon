@@ -14,6 +14,7 @@ from src.graph.nodes import (
     battler_node,
     bootstrap_node,
     critic_node,
+    idle_node,
     interactor_node,
     memory_node,
     navigator_node,
@@ -25,6 +26,7 @@ from src.graph.router import (
     route_from_battler,
     route_from_bootstrap,
     route_from_critic,
+    route_from_idle,
     route_from_interactor,
     route_from_memory,
     route_from_navigator,
@@ -60,6 +62,7 @@ def build_graph(
     graph.add_node("interactor", interactor_node)
     graph.add_node("battler", battler_node)
     graph.add_node("waiter", waiter_node)
+    graph.add_node("idle", idle_node)
     graph.add_node("critic", critic_node)
     graph.add_node("memory", memory_node)
     graph.add_node("apply_action", _make_apply_action(emulator))
@@ -73,6 +76,7 @@ def build_graph(
     graph.add_conditional_edges("interactor", route_from_interactor)
     graph.add_conditional_edges("battler", route_from_battler)
     graph.add_conditional_edges("waiter", route_from_waiter)
+    graph.add_conditional_edges("idle", route_from_idle)
     graph.add_conditional_edges("apply_action", route_from_apply_action)
     graph.add_conditional_edges("critic", route_from_critic)
     graph.add_conditional_edges("memory", route_from_memory)
@@ -127,6 +131,7 @@ EXPECTED_NODES = {
     "interactor",
     "battler",
     "waiter",
+    "idle",
     "critic",
     "memory",
     "apply_action",

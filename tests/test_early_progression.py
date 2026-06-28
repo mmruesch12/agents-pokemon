@@ -8,27 +8,10 @@ from src.state.gold_state_reader import ByteArrayReader, GoldStateReader
 from src.state.models import GameState
 
 
-def test_new_bark_subgoals(new_bark_ram: dict):
-    gs = GoldStateReader(ByteArrayReader(new_bark_ram)).read()
-    state = initial_agent_state(gs)
-    state["house_exit_complete"] = True
-    subgoals = _decompose_subgoals(gs, state)
-    assert any("New Bark" in s or "Route 29" in s for s in subgoals)
-
-
 def test_route_29_subgoals():
     gs = GameState(player={"map_group": 24, "map_id": 3, "x": 10, "y": 20})
     subgoals = _decompose_subgoals(gs)
     assert any("Route 29" in s or "Cherrygrove" in s for s in subgoals)
-
-
-def test_navigation_target_new_bark(new_bark_ram: dict):
-    gs = GoldStateReader(ByteArrayReader(new_bark_ram)).read()
-    state = initial_agent_state(gs)
-    state["house_exit_complete"] = True
-    target = _navigation_target(gs, state=state)
-    assert target[0] == gs.player.x + 1
-    assert target[1] == gs.player.y
 
 
 def test_navigation_target_route_29():

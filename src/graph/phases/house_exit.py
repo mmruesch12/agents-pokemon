@@ -1,4 +1,4 @@
-"""House-exit phase: routing, navigation, logging, and post-exit handoff."""
+"""House-exit phase: routing, navigation, logging, and terminal success."""
 
 from __future__ import annotations
 
@@ -15,11 +15,17 @@ from src.state.models import GameState
 from src.state.script_constants import MOM_SCENE_ENTRY_POS
 
 HOUSE_EXIT_MILESTONE = "Left house — New Bark Town"
+HOUSE_EXIT_DONE_ACTION = "house_exit_done"
 STAIRS_2F = (7, 0)
 
 INDOOR_INTERACT_STUCK = int(os.getenv("INDOOR_INTERACT_STUCK", "2"))
 POST_WARP_WAIT_TICKS = int(os.getenv("POST_WARP_WAIT_TICKS", "90"))
 SCRIPT_WAIT_TICKS = int(os.getenv("SCRIPT_WAIT_TICKS", "45"))
+
+
+def is_satisfied(gs: GameState, state: dict[str, Any]) -> bool:
+    """House-exit goal complete: player on New Bark exterior after leaving the house."""
+    return bool(state.get("house_exit_complete") and gs.map_key == MAP_KEY_NEW_BARK_TOWN)
 
 
 def in_house_exit(gs: GameState, state: dict[str, Any] | None = None) -> bool:
@@ -52,18 +58,9 @@ def force_interactor(gs: GameState, state: dict[str, Any]) -> bool:
     return mom_scene_pending(gs)
 
 
-def in_post_exit_new_bark(gs: GameState, state: dict[str, Any]) -> bool:
-    """Player left the house and is still on the New Bark exterior map."""
-    return bool(state.get("house_exit_complete") and gs.map_key == MAP_KEY_NEW_BARK_TOWN)
-
-
 def planner_allows_llm(gs: GameState, state: dict[str, Any]) -> bool:
-    """Disable LLM planner during house exit and post-exit New Bark handoff."""
-    if in_house_exit(gs, state):
-        return False
-    if in_post_exit_new_bark(gs, state):
-        return False
-    return True
+    """Disable LLM planner during house maps only."""
+    return not in_house_exit(gs, state)
 
 
 def decompose_subgoals(gs: GameState) -> list[str] | None:
@@ -75,10 +72,6 @@ def decompose_subgoals(gs: GameState) -> list[str] | None:
     return None
 
 
-def post_exit_subgoals(gs: GameState) -> list[str]:
-    return ["Explore New Bark Town", "Head toward Route 29"]
-
-
 def navigation_target(
     gs: GameState,
     *,
@@ -87,7 +80,6 @@ def navigation_target(
 ) -> tuple[int, int] | None:
     """Navigation target for house maps; None defers to default explorer logic."""
     map_key = map_key or gs.map_key
-    state = state or {}
     if map_key == MAP_KEY_PLAYERS_HOUSE_2F:
         return STAIRS_2F
     if map_key == MAP_KEY_PLAYERS_HOUSE_1F:
@@ -147,16 +139,9 @@ def on_map_change(
 
 
 def on_house_exit_complete(state: dict[str, Any], gs: GameState) -> None:
-    """Reset planner/stuck state after leaving the house."""
+    """Mark house-exit goal satisfied; supervisor routes to idle thereafter."""
+    del gs  # milestone already validated map via house_milestone
     state["house_exit_complete"] = True
-    state["stuck_count"] = 0
-    state["replan_count"] = 0
-    state["should_replan"] = False
-    state["critic_verdict"] = "proceed"
-    subgoals = post_exit_subgoals(gs)
-    state["subgoals"] = subgoals
-    state["active_subgoal"] = subgoals[0]
-    state["phase"] = "explore"
 
 
 def house_milestone(gs: GameState, maps_visited: list[str]) -> str | None:

@@ -78,25 +78,6 @@ def test_navigation_target_players_house_1f_targets_door_after_mom():
     assert target == (6, 7)
 
 
-def test_sync_player_map_from_wram_patches_uninitialized_map():
-    from src.emulator.bootstrap import sync_player_map_from_wram
-
-    class FakeEmu:
-        def read_byte(self, address: int) -> int:
-            from src.state.gold_state_reader import ADDR_MAP_GROUP, ADDR_MAP_NUMBER
-
-            if address == ADDR_MAP_GROUP:
-                return 24
-            if address == ADDR_MAP_NUMBER:
-                return 7
-            return 0
-
-    gs = GameState(player={"map_group": 0, "map_id": 0, "x": 3, "y": 5})
-    synced = sync_player_map_from_wram(gs, FakeEmu())  # type: ignore[arg-type]
-    assert synced.map_key == "24:7"
-    assert synced.player.map_name == "Player's House 2F"
-
-
 def test_navigator_players_house_moves_toward_stairs():
     gs = GameState(player={"map_group": 24, "map_id": 7, "x": 3, "y": 2})
     state = initial_agent_state(gs)

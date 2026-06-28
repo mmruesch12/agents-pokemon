@@ -468,4 +468,5 @@ def test_seed_state_from_loaded_emulator_marks_bootstrap_complete(tmp_path):
     state = runner._seed_state_from_loaded_emulator(emu, "final_42")
     assert state["bootstrap_complete"] is True
     assert state["phase"] == "explore"
-    assert state["loaded_map_key"] == (24, 7)
+    assert state["game_state"]["player"]["map_group"] == 24
+    assert state["game_state"]["player"]["map_id"] == 7

@@ -53,6 +53,9 @@ def supervisor_node(state: AgentState) -> AgentState:
     elif needs_bootstrap(gs, state):
         state["next_node"] = "bootstrap"
         state["phase"] = "bootstrap"
+    elif house_exit.is_satisfied(gs, state):
+        state["next_node"] = "idle"
+        state["phase"] = "house_exit_done"
     elif needs_script_wait(gs, state):
         state["next_node"] = "waiter"
         state["phase"] = "wait"
@@ -152,9 +155,9 @@ def bootstrap_node(state: AgentState) -> AgentState:
     """Press through title screens, dialogs, name entry, and clock setup."""
     gs = GameState.model_validate(state.get("game_state", {}))
     idx = state.get("bootstrap_action_index", 0)
-    loaded_map = state.get("loaded_map_key")
-    if isinstance(loaded_map, list):
-        loaded_map = tuple(loaded_map)
+    loaded_map = None
+    if gs.player.map_group or gs.player.map_id:
+        loaded_map = (gs.player.map_group, gs.player.map_id)
     button = pick_bootstrap_button(idx, loaded_map=loaded_map)
     state["bootstrap_action_index"] = idx + 1
     state["last_action"] = f"bootstrap_{button}"
@@ -163,6 +166,16 @@ def bootstrap_node(state: AgentState) -> AgentState:
     history = list(state.get("short_term_history", []))
     history.append(f"bootstrap:{button}@{gs.player.x},{gs.player.y}")
     state["short_term_history"] = history[-20:]
+    state["next_node"] = "critic"
+    return state
+
+
+def idle_node(state: AgentState) -> AgentState:
+    """Terminal house-exit state: no further navigation input."""
+    gs = GameState.model_validate(state.get("game_state", {}))
+    state["last_action"] = house_exit.HOUSE_EXIT_DONE_ACTION
+    state["last_action_result"] = {"reason": "house_exit_satisfied", "map_key": gs.map_key}
+    state["position_before_action"] = gs.position_key
     state["next_node"] = "critic"
     return state
 
@@ -207,8 +220,6 @@ def _decompose_subgoals(gs: GameState, state: AgentState | None = None) -> list[
     house = house_exit.decompose_subgoals(gs)
     if house:
         return house
-    if gs.map_key == MAP_KEY_NEW_BARK_TOWN and state.get("house_exit_complete"):
-        return house_exit.post_exit_subgoals(gs)
     if gs.map_key == "24:3":
         return ["Travel north on Route 29", "Reach Cherrygrove City"]
     if gs.battle.in_battle:
@@ -425,6 +436,8 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
     try:
         if action == "wait_script":
             emulator.tick(SCRIPT_WAIT_TICKS)
+        elif action == house_exit.HOUSE_EXIT_DONE_ACTION:
+            emulator.tick(1)
         elif (
             action.startswith("navigate_")
             or action.startswith("bootstrap_")
@@ -443,9 +456,7 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
         elif action.startswith("battle_"):
             battle_action = action.replace("battle_", "")
             pokemon_tools.battle_decide.invoke({"action": battle_action})
-        from src.emulator.bootstrap import sync_player_map_from_wram
-
-        gs = sync_player_map_from_wram(emulator.get_game_state(), emulator)
+        gs = emulator.get_game_state()
         state = update_game_state(state, gs)
         if not state.get("bootstrap_complete") and (gs.raw_metadata or {}).get(
             "movement_ready"
@@ -462,8 +473,6 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
                 read_loaded_map,
             )
 
-            loaded_map = read_loaded_map(emulator)
-            state["loaded_map_key"] = loaded_map
             if pos_before and gs.position_key != pos_before:
                 state["movement_observed"] = True
             if is_bootstrap_done(emulator, gs, state):

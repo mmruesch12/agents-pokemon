@@ -70,29 +70,6 @@ def read_loaded_map(emu: PyBoyWrapper) -> tuple[int, int]:
     )
 
 
-def sync_player_map_from_wram(gs: GameState, emu: PyBoyWrapper) -> GameState:
-    """Patch game_state map fields from WRAM when the reader still shows 0:0."""
-    from src.state.gold_state_reader import MAP_KEY_UNINITIALIZED, MAP_NAMES
-
-    if not in_loaded_map(emu):
-        return gs
-    loaded = read_loaded_map(emu)
-    if loaded == (0, 0) or gs.map_key != MAP_KEY_UNINITIALIZED:
-        return gs
-    mg, mid = loaded
-    return gs.model_copy(
-        update={
-            "player": gs.player.model_copy(
-                update={
-                    "map_group": mg,
-                    "map_id": mid,
-                    "map_name": MAP_NAMES.get(loaded, f"Map {mg}:{mid}"),
-                }
-            )
-        }
-    )
-
-
 def read_player_coords(emu: PyBoyWrapper) -> tuple[int, int]:
     return (
         read_memory_byte(emu, ADDR_X_COORD),
@@ -169,9 +146,7 @@ def needs_bootstrap(
         return False
 
     if gs.player.x == 0 and gs.player.y == 0 and gs.party_count == 0:
-        from src.state.gold_state_reader import MAP_KEY_UNINITIALIZED
-
-        if gs.map_key == MAP_KEY_UNINITIALIZED or not gs.player.map_name:
+        if gs.player.map_group == 0 and gs.player.map_id == 0:
             return True
 
     return state.get("phase") == "bootstrap"

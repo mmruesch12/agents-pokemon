@@ -145,9 +145,6 @@ class AutonomousRunner:
         gs = emu.get_game_state()
         state = create_initial_state(emu)
         state = update_game_state(state, gs)
-        loaded_map = read_loaded_map(emu)
-        state["loaded_map_key"] = loaded_map
-
         if gs.party_count > 0:
             state["bootstrap_complete"] = True
             state["phase"] = "explore"
@@ -165,7 +162,7 @@ class AutonomousRunner:
         logger.info(
             "Seeded agent from emulator save %s (map=%s, bootstrap_complete=%s)",
             save_name,
-            loaded_map,
+            read_loaded_map(emu),
             state["bootstrap_complete"],
         )
         return state

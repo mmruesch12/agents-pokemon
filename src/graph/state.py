@@ -43,7 +43,6 @@ class AgentState(TypedDict, total=False):
     badges_at_last_check: int
     bootstrap_complete: bool
     bootstrap_action_index: int
-    loaded_map_key: tuple[int, int]
     house_exit_complete: bool
     error: str
 
