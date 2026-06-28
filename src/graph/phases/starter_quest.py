@@ -22,6 +22,7 @@ MILESTONE_EGG_DELIVERED = "Delivered Mystery Egg to Elm"
 MILESTONE_RIVAL_BATTLE = "First rival battle"
 
 NEW_BARK_LAB_WARP = (6, 3)
+NEW_BARK_LAB_APPROACH = (6, 4)
 ELMS_LAB_EXIT = (4, 11)
 STARTER_BALL_TILE = (
     int(os.getenv("STARTER_BALL_X", "7")),
@@ -207,7 +208,35 @@ def navigation_target(
     return None
 
 
+def lab_entry_navigation_target(
+    gs: GameState,
+    *,
+    door: tuple[int, int] | None = None,
+) -> tuple[int, int]:
+    """Route to the lab warp via the south approach tile when west of the door."""
+    from src.graph.pathfinding import find_path
+
+    door = door or NEW_BARK_LAB_WARP
+    px, py = gs.player.x, gs.player.y
+    approach = (door[0], door[1] + 1)
+    if (px, py) in (door, approach):
+        return door
+    if py == approach[1] and px < approach[0]:
+        return approach
+    if find_path(px, py, approach[0], approach[1], map_key=gs.map_key):
+        return approach
+    return door
+
+
 def door_exit_direction(gs: GameState) -> str | None:
+    if gs.map_key == MAP_KEY_NEW_BARK_TOWN and (
+        not _has_starter(gs) or (_has_egg(gs) and not _egg_delivered(gs))
+    ):
+        pos = (gs.player.x, gs.player.y)
+        if pos == NEW_BARK_LAB_APPROACH:
+            return "up"
+        if pos[1] == NEW_BARK_LAB_APPROACH[1] and pos[0] < NEW_BARK_LAB_APPROACH[0]:
+            return "right"
     if gs.map_key == MAP_KEY_ELMS_LAB and _has_starter(gs):
         if (gs.player.x, gs.player.y) in (ELMS_LAB_EXIT, (5, 11)):
             return "down"

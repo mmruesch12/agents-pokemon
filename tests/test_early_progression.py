@@ -49,7 +49,42 @@ def test_navigation_target_post_house_targets_lab():
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
     target = _navigation_target(gs, state=state)
-    assert target == starter_quest.NEW_BARK_LAB_WARP
+    assert target == starter_quest.NEW_BARK_LAB_APPROACH
+
+
+def test_navigator_west_of_lab_door_moves_right_not_up(monkeypatch):
+    """Path/heuristic must beat LLM picking blocked 'up' from (5,4)."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 4, "x": 5, "y": 4},
+        raw_metadata={"has_starter": False},
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+
+    def bad_navigate(*_args, **_kwargs):
+        return "up"
+
+    monkeypatch.setattr("src.graph.nodes.llm_navigate", bad_navigate)
+    result = navigator_node(state)
+    assert result["last_action"] == "navigate_right"
+    assert result["last_action_result"]["target"] == starter_quest.NEW_BARK_LAB_APPROACH
+
+
+def test_navigator_at_lab_approach_moves_up(monkeypatch):
+    gs = GameState(
+        player={"map_group": 24, "map_id": 4, "x": 6, "y": 4},
+        raw_metadata={"has_starter": False},
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+
+    def bad_navigate(*_args, **_kwargs):
+        return "right"
+
+    monkeypatch.setattr("src.graph.nodes.llm_navigate", bad_navigate)
+    result = navigator_node(state)
+    assert result["last_action"] == "navigate_up"
+    assert result["last_action_result"]["target"] == starter_quest.NEW_BARK_LAB_WARP
 
 
 def test_navigator_post_house_targets_lab(post_house_ram: dict):
@@ -59,7 +94,7 @@ def test_navigator_post_house_targets_lab(post_house_ram: dict):
     state["house_exit_complete"] = True
     result = navigator_node(state)
     assert result["last_action"].startswith("navigate_")
-    assert result["last_action_result"]["target"] == starter_quest.NEW_BARK_LAB_WARP
+    assert result["last_action_result"]["target"] == starter_quest.NEW_BARK_LAB_APPROACH
 
 
 def test_navigator_with_starter_moves_east(new_bark_ram: dict):

@@ -80,11 +80,12 @@ def _gate_starter_quest_target(
     state = state or {}
     landmarks = list(state.get("known_landmarks", []))
     if quest_target == starter_quest.NEW_BARK_LAB_WARP:
+        door = quest_target
         if landmark_known(landmarks, ELMS_LAB_ENTRANCE_ID):
-            return gated_phase_target(
+            door = gated_phase_target(
                 gs, quest_target, state=state, landmark_id=ELMS_LAB_ENTRANCE_ID
             )
-        return exploration_target(gs, state, hint_tile=starter_quest.NEW_BARK_LAB_WARP)
+        return starter_quest.lab_entry_navigation_target(gs, door=door)
     if quest_target in _LANDMARK_GATED_INTERIOR_TARGETS:
         if landmark_known(landmarks, ELMS_LAB_INTERIOR_ID):
             return quest_target
@@ -365,18 +366,15 @@ def navigator_node(state: AgentState) -> AgentState:
     candidates = _navigation_candidates(gs, target, path, state)
 
     door_exit = _players_house_door_exit(gs)
+    llm_choice = llm_navigate(gs, state, candidates, relevant_landmarks, target=target)
     if door_exit:
         action = door_exit
+    elif path:
+        action = path[0]
+    elif llm_choice and llm_choice in candidates:
+        action = llm_choice
     else:
-        llm_choice = llm_navigate(
-            gs, state, candidates, relevant_landmarks, target=target
-        )
-        if llm_choice and llm_choice in candidates:
-            action = llm_choice
-        elif path:
-            action = path[0]
-        else:
-            action = direction_toward(gs.player.x, gs.player.y, target[0], target[1])
+        action = direction_toward(gs.player.x, gs.player.y, target[0], target[1])
 
     history = list(state.get("short_term_history", []))
     history.append(f"navigate:{action}@{gs.player.x},{gs.player.y}")

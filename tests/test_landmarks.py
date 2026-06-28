@@ -51,7 +51,7 @@ def test_navigation_without_landmark_uses_quest_hint():
     )
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
-    assert _navigation_target(gs, state=state) == starter_quest.NEW_BARK_LAB_WARP
+    assert _navigation_target(gs, state=state) == starter_quest.NEW_BARK_LAB_APPROACH
     assert not state.get("known_landmarks")
 
 
@@ -72,7 +72,7 @@ def test_navigation_uses_discovered_entrance_landmark():
             kind="building_entrance",
         )
     ]
-    assert _navigation_target(gs, state=state) == (6, 3)
+    assert _navigation_target(gs, state=state) == starter_quest.NEW_BARK_LAB_APPROACH
 
 
 def test_normalize_elms_lab_entrance_snaps_adjacent_tiles():
@@ -155,7 +155,7 @@ def test_navigator_attaches_landmark_context(monkeypatch):
     monkeypatch.setattr("src.graph.nodes.llm_navigate", fake_navigate)
     navigator_node(state)
     assert captured["landmarks"]
-    assert captured["target"] == (6, 3)
+    assert captured["target"] == starter_quest.NEW_BARK_LAB_APPROACH
 
 
 def test_llm_navigate_prompt_includes_landmarks(monkeypatch):

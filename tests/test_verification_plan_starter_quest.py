@@ -31,7 +31,7 @@ def test_verification_post_house_navigates_to_lab_warp(post_house_ram: dict):
     )
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
-    assert _navigation_target(gs, state=state) == starter_quest.NEW_BARK_LAB_WARP
+    assert _navigation_target(gs, state=state) == starter_quest.NEW_BARK_LAB_APPROACH
     assert _hold_phase_satisfied(gs, state) is False
     sup = supervisor_node(state)
     assert sup["next_node"] == "navigator"
