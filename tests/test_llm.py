@@ -59,7 +59,7 @@ def test_get_chat_model_openrouter_blank_model_falls_back(monkeypatch):
     monkeypatch.setenv("OPENROUTER_MODEL", "")
     model = get_chat_model()
     assert model is not None
-    assert model.model_name == "openai/gpt-4o-mini"
+    assert model.model_name == "deepseek/deepseek-v4-flash"
 
 
 def test_llm_plan_heuristic_fallback(new_bark_ram: dict, monkeypatch):

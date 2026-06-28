@@ -48,7 +48,7 @@ def get_chat_model():
                 temperature=0,
             )
         if openrouter_key:
-            model = (os.getenv("OPENROUTER_MODEL") or "").strip() or "openai/gpt-4o-mini"
+            model = (os.getenv("OPENROUTER_MODEL") or "").strip() or "deepseek/deepseek-v4-flash"
             return ChatOpenAI(
                 model=model,
                 api_key=openrouter_key,
