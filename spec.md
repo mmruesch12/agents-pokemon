@@ -1,5 +1,7 @@
 # High-Level Specification: Autonomous Multi-Agent Pokémon Gold/Silver Player
 
+> **Status (2026-06):** Original design spec. Phases 0–3 are largely implemented; see [README.md](README.md) and [AGENTS.md](AGENTS.md) for current CLI, graph nodes, and dashboard. Section 4 roadmap below is the **original phased plan**, not a live checklist. Dashboard ships as React + FastAPI via `poke-agent dashboard` (`src/run/dashboard_server.py`).
+
 **Project Name**: `pokemon-gold-agent` (or `poke-langgraph-agent`)  
 **Goal**: Build a fun, observable, long-running autonomous agent system that plays Pokémon Gold/Silver (Gen 2) from a new game toward meaningful progress (e.g., first few gyms or further) using PyBoy + LangGraph + LangSmith.  
 **Primary Purpose**: Experiment with and validate professional-grade multi-agent orchestration patterns (supervisor, hierarchical planning, specialist agents, critic/reflection, memory) in a rich, visual, long-horizon environment.  
@@ -65,7 +67,7 @@
 **Optional but Recommended**:
 - `fastapi`, `uvicorn`, `websockets` (control plane server + dashboard)
 - `chromadb` or `faiss-cpu` (long-term memory)
-- `streamlit` or `gradio` (simple dashboard, alternative to custom)
+- Dashboard: React UI + FastAPI via `poke-agent dashboard` (historical note: Streamlit/Gradio were never shipped)
 - `uv` (fast Python package manager) or `poetry`
 
 **System (Linux/Ubuntu)**:
@@ -80,7 +82,7 @@
 
 ---
 
-## 3. Core Components & Modules (Proposed Structure)
+## 3. Core Components & Modules (Original Proposed Structure)
 
 ```
 pokemon-gold-agent/
@@ -105,8 +107,9 @@ pokemon-gold-agent/
 │   ├── graph/
 │   │   ├── __init__.py
 │   │   ├── state.py               # AgentState TypedDict / Pydantic
-│   │   ├── nodes.py               # supervisor_node, planner_node, navigator_node, battler_node, critic_node, memory_node
+│   │   ├── nodes.py               # supervisor, bootstrap, planner, navigator, interactor, battler, waiter, idle, critic, memory, apply_action
 │   │   ├── router.py              # Conditional edges / routing logic
+│   │   ├── phases/                # house_exit, starter_quest
 │   │   └── graph.py               # StateGraph assembly + compilation
 │   ├── memory/
 │   │   ├── __init__.py
@@ -118,8 +121,10 @@ pokemon-gold-agent/
 │   └── run/
 │       ├── __init__.py
 │       ├── autonomous_runner.py   # Main loop with checkpoints, stuck handling
-│       └── cli.py                 # Entry points (run, resume, eval, dashboard)
-├── dashboard/                       # Optional Streamlit/Gradio or extend Nous-style
+│       ├── watch.py               # poke-watch headed entry
+│       ├── dashboard_server.py    # FastAPI + React dashboard
+│       └── cli.py                 # Entry points (run, resume, eval, dashboard, traces)
+├── dashboard/                       # React UI (npm build → dist/)
 ├── tests/
 └── .env.example                     # LANGSMITH_API_KEY, ROM_PATH, etc.
 ```
@@ -130,10 +135,10 @@ pokemon-gold-agent/
 
 ---
 
-## 4. Implementation Roadmap (Phased)
+## 4. Implementation Roadmap (Original Phased Plan — 2026-06)
 
 ### Phase 0: Foundations (1–2 days)
-- Linux env setup (`uv init`, install `libsdl2-dev`, `pip install pyboy`).
+- Linux env setup (`uv sync`, `libsdl2-dev`; verify with `uv run python -m src.run.verify_setup`).
 - Basic PyBoy script: load ROM (headless), button presses, `tick()`, memory read, screenshot.
 - Project skeleton + `pyproject.toml`.
 - Place legal ROM in `roms/`.
@@ -173,45 +178,40 @@ pokemon-gold-agent/
 
 ## 5. Linux Setup Instructions (Ubuntu/Debian)
 
+Current setup (see [README.md](README.md) and [AGENTS.md](AGENTS.md)):
+
 ```bash
 # 1. System dependencies
 sudo apt update
 sudo apt install -y libsdl2-dev build-essential python3-dev git tmux
 
-# Optional for any SDL quirks
-sudo apt install -y xvfb
+# 2. Clone and install
+git clone <your-repo-url> agents-pokemon && cd agents-pokemon
+uv sync
 
-# 2. Project
-mkdir ~/projects/pokemon-gold-agent && cd ~/projects/pokemon-gold-agent
-uv init --python 3.12
-uv add pyboy langgraph langchain langsmith pydantic pillow numpy
-
-# Optional
-uv add fastapi uvicorn streamlit chromadb
-
-# 3. ROM
+# 3. ROM (user-provided legal dump)
 mkdir -p roms saves data
-# Copy your legal Pokémon Gold/Silver ROM to roms/pokemon_gold.gb (or .gbc)
-# .gitignore roms/ and saves/ and data/
+cp /path/to/pokemon_gold.gb roms/pokemon_gold.gb
 
 # 4. Environment
 cp .env.example .env
-# Edit .env: LANGSMITH_API_KEY=..., ROM_PATH=roms/pokemon_gold.gb, etc.
+# Edit .env: OPENROUTER_API_KEY= (preferred), LANGSMITH_API_KEY=, ROM_PATH=roms/pokemon_gold.gb
 
-# 5. Verify PyBoy
-python -c "
-from pyboy import PyBoy
-pyboy = PyBoy('roms/pokemon_gold.gb', window='headless')
-print('PyBoy loaded successfully')
-pyboy.tick(60)
-print('Advanced 60 frames')
-pyboy.stop()
-"
+# 5. Verify setup (PyBoy smoke + LLM ping)
+uv run python -m src.run.verify_setup
+
+# 6. Run agent
+uv run poke-agent --steps 500
+uv run poke-runner --resume latest --max-steps 5000
+
+# 7. Optional dashboard
+cd dashboard && npm install && npm run build
+uv run poke-agent dashboard --port 8765
 ```
 
 **Headless Notes**:
-- PyBoy supports `window='headless'` in recent versions.
-- If SDL issues appear, wrap runs with `xvfb-run -a python ...`.
+- Default CLI runs headless (`window='null'`). Use `--headed` or `poke-watch` for visible SDL2 window.
+- If SDL issues appear, wrap runs with `xvfb-run -a uv run python -m src.run.cli ...`.
 
 **Long-Running**:
 - Use `tmux new -s poke-agent` then run your script inside.
@@ -234,9 +234,11 @@ uv run python -m src.run.autonomous_runner --resume latest --max-steps 50000
 # Detach with Ctrl+B then D
 ```
 
-**With Dashboard** (if implemented):
+**With Dashboard** (implemented):
 ```bash
-uv run uvicorn src.emulator.server:app --reload   # or streamlit run dashboard/app.py
+cd dashboard && npm install && npm run build
+uv run poke-agent dashboard --port 8765
+# API: /api/state, /api/screenshot — see dashboard/README.md
 ```
 
 **Monitoring**:
@@ -273,21 +275,21 @@ uv run uvicorn src.emulator.server:app --reload   # or streamlit run dashboard/a
 
 ---
 
-## 9. Next Immediate Actions (Recommended)
+## 9. Next Immediate Actions (Original — 2026-06)
 
-1. Set up the Linux environment and verify basic PyBoy + ROM loading (Phase 0).
-2. Implement minimal `GoldStateReader` for player position + party (highest leverage).
-3. Build the first working ReAct agent that can move and interact reliably.
-4. Add LangSmith tracing and create your first simple evaluator.
-5. Expand to Supervisor + Navigator graph.
+Historical kickoff checklist from the first draft. For **current** priorities, see [README.md](README.md), [AGENTS.md](AGENTS.md), and open issues / phase modules under `src/graph/phases/`.
+
+1. ~~Set up the Linux environment and verify basic PyBoy + ROM loading (Phase 0).~~ — done (`uv sync`, `verify_setup`)
+2. ~~Implement minimal `GoldStateReader` for player position + party.~~ — done (`src/state/gold_state_reader.py`)
+3. ~~Build the first working ReAct agent that can move and interact reliably.~~ — done (LangGraph specialists + tools)
+4. ~~Add LangSmith tracing and create your first simple evaluator.~~ — done (`src/eval/`, `--langsmith`, `poke-agent traces`)
+5. ~~Expand to Supervisor + Navigator graph.~~ — done (full specialist set + phases)
+
+**Ongoing iteration:** early-game phases (`house_exit`, `starter_quest`), stuck/replan tuning, memory retrieval wiring, dashboard/watch UX.
 
 ---
 
 **Document Version**: 1.0  
-**Date**: 2026-06-26  
+**Date**: 2026-06-26 (status note added 2026-06-28)  
 **Owner**: Matt Ruesch  
-**Status**: High-level spec ready for implementation. Ready to start coding Phase 0.
-
-This spec is intentionally high-level to allow flexibility while providing clear guardrails and a phased path. It directly incorporates lessons from existing PyBoy + LLM Pokémon agent projects (Claude Plays Pokémon, Nous pokemon-agent, open-source repos) and aligns with your goals around multi-agent systems, evaluations, and autonomous long-running agents.
-
-Happy to refine any section, generate the initial `pyproject.toml` + skeleton code, or help with the first Phase 0 script. Just let me know where you want to dive in first!
+**Status**: Original design spec — largely implemented. Use README + AGENTS as the live operator guide; treat Sections 4 and 9 as historical planning context.

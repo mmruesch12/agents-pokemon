@@ -1,5 +1,7 @@
 # Proposal: Early-Game Progression — Elm's Lab, Starter Pokémon, Mr. Pokémon Quest, and First Rival Battle
 
+**Status (2026-06-28):** Design proposal — **largely implemented** in `src/graph/phases/starter_quest.py`. This doc remains the design record for remaining gaps and tuning.
+
 Holistic design for extending the Pokemon Gold/Silver agent from **house-exit complete on New Bark Town (`24:4`)** through **starter acquisition**, **Route 29/30 travel**, **Mystery Egg + Pokedex delivery**, and **first trainer battle (rival on return to lab)** — reusing the established phase-module pattern without new parallel abstractions.
 
 **Canon sources:** pret/pokegold disassembly (`constants/map_constants.asm`, `constants/event_flags.asm`, `maps/ElmsLab.asm`, `maps/NewBarkTown.asm`, `maps/MrPokemonsHouse.asm`, `maps/Route29.asm`), standard walkthrough sequence. **Follow-up observation required:** exact in-lab starter-ball tile coordinates and yes/no dialog timing should be confirmed on a live ROM dump (pret object events give starting points, not guaranteed pathfinding goals).

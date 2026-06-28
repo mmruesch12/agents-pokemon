@@ -47,20 +47,22 @@ architecture.
 
 ---
 
-## 4. Web dashboard (screenshot + state stream)
+## 4. Web dashboard (screenshot + state stream) — **implemented**
 
-Small FastAPI/Flask app:
+Shipped as React UI + FastAPI (`src/run/dashboard_server.py`, `dashboard/`).
 
-- **Left:** live PNG from `emu.screenshot()` (already on `PyBoyWrapper`)
-- **Right:** JSON fields from `AgentState`
-- **Bottom:** scrolling `short_term_history`
+```bash
+cd dashboard && npm run build
+uv run poke-agent dashboard --port 8765
+```
 
-Push updates over WebSocket/SSE each step. Open `http://localhost:8765` beside
-or above the game window.
+- **`/api/state`** — agent snapshot JSON (demo or `data/watch/current.json`)
+- **`/api/screenshot`** — PNG frame (demo or `data/watch/current.png`)
+
+See [dashboard/README.md](../dashboard/README.md). Live snapshots are file-based; demo mode works ROM-free.
 
 **Pros:** Nice layout, remote viewing, easy to extend (graphs, stuck meter).  
-**Cons:** More moving parts; screenshot polling adds overhead in headed mode (lock
-contention with the live thread).
+**Cons:** Polling/file I/O overhead in headed mode; WebSocket streaming remains a future enhancement.
 
 ---
 

@@ -1,5 +1,7 @@
 # House Exit Work: Scalability, Holism, and Path to Full Autonomy
 
+**Status (2026-06-28):** Historical analysis of house-exit work. `starter_quest` phase now ships in `src/graph/phases/starter_quest.py`; supervisor idle is phase-specific via `_hold_phase_satisfied()`. Test suite: ~214 collected.
+
 Analysis of changes made to achieve reproducible cold-boot exit from the starting house in New Bark Town, and how that work relates to the long-term goal of an agent that plays without explicit per-section instructions.
 
 ---

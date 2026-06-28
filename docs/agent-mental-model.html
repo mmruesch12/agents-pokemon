@@ -1,0 +1,1371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pokemon Gold Agent — Mental Model</title>
+  <style>
+    :root {
+      --bg: #0f1410;
+      --surface: #1a2218;
+      --surface-2: #243024;
+      --border: #3d5238;
+      --text: #e8efe4;
+      --muted: #9bb094;
+      --gold: #f0d060;
+      --gold-dim: #b89a30;
+      --green: #68c070;
+      --green-dim: #3d8a48;
+      --blue: #70b8e8;
+      --purple: #b090e8;
+      --orange: #e8a050;
+      --red: #e87070;
+      --mono: "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
+      --sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+      --radius: 12px;
+      --shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+      min-height: 100vh;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(104, 192, 112, 0.12), transparent),
+        radial-gradient(ellipse 60% 40% at 100% 50%, rgba(240, 208, 96, 0.06), transparent);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    header .badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--gold);
+      border: 1px solid var(--gold-dim);
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+
+    .tagline {
+      color: var(--muted);
+      font-size: 1.1rem;
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    .oneliner {
+      margin-top: 1.5rem;
+      padding: 1rem 1.25rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.95rem;
+      border-left: 3px solid var(--gold);
+    }
+
+    section {
+      margin-bottom: 3rem;
+    }
+
+    h2 {
+      font-size: 1.35rem;
+      margin-bottom: 0.35rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    h2 .num {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--gold);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      padding: 0.15rem 0.45rem;
+      border-radius: 6px;
+    }
+
+    .section-desc {
+      color: var(--muted);
+      font-size: 0.92rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+      box-shadow: var(--shadow);
+    }
+
+    .card-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+
+    .card h3 {
+      font-size: 0.95rem;
+      margin-bottom: 0.5rem;
+      color: var(--gold);
+    }
+
+    .card p, .card li {
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+
+    .card ul { padding-left: 1.1rem; }
+    .card li { margin-bottom: 0.25rem; }
+
+    /* Architecture diagram */
+    .arch {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      align-items: stretch;
+    }
+
+    .arch-row {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: stretch;
+    }
+
+    .arch-box {
+      flex: 1;
+      min-width: 200px;
+      max-width: 320px;
+      padding: 1rem 1.1rem;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .arch-box.runner { background: linear-gradient(135deg, #1e2830, var(--surface)); border-color: #4a6070; }
+    .arch-box.graph  { background: linear-gradient(135deg, #1a2430, var(--surface)); border-color: #506880; }
+    .arch-box.emu    { background: linear-gradient(135deg, #142018, var(--surface)); border-color: var(--green-dim); }
+
+    .arch-box .label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+    }
+
+    .arch-box.runner .label { color: var(--blue); }
+    .arch-box.graph .label  { color: var(--purple); }
+    .arch-box.emu .label    { color: var(--green); }
+
+    .arch-box .items {
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .arch-arrow {
+      text-align: center;
+      color: var(--muted);
+      font-size: 1.25rem;
+      line-height: 1;
+    }
+
+    .arch-arrow span {
+      display: block;
+      font-size: 0.72rem;
+      font-family: var(--mono);
+      margin-top: 0.15rem;
+    }
+
+    /* Step cycle */
+    .cycle {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 1.5rem 1rem;
+    }
+
+    .cycle-node {
+      position: relative;
+      width: 108px;
+      text-align: center;
+    }
+
+    .cycle-node .circle {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 0.4rem;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      border: 2px solid var(--border);
+      background: var(--surface-2);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .cycle-node:hover .circle {
+      transform: scale(1.06);
+      box-shadow: 0 0 20px rgba(104, 192, 112, 0.2);
+    }
+
+    .cycle-node.supervisor .circle { border-color: var(--gold); background: #2a2818; }
+    .cycle-node.specialist .circle { border-color: var(--purple); background: #221e30; }
+    .cycle-node.apply .circle      { border-color: var(--green); background: #182818; }
+    .cycle-node.critic .circle     { border-color: var(--orange); background: #2a2018; }
+    .cycle-node.memory .circle     { border-color: var(--blue); background: #182028; }
+
+    .cycle-node .name {
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+
+    .cycle-node .hint {
+      font-size: 0.68rem;
+      color: var(--muted);
+      margin-top: 0.15rem;
+    }
+
+    .cycle-arrow {
+      color: var(--border);
+      font-size: 1.1rem;
+      padding: 0 0.15rem;
+    }
+
+    .cycle-loop {
+      width: 100%;
+      text-align: center;
+      margin-top: 0.75rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    .cycle-loop strong { color: var(--gold); }
+
+    /* Supervisor priority */
+    .priority-list {
+      list-style: none;
+      counter-reset: pri;
+    }
+
+    .priority-list li {
+      counter-increment: pri;
+      display: grid;
+      grid-template-columns: 2rem 1fr auto;
+      gap: 0.75rem;
+      align-items: center;
+      padding: 0.65rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.88rem;
+    }
+
+    .priority-list li:last-child { border-bottom: none; }
+
+    .priority-list li::before {
+      content: counter(pri);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--gold);
+      background: var(--surface-2);
+      width: 1.6rem;
+      height: 1.6rem;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+    }
+
+    .pri-condition { color: var(--text); }
+    .pri-route {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--green);
+      background: #182818;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    /* Phases timeline */
+    .phases {
+      display: flex;
+      gap: 0;
+      overflow-x: auto;
+      padding: 0.5rem 0 1rem;
+    }
+
+    .phase {
+      flex: 1;
+      min-width: 140px;
+      position: relative;
+      text-align: center;
+      padding: 0 0.5rem;
+    }
+
+    .phase::after {
+      content: "";
+      position: absolute;
+      top: 28px;
+      left: 50%;
+      width: 100%;
+      height: 2px;
+      background: var(--border);
+      z-index: 0;
+    }
+
+    .phase:last-child::after { display: none; }
+
+    .phase-dot {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 0.6rem;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: var(--surface-2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .phase.active .phase-dot {
+      border-color: var(--gold);
+      box-shadow: 0 0 16px rgba(240, 208, 96, 0.25);
+    }
+
+    .phase.done .phase-dot {
+      border-color: var(--green);
+      background: #182818;
+    }
+
+    .phase .title {
+      font-size: 0.82rem;
+      font-weight: 600;
+      margin-bottom: 0.2rem;
+    }
+
+    .phase .flag {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--muted);
+    }
+
+    /* Navigator pipeline */
+    .pipeline {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .pipe-step {
+      display: grid;
+      grid-template-columns: 2.5rem 1fr;
+      gap: 1rem;
+      padding: 0.85rem 0;
+      border-left: 2px solid var(--border);
+      margin-left: 1.1rem;
+      padding-left: 1.25rem;
+      position: relative;
+    }
+
+    .pipe-step::before {
+      content: "";
+      position: absolute;
+      left: -7px;
+      top: 1.1rem;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--surface-2);
+      border: 2px solid var(--green);
+    }
+
+    .pipe-step.llm::before { border-color: var(--purple); }
+
+    .pipe-step .step-n {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--gold);
+      padding-top: 0.15rem;
+    }
+
+    .pipe-step .step-body h4 {
+      font-size: 0.88rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .pipe-step .step-body p {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    /* Split bar */
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    @media (max-width: 640px) {
+      .split { grid-template-columns: 1fr; }
+      .cycle-arrow { display: none; }
+      .cycle { gap: 0.75rem; }
+    }
+
+    .split-col h3 {
+      font-size: 0.85rem;
+      margin-bottom: 0.6rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .split-col.llm h3 { color: var(--purple); }
+    .split-col.heur h3 { color: var(--green); }
+
+    .chip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+
+    .chip {
+      font-size: 0.75rem;
+      padding: 0.3rem 0.6rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--muted);
+    }
+
+    .chip.llm { border-color: #6040a0; color: #c8b0f0; background: #1e1830; }
+    .chip.heur { border-color: var(--green-dim); color: #90d898; background: #142018; }
+
+    /* Start modes */
+    .modes {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .mode {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 1rem;
+      padding: 1rem;
+      background: var(--surface-2);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      align-items: start;
+    }
+
+    .mode-cmd {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--gold);
+      background: var(--bg);
+      padding: 0.5rem 0.65rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    .mode h4 {
+      font-size: 0.88rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .mode p {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    /* Progress checklist */
+    .checklist {
+      list-style: none;
+    }
+
+    .checklist li {
+      display: flex;
+      gap: 0.75rem;
+      padding: 0.55rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+      align-items: flex-start;
+    }
+
+    .checklist li:last-child { border-bottom: none; }
+
+    .check-icon {
+      flex-shrink: 0;
+      width: 1.4rem;
+      height: 1.4rem;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+
+    .checklist .flag-name {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--green);
+    }
+
+    /* Intent card example */
+    .intent-card {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      background: #0a0e0a;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      color: var(--muted);
+      overflow-x: auto;
+      line-height: 1.7;
+    }
+
+    .intent-card .k { color: var(--blue); }
+    .intent-card .v { color: var(--text); }
+    .intent-card .hl { color: var(--gold); }
+
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    footer code {
+      font-family: var(--mono);
+      color: var(--gold-dim);
+      font-size: 0.85em;
+    }
+
+    /* Deep-dive sections */
+    .detail-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+
+    .detail-block h4 {
+      font-size: 0.85rem;
+      color: var(--gold);
+      margin-bottom: 0.4rem;
+    }
+
+    .detail-block p, .detail-block li {
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .detail-block ul { padding-left: 1.1rem; margin-top: 0.35rem; }
+    .detail-block li { margin-bottom: 0.3rem; }
+
+    .state-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      margin-top: 0.5rem;
+    }
+
+    .state-table th, .state-table td {
+      text-align: left;
+      padding: 0.5rem 0.65rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    .state-table th {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .state-table code {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--green);
+    }
+
+    .react-flow {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      margin: 1rem 0;
+    }
+
+    .react-step {
+      display: grid;
+      grid-template-columns: 4.5rem 1fr;
+      gap: 1rem;
+      padding: 0.9rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .react-step:last-child { border-bottom: none; }
+
+    .react-step .phase-label {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding-top: 0.2rem;
+    }
+
+    .react-step.perceive .phase-label { color: var(--blue); }
+    .react-step.reason  .phase-label { color: var(--purple); }
+    .react-step.act     .phase-label { color: var(--green); }
+    .react-step.reflect .phase-label { color: var(--orange); }
+    .react-step.remember .phase-label { color: var(--gold); }
+
+    .react-step h4 { font-size: 0.9rem; margin-bottom: 0.25rem; }
+    .react-step p { font-size: 0.82rem; color: var(--muted); }
+
+    .prompt-box {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      background: #0a0e0a;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 0.9rem;
+      color: var(--muted);
+      margin-top: 0.5rem;
+      white-space: pre-wrap;
+      line-height: 1.55;
+    }
+
+    .prompt-box .sys { color: var(--purple); }
+    .prompt-box .usr { color: var(--blue); }
+    .prompt-box .out { color: var(--green); }
+
+    .llm-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.1rem;
+      background: var(--surface-2);
+    }
+
+    .llm-card h4 {
+      font-size: 0.9rem;
+      margin-bottom: 0.15rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .llm-card .when {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+    }
+
+    .llm-card .fallback {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 0.5rem;
+      padding-top: 0.5rem;
+      border-top: 1px dashed var(--border);
+    }
+
+    .llm-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      background: #1e1830;
+      color: var(--purple);
+      border: 1px solid #6040a0;
+    }
+
+    .timing-note {
+      font-size: 0.8rem;
+      color: var(--muted);
+      background: #1a1810;
+      border: 1px solid var(--gold-dim);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      margin-top: 1rem;
+    }
+
+    .timing-note strong { color: var(--gold); }
+
+    nav.toc {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      justify-content: center;
+      margin-bottom: 2rem;
+    }
+
+    nav.toc a {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 0.3rem 0.6rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+
+    nav.toc a:hover { color: var(--gold); border-color: var(--gold-dim); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="badge">Architecture guide</div>
+      <h1>Pokemon Gold Agent — Mental Model</h1>
+      <p class="tagline">
+        How the autonomous player actually works today: one button press per step,
+        rule-based early-game phases, optional LLM tie-breaking.
+      </p>
+      <div class="oneliner">
+        <strong>One sentence:</strong> Each <em>step</em> = read RAM → supervisor picks a specialist →
+        press one button (or wait) → critic reviews → memory updates → stop (unless the runner asks for another step).
+      </div>
+    </header>
+
+    <nav class="toc">
+      <a href="#react">React loop</a>
+      <a href="#llm">LLM decisions</a>
+      <a href="#supervisor">Supervisor</a>
+      <a href="#phases">Phases</a>
+      <a href="#start">Start modes</a>
+    </nav>
+
+    <!-- 1. Three layers -->
+    <section>
+      <h2><span class="num">01</span> Three layers</h2>
+      <p class="section-desc">The runner owns the loop. The graph owns one decision cycle. The emulator is the game.</p>
+      <div class="card arch">
+        <div class="arch-row">
+          <div class="arch-box runner">
+            <div class="label">Runner</div>
+            <div class="items">
+              Load ROM<br />
+              Seed agent state<br />
+              <code>graph.invoke()</code> per step<br />
+              Checkpoints &amp; saves
+            </div>
+          </div>
+        </div>
+        <div class="arch-arrow">▼ <span>one invoke = one macro-step</span></div>
+        <div class="arch-row">
+          <div class="arch-box graph">
+            <div class="label">LangGraph</div>
+            <div class="items">
+              Supervisor → Specialist<br />
+              Apply action → Critic<br />
+              Memory → END or loop
+            </div>
+          </div>
+        </div>
+        <div class="arch-arrow">▼ <span>press_button / tick</span> &nbsp; ▲ <span>GoldStateReader</span></div>
+        <div class="arch-row">
+          <div class="arch-box emu">
+            <div class="label">Emulator (PyBoy)</div>
+            <div class="items">
+              No pixels to the agent<br />
+              WRAM → <code>GameState</code><br />
+              map, coords, battle, scripts
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. One step cycle -->
+    <section id="react-top">
+      <h2><span class="num">02</span> One step = one full cycle</h2>
+      <p class="section-desc">
+        The runner sets <code>run_max_steps = current_steps + 1</code>, so each invoke does exactly one button press (or wait).
+      </p>
+      <div class="card">
+        <div class="cycle">
+          <div class="cycle-node supervisor">
+            <div class="circle">🎯</div>
+            <div class="name">Supervisor</div>
+            <div class="hint">route by situation</div>
+          </div>
+          <div class="cycle-arrow">→</div>
+          <div class="cycle-node specialist">
+            <div class="circle">🧭</div>
+            <div class="name">Specialist</div>
+            <div class="hint">set last_action</div>
+          </div>
+          <div class="cycle-arrow">→</div>
+          <div class="cycle-node apply">
+            <div class="circle">🎮</div>
+            <div class="name">Apply</div>
+            <div class="hint">PyBoy input</div>
+          </div>
+          <div class="cycle-arrow">→</div>
+          <div class="cycle-node critic">
+            <div class="circle">🔍</div>
+            <div class="name">Critic</div>
+            <div class="hint">loop / replan?</div>
+          </div>
+          <div class="cycle-arrow">→</div>
+          <div class="cycle-node memory">
+            <div class="circle">📓</div>
+            <div class="name">Memory</div>
+            <div class="hint">steps++, milestones</div>
+          </div>
+        </div>
+        <div class="cycle-loop">
+          Memory increments <strong>metrics.steps</strong> → if steps &lt; run_max_steps, back to Supervisor — else <strong>END</strong>
+        </div>
+        <div class="intent-card" style="margin-top: 1.25rem;">
+          <span class="k">[step 42]</span>
+          <span class="v">navigator</span> →
+          <span class="hl">navigate_right</span> |
+          subgoal: <span class="v">Leave player house</span> |
+          map: <span class="v">24:7 Player's House 2F (3,4)</span> |
+          critic: <span class="v">proceed</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Supervisor -->
+    <section id="supervisor">
+      <h2><span class="num">03</span> Supervisor routing (priority order)</h2>
+      <p class="section-desc">First match wins. Most early game is rule-based — not free-form LLM exploration.</p>
+      <div class="card">
+        <ol class="priority-list">
+          <li>
+            <span class="pri-condition">Still bootstrapping (title / name / clock)</span>
+            <span class="pri-route">bootstrap</span>
+          </li>
+          <li>
+            <span class="pri-condition">Active phase goal already complete</span>
+            <span class="pri-route">idle</span>
+          </li>
+          <li>
+            <span class="pri-condition">In battle</span>
+            <span class="pri-route">battler</span>
+          </li>
+          <li>
+            <span class="pri-condition">Script running, joypad blocked</span>
+            <span class="pri-route">waiter</span>
+          </li>
+          <li>
+            <span class="pri-condition">Dialog or scripted interact needed</span>
+            <span class="pri-route">interactor</span>
+          </li>
+          <li>
+            <span class="pri-condition">Mom scene / lab scene forced</span>
+            <span class="pri-route">interactor</span>
+          </li>
+          <li>
+            <span class="pri-condition">Stuck too long or critic said replan</span>
+            <span class="pri-route">planner</span>
+          </li>
+          <li>
+            <span class="pri-condition">Otherwise — walk somewhere</span>
+            <span class="pri-route">navigator</span>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- 4. Phases -->
+    <section id="phases">
+      <h2><span class="num">04</span> Early-game phases (not separate graphs)</h2>
+      <p class="section-desc">
+        Phase modules override navigation targets and completion flags. Same graph, different scripted goals.
+      </p>
+      <div class="card">
+        <div class="phases">
+          <div class="phase">
+            <div class="phase-dot">📺</div>
+            <div class="title">Bootstrap</div>
+            <div class="flag">bootstrap_complete</div>
+          </div>
+          <div class="phase active">
+            <div class="phase-dot">🏠</div>
+            <div class="title">House exit</div>
+            <div class="flag">house_exit_complete</div>
+          </div>
+          <div class="phase">
+            <div class="phase-dot">🥚</div>
+            <div class="title">Starter quest</div>
+            <div class="flag">starter_quest_complete</div>
+          </div>
+          <div class="phase done">
+            <div class="phase-dot">✓</div>
+            <div class="title">Idle</div>
+            <div class="flag">phase done</div>
+          </div>
+        </div>
+        <div class="card-grid" style="margin-top: 1.25rem;">
+          <div class="card" style="box-shadow: none; padding: 1rem;">
+            <h3>House exit</h3>
+            <ul>
+              <li>2F → stairs → 1F → Mom → front door</li>
+              <li>Milestone: <em>Left house — New Bark Town</em></li>
+            </ul>
+          </div>
+          <div class="card" style="box-shadow: none; padding: 1rem;">
+            <h3>Starter quest</h3>
+            <ul>
+              <li>Elm's lab → starter → Route 29/30</li>
+              <li>Mr. Pokémon → egg → rival battle</li>
+              <li>Milestone: <em>First rival battle</em></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Navigator -->
+    <section>
+      <h2><span class="num">05</span> How movement works (navigator)</h2>
+      <p class="section-desc">Deterministic targets + pathfinding grids. LLM only picks among candidate directions.</p>
+      <div class="card pipeline">
+        <div class="pipe-step">
+          <div class="step-n">1</div>
+          <div class="step-body">
+            <h4>Phase target</h4>
+            <p>Active phase returns a fixed (x, y) for this map — e.g. stairs on 2F, lab warp in New Bark.</p>
+          </div>
+        </div>
+        <div class="pipe-step">
+          <div class="step-n">2</div>
+          <div class="step-body">
+            <h4>Pathfinding</h4>
+            <p><code>find_path()</code> on hand-tuned per-map grids (walkable tiles, blocked stairs during Mom scene).</p>
+          </div>
+        </div>
+        <div class="pipe-step">
+          <div class="step-n">3</div>
+          <div class="step-body">
+            <h4>Candidate directions</h4>
+            <p>Path steps + <code>a</code> when dialog/interact is likely. Door exits can force a direction (e.g. down at front door).</p>
+          </div>
+        </div>
+        <div class="pipe-step llm">
+          <div class="step-n">4</div>
+          <div class="step-body">
+            <h4>LLM pick (optional)</h4>
+            <p>Choose among candidates. No API key → use path[0] or <code>direction_toward()</code>.</p>
+          </div>
+        </div>
+        <div class="pipe-step">
+          <div class="step-n">5</div>
+          <div class="step-body">
+            <h4>Execute</h4>
+            <p><code>last_action = navigate_&lt;dir&gt;</code> → apply_action presses button → stuck meter if position unchanged.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. LLM vs heuristic -->
+    <section>
+      <h2><span class="num">06</span> LLM vs heuristic</h2>
+      <p class="section-desc">The agent runs without an API key. LLM makes it smarter, not possible.</p>
+      <div class="card split">
+        <div class="split-col llm">
+          <h3>Uses LLM</h3>
+          <div class="chip-list">
+            <span class="chip llm">Navigator — pick direction</span>
+            <span class="chip llm">Planner — subgoals on replan</span>
+            <span class="chip llm">Battler — fight / run</span>
+          </div>
+        </div>
+        <div class="split-col heur">
+          <h3>Mostly heuristic</h3>
+          <div class="chip-list">
+            <span class="chip heur">Supervisor routing</span>
+            <span class="chip heur">Phase targets &amp; grids</span>
+            <span class="chip heur">Bootstrap / interactor / waiter</span>
+            <span class="chip heur">Milestones &amp; stuck detection</span>
+            <span class="chip heur">House &amp; lab subgoals</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. Start modes -->
+    <section id="start">
+      <h2><span class="num">07</span> How you start a run</h2>
+      <p class="section-desc">Different entry points skip different amounts of intro work.</p>
+      <div class="modes">
+        <div class="mode">
+          <div class="mode-cmd">--steps N</div>
+          <div>
+            <h4>Cold boot (default)</h4>
+            <p>Emulator bootstrap (title → bedroom) then graph bootstrap if needed → house exit → starter quest. Slowest path.</p>
+          </div>
+        </div>
+        <div class="mode">
+          <div class="mode-cmd">--start-bedroom</div>
+          <div>
+            <h4>Bedroom fast-start</h4>
+            <p>Skips graph bootstrap. Loads <code>saves/bedroom_start.state</code> if cached (no title); otherwise runs emulator bootstrap once and caches it.</p>
+          </div>
+        </div>
+        <div class="mode">
+          <div class="mode-cmd">--resume latest</div>
+          <div>
+            <h4>Resume</h4>
+            <p>Reloads agent checkpoint + latest emulator <code>.state</code> (headed). Continues where you left off — not a fresh start.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. Progress signals -->
+    <section>
+      <h2><span class="num">08</span> What to watch (is it working?)</h2>
+      <p class="section-desc">Track flags and milestones — not just raw position.</p>
+      <div class="card">
+        <ul class="checklist">
+          <li>
+            <span class="check-icon">1</span>
+            <div>
+              <span class="flag-name">bootstrap_complete</span> — past title / name / clock
+            </div>
+          </li>
+          <li>
+            <span class="check-icon">2</span>
+            <div>
+              <span class="flag-name">house_exit_complete</span> — outside in New Bark Town
+            </div>
+          </li>
+          <li>
+            <span class="check-icon">3</span>
+            <div>
+              Milestones: Entered Elm's lab → Chose starter → Mr. Pokémon → Egg delivered
+            </div>
+          </li>
+          <li>
+            <span class="check-icon">4</span>
+            <div>
+              <span class="flag-name">starter_quest_complete</span> — rival battle reached; supervisor goes idle
+            </div>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 10. React loop deep dive -->
+    <section id="react">
+      <h2><span class="num">10</span> React loop — deep dive</h2>
+      <p class="section-desc">
+        Classic <strong>Perceive → Reason → Act → Reflect → Remember</strong>, implemented as a fixed LangGraph path every invoke.
+        The agent never “thinks” in a free loop — it runs this pipeline exactly once per runner step.
+      </p>
+      <div class="card">
+        <div class="react-flow">
+          <div class="react-step perceive">
+            <div class="phase-label">Perceive</div>
+            <div>
+              <h4>GameState from WRAM (before specialist)</h4>
+              <p>
+                <code>supervisor_node</code> reads <code>state["game_state"]</code> — parsed by
+                <code>GoldStateReader</code> after the <em>previous</em> step's apply_action.
+                Includes map_key, (x,y), <code>in_text_box</code>, script flags, battle state, event flags.
+                No screen pixels.
+              </p>
+            </div>
+          </div>
+          <div class="react-step reason">
+            <div class="phase-label">Reason</div>
+            <div>
+              <h4>Supervisor + one specialist</h4>
+              <p>
+                Supervisor picks exactly one node (bootstrap, navigator, interactor, waiter, battler, planner, idle).
+                Specialist sets <code>last_action</code> and <code>position_before_action</code> but does
+                <em>not</em> touch the emulator yet. Navigator/planner/battler may call the LLM here (network latency hits before any button press).
+              </p>
+            </div>
+          </div>
+          <div class="react-step act">
+            <div class="phase-label">Act</div>
+            <div>
+              <h4>apply_action_node → PyBoy</h4>
+              <p>
+                Executes <code>last_action</code>: <code>press_button</code> for navigate/bootstrap/interact,
+                <code>tick()</code> for waiter/script waits, <code>battle_decide</code> tool for battles.
+                Re-reads RAM into <code>game_state</code>. Updates <code>stuck_count</code> by comparing
+                position before vs after. Phase hooks (<code>on_map_change</code>) fire on warps.
+              </p>
+            </div>
+          </div>
+          <div class="react-step reflect">
+            <div class="phase-label">Reflect</div>
+            <div>
+              <h4>critic_node</h4>
+              <p>
+                Checks last 3–5 history entries and <code>stuck_count</code>. If repeating the same action
+                with stuck ≥ 3, or stuck ≥ 10 (env <code>STUCK_THRESHOLD</code>), sets
+                <code>should_replan = True</code> and <code>critic_verdict = "replan"</code>.
+                Next step's supervisor will route to <strong>planner</strong> first.
+              </p>
+            </div>
+          </div>
+          <div class="react-step remember">
+            <div class="phase-label">Remember</div>
+            <div>
+              <h4>memory_node → END or loop</h4>
+              <p>
+                Appends map to <code>maps_visited</code>, checks milestones, increments <code>metrics.steps</code>.
+                If <code>steps &lt; run_max_steps</code> (runner set this to current+1), routes back to supervisor
+                <em>within the same invoke</em> — but runner only allows +1 step, so this branch returns END immediately.
+                Checkpoint saved after invoke completes.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="timing-note">
+          <strong>Why it feels slow when watching:</strong> On navigator/battler/planner steps, the LLM call happens
+          in the Reason phase <em>before</em> Act. You see a multi-second pause, then one tile of movement.
+          Bootstrap/interactor/waiter steps skip LLM entirely.
+        </div>
+
+        <h3 style="font-size:0.9rem; margin:1.25rem 0 0.5rem; color:var(--gold);">State mutated each step</h3>
+        <table class="state-table">
+          <thead>
+            <tr><th>Field</th><th>Who writes it</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>last_action</code></td><td>Specialist</td><td>What apply_action will execute</td></tr>
+            <tr><td><code>position_before_action</code></td><td>Specialist</td><td>Stuck detection baseline</td></tr>
+            <tr><td><code>game_state</code></td><td>apply_action</td><td>Fresh RAM snapshot post-input</td></tr>
+            <tr><td><code>stuck_count</code></td><td>apply_action</td><td>+1 if navigate didn't move; −1/−2 on progress</td></tr>
+            <tr><td><code>should_replan</code></td><td>critic</td><td>Forces planner on next supervisor pass</td></tr>
+            <tr><td><code>metrics.steps</code></td><td>memory</td><td>Outer step counter (one per invoke)</td></tr>
+            <tr><td><code>milestones</code></td><td>memory</td><td>Story progress markers</td></tr>
+            <tr><td><code>bootstrap_complete</code></td><td>apply_action</td><td>Handoff from intro to explore</td></tr>
+            <tr><td><code>house_exit_complete</code></td><td>memory (milestone)</td><td>Unlocks starter_quest phase</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 11. LLM deep dive -->
+    <section id="llm">
+      <h2><span class="num">11</span> LLM decision making — deep dive</h2>
+      <p class="section-desc">
+        Three LLM calls in <code>src/graph/llm.py</code>. All use temperature 0, strict token matching, and
+        heuristic fallback. Provider priority: <strong>OpenRouter</strong> → <strong>xAI</strong> → <strong>OpenAI</strong>.
+      </p>
+
+      <div class="detail-grid" style="margin-bottom:1rem;">
+        <div class="llm-card">
+          <h4><span class="llm-badge">Navigator</span> llm_navigate()</h4>
+          <div class="when">Called every <code>navigator_node</code> step when candidates exist</div>
+          <div class="prompt-box"><span class="sys">System:</span> You are the Navigator for Pokemon Gold. Pick one direction.
+
+<span class="usr">Human:</span> Map: Player's House 2F at (3,4)
+Subgoal: Leave player house
+Visited count: 12
+Choose ONE direction from: a, right, down
+Reply with only the direction word.
+
+<span class="out">→ matched token must be in candidates list</span></div>
+          <div class="fallback">
+            <strong>Fallback chain:</strong> LLM pick → else <code>path[0]</code> → else <code>direction_toward(target)</code>.
+            Candidates built from pathfinding + phase rules (e.g. insert <code>a</code> when dialog likely).
+          </div>
+        </div>
+
+        <div class="llm-card">
+          <h4><span class="llm-badge">Planner</span> llm_plan()</h4>
+          <div class="when">Only when supervisor routes to planner (stuck / replan) AND <code>planner_allows_llm</code></div>
+          <div class="prompt-box"><span class="sys">System:</span> You are the Planner for a Pokemon Gold autonomous agent.
+
+<span class="usr">Human:</span> Map: Route 29 (24:3) at (10,12)
+Party: 1, Badges: 0
+Battle: False
+Current map only — subgoals must be achievable on Route 29 now.
+Reply with exactly 3 short subgoals, one per line, no numbering.
+
+<span class="out">→ first 3 non-empty lines become subgoals</span></div>
+          <div class="fallback">
+            <strong>Fallback:</strong> Phase <code>decompose_subgoals()</code> (house/starter hardcoded lists) → generic explore strings.
+            <strong>LLM disabled</strong> on Player's House 1F/2F always; Elm's lab &amp; Mr. Pokémon house for planner.
+          </div>
+        </div>
+
+        <div class="llm-card">
+          <h4><span class="llm-badge">Battler</span> llm_battle()</h4>
+          <div class="when">Every <code>battler_node</code> step while <code>in_battle</code></div>
+          <div class="prompt-box"><span class="sys">System:</span> You are the Battler for Pokemon Gold.
+
+<span class="usr">Human:</span> Wild/trainer battle. Player HP 18/20,
+Enemy RATTATA HP 8/8. Can run: True
+Reply with one word: fight, run, switch, or item.
+
+<span class="out">→ fight | run | switch | item</span></div>
+          <div class="fallback">
+            <strong>Fallback:</strong> run if HP &lt; 20% and can_run; else fight.
+            LLM output parsed via <code>_match_token</code> — substrings like "flight" won't match "fight".
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="font-size:0.9rem; margin-bottom:0.5rem; color:var(--gold);">Decision flow — navigator step (most common)</h3>
+        <div class="pipeline">
+          <div class="pipe-step">
+            <div class="step-n">A</div>
+            <div class="step-body">
+              <h4>Phase provides target tile</h4>
+              <p>e.g. <code>house_exit.navigation_target()</code> → stairs (7,0) on 2F</p>
+            </div>
+          </div>
+          <div class="pipe-step">
+            <div class="step-n">B</div>
+            <div class="step-body">
+              <h4>Pathfinding shrinks the search space</h4>
+              <p><code>find_path</code> → e.g. <code>["down", "down", "right"]</code>. LLM never sees the full map.</p>
+            </div>
+          </div>
+          <div class="pipe-step">
+            <div class="step-n">C</div>
+            <div class="step-body">
+              <h4>Candidates = bounded menu</h4>
+              <p>Up to 3 path steps + primary direction + optional <code>a</code>. LLM can only pick from this list.</p>
+            </div>
+          </div>
+          <div class="pipe-step llm">
+            <div class="step-n">D</div>
+            <div class="step-body">
+              <h4>LLM tie-break (optional)</h4>
+              <p>~1 API call, ~1–5s latency. Picks e.g. <code>down</code> when both <code>down</code> and <code>a</code> are valid.</p>
+            </div>
+          </div>
+          <div class="pipe-step">
+            <div class="step-n">E</div>
+            <div class="step-body">
+              <h4>Single button press</h4>
+              <p><code>last_action = "navigate_down"</code> → apply_action → critic checks if tile actually changed.</p>
+            </div>
+          </div>
+        </div>
+
+        <h3 style="font-size:0.9rem; margin:1.25rem 0 0.5rem; color:var(--gold);">What the LLM does NOT do</h3>
+        <div class="chip-list">
+          <span class="chip heur">Choose the quest target (phase modules do)</span>
+          <span class="chip heur">Read raw RAM or pixels</span>
+          <span class="chip heur">Press buttons directly</span>
+          <span class="chip heur">Run multiple actions per step</span>
+          <span class="chip heur">Supervisor routing</span>
+          <span class="chip heur">Dialog timing (interactor/waiter heuristics)</span>
+        </div>
+
+        <h3 style="font-size:0.9rem; margin:1.25rem 0 0.5rem; color:var(--gold);">Stuck → replan feedback loop</h3>
+        <p style="font-size:0.82rem; color:var(--muted);">
+          When navigation fails repeatedly, <code>stuck_count</code> rises. Critic sets <code>should_replan</code>.
+          Next step: supervisor → <strong>planner</strong> (may call LLM for new subgoals) → navigator again.
+          <code>replan_count</code> indexes into the subgoal list so the active subgoal rotates on repeated replans.
+          Interact steps reduce stuck count even without movement (dialog progress).
+        </p>
+      </div>
+    </section>
+
+    <!-- 12. Specialists cheat sheet -->
+    <section>
+      <h2><span class="num">12</span> Specialist cheat sheet</h2>
+      <div class="card-grid">
+        <div class="card">
+          <h3>bootstrap</h3>
+          <p>A/B/Start through title, name entry, clock. Heuristic button schedule.</p>
+        </div>
+        <div class="card">
+          <h3>navigator</h3>
+          <p>Pathfind toward phase target. Sets <code>navigate_*</code>.</p>
+        </div>
+        <div class="card">
+          <h3>interactor</h3>
+          <p>Mash A/B through dialogs and indoor scripts.</p>
+        </div>
+        <div class="card">
+          <h3>waiter</h3>
+          <p>Tick frames when script has joypad disabled. No buttons.</p>
+        </div>
+        <div class="card">
+          <h3>battler</h3>
+          <p>LLM or heuristic fight/run during battles.</p>
+        </div>
+        <div class="card">
+          <h3>planner</h3>
+          <p>Replan subgoals when stuck. LLM optional on outdoor maps.</p>
+        </div>
+        <div class="card">
+          <h3>idle</h3>
+          <p>Phase complete — no further navigation input.</p>
+        </div>
+        <div class="card">
+          <h3>critic + memory</h3>
+          <p>Always run after every action. Detect loops; record milestones.</p>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      Open in any browser · Generated for <code>agents-pokemon</code> ·
+      <code>docs/agent-mental-model.html</code>
+    </footer>
+  </div>
+</body>
+</html>
