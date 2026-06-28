@@ -60,6 +60,11 @@ def format_intent_card(state: AgentState) -> str:
     )
 
 
+def log_intent_card(state: AgentState) -> None:
+    """Emit the post-invoke intent card at INFO (called from the runner loop)."""
+    logger.info("%s", format_intent_card(state))
+
+
 class AutonomousRunner:
     """Long-running autonomous agent harness."""
 
@@ -175,7 +180,7 @@ class AutonomousRunner:
                 state["run_max_steps"] = current + 1
                 state = graph.invoke(state, config=config)
                 steps = state.get("metrics", {}).get("steps", 0)
-                logger.info("%s", format_intent_card(state))
+                log_intent_card(state)
 
                 for m in state.get("milestones", []):
                     if m not in milestones:

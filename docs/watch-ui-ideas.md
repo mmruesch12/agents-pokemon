@@ -1,8 +1,8 @@
 # Watch / HUD UI Ideas (deferred)
 
 Option 1 (richer terminal HUD) is **implemented**: after each `graph.invoke()` in
-`AutonomousRunner.run()`, a one-line intent card is logged via `logger.info`.
-See `format_intent_card()` in `src/run/autonomous_runner.py`. Use
+`AutonomousRunner.run()`, `log_intent_card()` emits a one-line card via `logger.info`.
+See `format_intent_card()` / `log_intent_card()` in `src/run/autonomous_runner.py`. Use
 `uv run poke-runner --headed -v` or `uv run poke-agent --headed -v` (or
 `python -m src.run.autonomous_runner` / `python -m src.run.cli`) with normal
 INFO logging to see cards during play.

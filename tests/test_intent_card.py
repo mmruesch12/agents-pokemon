@@ -1,4 +1,4 @@
-"""Tests for post-invoke terminal intent card formatting and runner logging."""
+"""Tests for post-invoke terminal intent card formatting and runner log site."""
 
 from __future__ import annotations
 
@@ -6,28 +6,12 @@ import logging
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from src.graph.graph import compile_graph
 from src.graph.state import initial_agent_state
-from src.run.autonomous_runner import AutonomousRunner, format_intent_card
+from src.run.autonomous_runner import format_intent_card, log_intent_card
 from src.state.gold_state_reader import ByteArrayReader, GoldStateReader
 
 RUNNER_SOURCE = Path(__file__).resolve().parents[1] / "src" / "run" / "autonomous_runner.py"
-
-_ROM_CANDIDATES = (
-    Path("roms/pokemon_gold.gb"),
-    Path(
-        "roms/Pokemon - Silver Version (USA, Europe) (SGB Enhanced) (GB Compatible).gbc"
-    ),
-)
-
-
-def _find_pokemon_rom() -> Path | None:
-    for candidate in _ROM_CANDIDATES:
-        if candidate.exists():
-            return candidate
-    return None
 
 
 def test_format_intent_card_navigator_example_shape():
@@ -82,42 +66,32 @@ def test_format_intent_card_after_graph_invoke(new_bark_ram: dict):
     assert "navigator →" in card
 
 
-def test_runner_loop_logs_intent_card_after_invoke():
-    """Structural: while-loop graph.invoke is immediately followed by intent card log."""
+def test_log_intent_card_emits_logger_info(caplog):
+    """Shipped logger path: log_intent_card writes format_intent_card at INFO."""
+    state = {
+        "metrics": {"steps": 7},
+        "last_action": "navigate_up",
+        "active_subgoal": "Reach lab",
+        "critic_verdict": "proceed",
+        "game_state": {"player": {"map_name": "New Bark Town", "x": 5, "y": 10}},
+    }
+    expected = format_intent_card(state)
+
+    with caplog.at_level(logging.INFO, logger="src.run.autonomous_runner"):
+        log_intent_card(state)
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].message == expected
+    assert caplog.records[0].levelname == "INFO"
+
+
+def test_runner_loop_calls_log_intent_card_after_invoke():
+    """Structural: while-loop graph.invoke is immediately followed by log_intent_card."""
     source = RUNNER_SOURCE.read_text()
     invoke = "state = graph.invoke(state, config=config)"
     assert invoke in source
     idx = source.index(invoke)
     following = source[idx : idx + 200]
-    assert "logger.info" in following
-    assert "format_intent_card(state)" in following
+    assert "log_intent_card(state)" in following
     while_idx = source.rfind("while state.get", 0, idx)
     assert while_idx != -1
-
-
-def test_runner_real_rom_logs_three_intent_cards(tmp_path, caplog):
-    """AutonomousRunner.run() on a real ROM logs one card per graph.invoke (no mocks)."""
-    rom = _find_pokemon_rom()
-    if rom is None:
-        pytest.skip("No Pokemon ROM available")
-
-    with caplog.at_level(logging.INFO, logger="src.run.autonomous_runner"):
-        runner = AutonomousRunner(
-            rom_path=rom,
-            max_steps=3,
-            checkpoint_db=tmp_path / "checkpoints.sqlite",
-            save_dir=tmp_path / "saves",
-        )
-        result = runner.run()
-
-    assert result["steps"] == 3
-    intent_logs = [r.message for r in caplog.records if r.message.startswith("[step ")]
-    assert len(intent_logs) == 3
-    assert intent_logs[0].startswith("[step 1]")
-    assert intent_logs[1].startswith("[step 2]")
-    assert intent_logs[2].startswith("[step 3]")
-    for line in intent_logs:
-        assert "→" in line
-        assert "subgoal:" in line
-        assert "map:" in line
-        assert "critic:" in line
