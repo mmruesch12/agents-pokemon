@@ -13,6 +13,9 @@ from src.state.models import (
     PlayerState,
 )
 from src.state.script_constants import (
+    EVENT_GAVE_MYSTERY_EGG_TO_ELM,
+    EVENT_GOT_A_POKEMON_FROM_ELM,
+    EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON,
     EVENT_INITIALIZED_EVENTS,
     EVENT_PLAYERS_HOUSE_MOM_1,
     SCRIPT_FLAG_SCRIPT_RUNNING,
@@ -31,16 +34,23 @@ ADDR_X_COORD = 0xDA03  # wXCoord
 ADDR_FACING = 0xD4B7  # wPlayerStruct + OBJECT_DIRECTION
 
 MAPGROUP_NEW_BARK = 24
+MAPGROUP_JOHTO_ROUTES = 26
 MAP_NEW_BARK_TOWN = 4
 MAP_ROUTE_29 = 3
+MAP_ELMS_LAB = 5
 MAP_PLAYERS_HOUSE_1F = 6
 MAP_PLAYERS_HOUSE_2F = 7
+MAP_ROUTE_30 = 1
+MAP_MR_POKEMONS_HOUSE = 10
 
 # Canonical map_key strings (group:map_id) — pret/pokegold WRAM.
 MAP_KEY_NEW_BARK_TOWN = f"{MAPGROUP_NEW_BARK}:{MAP_NEW_BARK_TOWN}"
 MAP_KEY_PLAYERS_HOUSE_1F = f"{MAPGROUP_NEW_BARK}:{MAP_PLAYERS_HOUSE_1F}"
 MAP_KEY_PLAYERS_HOUSE_2F = f"{MAPGROUP_NEW_BARK}:{MAP_PLAYERS_HOUSE_2F}"
 MAP_KEY_ROUTE_29 = f"{MAPGROUP_NEW_BARK}:{MAP_ROUTE_29}"
+MAP_KEY_ELMS_LAB = f"{MAPGROUP_NEW_BARK}:{MAP_ELMS_LAB}"
+MAP_KEY_ROUTE_30 = f"{MAPGROUP_JOHTO_ROUTES}:{MAP_ROUTE_30}"
+MAP_KEY_MR_POKEMONS_HOUSE = f"{MAPGROUP_JOHTO_ROUTES}:{MAP_MR_POKEMONS_HOUSE}"
 # Uninitialized map before overworld load (title screen / boot), not New Bark Town.
 MAP_KEY_UNINITIALIZED = "0:0"
 
@@ -106,7 +116,10 @@ MAP_NAMES: dict[tuple[int, int], str] = {
     (MAPGROUP_NEW_BARK, MAP_PLAYERS_HOUSE_2F): "Player's House 2F",
     (MAPGROUP_NEW_BARK, MAP_PLAYERS_HOUSE_1F): "Player's House 1F",
     (MAPGROUP_NEW_BARK, MAP_NEW_BARK_TOWN): "New Bark Town",
+    (MAPGROUP_NEW_BARK, MAP_ELMS_LAB): "Elm's Lab",
     (MAPGROUP_NEW_BARK, MAP_ROUTE_29): "Route 29",
+    (MAPGROUP_JOHTO_ROUTES, MAP_ROUTE_30): "Route 30",
+    (MAPGROUP_JOHTO_ROUTES, MAP_MR_POKEMONS_HOUSE): "Mr. Pokemon's House",
     (1, 2): "Cherrygrove City",
     (1, 3): "Route 30",
     (1, 4): "Violet City",
@@ -336,6 +349,9 @@ class GoldStateReader:
         joypad_disable = r.read_byte(ADDR_JOYPAD_DISABLE)
         mom_scene_complete = has_event_flag(r, EVENT_PLAYERS_HOUSE_MOM_1)
         init_events = has_event_flag(r, EVENT_INITIALIZED_EVENTS)
+        has_starter = has_event_flag(r, EVENT_GOT_A_POKEMON_FROM_ELM)
+        has_mystery_egg = has_event_flag(r, EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON)
+        egg_delivered = has_event_flag(r, EVENT_GAVE_MYSTERY_EGG_TO_ELM)
         script_active = bool(script_flags & SCRIPT_FLAG_SCRIPT_RUNNING)
         return {
             "script_flags": script_flags,
@@ -347,6 +363,9 @@ class GoldStateReader:
             "music_playing": r.read_byte(ADDR_MUSIC_PLAYING) != 0,
             "mom_scene_complete": mom_scene_complete,
             "init_events_complete": init_events,
+            "has_starter": has_starter,
+            "has_mystery_egg": has_mystery_egg,
+            "egg_delivered": egg_delivered,
             "in_script": script_active
             and script_mode in (SCRIPT_READ, SCRIPT_WAIT_MOVEMENT, SCRIPT_WAIT),
         }

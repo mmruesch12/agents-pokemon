@@ -9,7 +9,7 @@ from typing import Any
 from src.emulator.bootstrap import needs_bootstrap, pick_bootstrap_button
 from src.graph.llm import llm_battle, llm_navigate, llm_plan
 from src.graph.pathfinding import direction_toward, find_path
-from src.graph.phases import house_exit
+from src.graph.phases import house_exit, starter_quest
 from src.graph.state import AgentState, update_game_state
 from src.state.gold_state_reader import (
     MAP_KEY_NEW_BARK_TOWN,
@@ -35,11 +35,20 @@ SCRIPT_WAIT_TICKS = int(os.getenv("SCRIPT_WAIT_TICKS", "45"))
 EARLY_GAME_OBJECTIVES = {
     MAP_KEY_PLAYERS_HOUSE_2F: "Leave bedroom via stairs, talk to Mom on 1F, then head to Professor Elm",
     MAP_KEY_PLAYERS_HOUSE_1F: "Talk to Mom and leave through the front door to New Bark Town",
-    MAP_KEY_NEW_BARK_TOWN: "Explore New Bark Town and head east toward Route 29",
+    MAP_KEY_NEW_BARK_TOWN: "Visit Professor Elm's lab and choose a starter Pokemon",
+    "24:5": "Talk to Elm, choose a starter Pokemon, receive Potion",
     MAP_KEY_ROUTE_29: "Travel north through Route 29 toward Cherrygrove City",
+    "26:10": "Talk to Mr. Pokemon and receive the Mystery Egg from Oak",
     "1:2": "Visit Pokemon Center and continue toward Violet City",
     "1:4": "Challenge Violet City gym (first badge goal)",
 }
+
+
+def _hold_phase_satisfied(gs: GameState, state: AgentState) -> bool:
+    """Terminal idle only when the active early-game phase goal is complete."""
+    if not state.get("house_exit_complete"):
+        return house_exit.is_satisfied(gs, state)
+    return starter_quest.is_satisfied(gs, state)
 
 
 def supervisor_node(state: AgentState) -> AgentState:
@@ -52,16 +61,22 @@ def supervisor_node(state: AgentState) -> AgentState:
     elif needs_bootstrap(gs, state):
         state["next_node"] = "bootstrap"
         state["phase"] = "bootstrap"
-    elif house_exit.is_satisfied(gs, state):
+    elif _hold_phase_satisfied(gs, state):
         state["next_node"] = "idle"
-        state["phase"] = "house_exit_done"
+        state["phase"] = (
+            "starter_quest_done"
+            if state.get("house_exit_complete")
+            else "house_exit_done"
+        )
     elif needs_script_wait(gs, state):
         state["next_node"] = "waiter"
         state["phase"] = "wait"
     elif needs_interaction(gs, state):
         state["next_node"] = "interactor"
         state["phase"] = "interact"
-    elif house_exit.force_interactor(gs, state):
+    elif house_exit.force_interactor(gs, state) or (
+        state.get("house_exit_complete") and starter_quest.force_interactor(gs, state)
+    ):
         state["next_node"] = "interactor"
         state["phase"] = "interact"
     elif state.get("should_replan"):
@@ -114,7 +129,11 @@ def needs_interaction(gs: GameState, state: dict | None = None) -> bool:
         return True
     if gs.in_text_box and not blocked:
         return True
-    return house_exit.needs_house_interaction(gs, state)
+    if house_exit.needs_house_interaction(gs, state):
+        return True
+    if state.get("house_exit_complete"):
+        return starter_quest.needs_lab_interaction(gs, state)
+    return False
 
 
 def waiter_node(state: AgentState) -> AgentState:
@@ -170,10 +189,16 @@ def bootstrap_node(state: AgentState) -> AgentState:
 
 
 def idle_node(state: AgentState) -> AgentState:
-    """Terminal house-exit state: no further navigation input."""
+    """Terminal phase state: no further navigation input."""
     gs = GameState.model_validate(state.get("game_state", {}))
-    state["last_action"] = house_exit.HOUSE_EXIT_DONE_ACTION
-    state["last_action_result"] = {"reason": "house_exit_satisfied", "map_key": gs.map_key}
+    if starter_quest.is_satisfied(gs, state):
+        action = starter_quest.STARTER_QUEST_DONE_ACTION
+        reason = "starter_quest_satisfied"
+    else:
+        action = house_exit.HOUSE_EXIT_DONE_ACTION
+        reason = "house_exit_satisfied"
+    state["last_action"] = action
+    state["last_action_result"] = {"reason": reason, "map_key": gs.map_key}
     state["position_before_action"] = gs.position_key
     state["next_node"] = "critic"
     return state
@@ -188,7 +213,10 @@ def planner_node(state: AgentState) -> AgentState:
     subgoals = _decompose_subgoals(gs, state)
 
     llm_result = None
-    if house_exit.planner_allows_llm(gs, state):
+    allows_llm = house_exit.planner_allows_llm(gs, state)
+    if state.get("house_exit_complete"):
+        allows_llm = allows_llm and starter_quest.planner_allows_llm(gs, state)
+    if allows_llm:
         llm_result = llm_plan(gs, state)
     if llm_result and llm_result.get("subgoals"):
         subgoals = llm_result["subgoals"]
@@ -219,6 +247,10 @@ def _decompose_subgoals(gs: GameState, state: AgentState | None = None) -> list[
     house = house_exit.decompose_subgoals(gs)
     if house:
         return house
+    if state.get("house_exit_complete"):
+        quest = starter_quest.decompose_subgoals(gs)
+        if quest:
+            return quest
     if gs.map_key == "24:3":
         return ["Travel north on Route 29", "Reach Cherrygrove City"]
     if gs.battle.in_battle:
@@ -227,6 +259,9 @@ def _decompose_subgoals(gs: GameState, state: AgentState | None = None) -> list[
 
 
 def _players_house_door_exit(gs: GameState) -> str | None:
+    lab_exit = starter_quest.door_exit_direction(gs)
+    if lab_exit:
+        return lab_exit
     return house_exit.door_exit_direction(gs)
 
 
@@ -267,6 +302,8 @@ def navigator_node(state: AgentState) -> AgentState:
 
 
 def _blocked_stairs_up(gs: GameState) -> bool:
+    if starter_quest.blocked_lab_exit(gs):
+        return True
     return house_exit.blocked_stairs_up(gs)
 
 
@@ -289,9 +326,11 @@ def _navigation_candidates(
             candidates.append(step)
     if primary != "a" and primary not in candidates:
         candidates.append(primary)
-    if house_exit.prefer_interact_candidate(gs):
+    if house_exit.prefer_interact_candidate(gs) or starter_quest.prefer_interact_candidate(gs):
         candidates.insert(0, "a")
-    elif house_exit.stuck_interact_fallback(gs, state):
+    elif house_exit.stuck_interact_fallback(gs, state) or starter_quest.stuck_interact_fallback(
+        gs, state
+    ):
         candidates.append("a")
     if not candidates:
         candidates = _direction_candidates(gs.player.x, gs.player.y, target[0], target[1])
@@ -315,6 +354,10 @@ def _navigation_target(
     phase_target = house_exit.navigation_target(gs, map_key=map_key, state=state)
     if phase_target is not None:
         return phase_target
+    if state and state.get("house_exit_complete"):
+        quest_target = starter_quest.navigation_target(gs, map_key=map_key, state=state)
+        if quest_target is not None:
+            return quest_target
     if map_key == "24:3":
         return (gs.player.x, gs.player.y - 2)
     return (gs.player.x + 1, gs.player.y)
@@ -378,6 +421,8 @@ def memory_node(state: AgentState) -> AgentState:
         logger.info("Milestone: %s", milestone)
         if milestone == house_exit.HOUSE_EXIT_MILESTONE:
             house_exit.on_house_exit_complete(state, gs)
+        elif milestone == starter_quest.MILESTONE_RIVAL_BATTLE:
+            starter_quest.on_starter_quest_complete(state, gs)
 
     state["milestones"] = milestones
     state["badges_at_last_check"] = gs.total_badges
@@ -394,6 +439,9 @@ def _check_milestone(
     house = house_exit.house_milestone(gs, maps_visited)
     if house:
         return house
+    quest = starter_quest.starter_milestone(gs, maps_visited)
+    if quest:
+        return quest
     if gs.map_key == MAP_KEY_ROUTE_29 and maps_visited.count(MAP_KEY_ROUTE_29) == 1:
         return "Reached Route 29"
     if gs.map_key == "1:2" and maps_visited.count("1:2") == 1:
@@ -434,7 +482,10 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
     try:
         if action == "wait_script":
             emulator.tick(SCRIPT_WAIT_TICKS)
-        elif action == house_exit.HOUSE_EXIT_DONE_ACTION:
+        elif action in (
+            house_exit.HOUSE_EXIT_DONE_ACTION,
+            starter_quest.STARTER_QUEST_DONE_ACTION,
+        ):
             emulator.tick(1)
         elif (
             action.startswith("navigate_")
@@ -463,6 +514,7 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
             state["phase"] = "explore"
             state["stuck_count"] = 0
         house_exit.on_map_change(map_before, gs, state, action=action)
+        starter_quest.on_map_change(map_before, gs, state, action=action)
         if action.startswith("bootstrap_"):
             from src.emulator.bootstrap import (
                 BootstrapResult,

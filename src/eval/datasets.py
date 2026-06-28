@@ -33,6 +33,34 @@ EARLY_GAME_DATASET: list[dict[str, Any]] = [
         "expected_phase": "explore",
         "milestone_targets": ["Reached Violet City"],
     },
+    {
+        "id": "elms_lab_starter",
+        "description": "Player in Elm's lab before choosing starter",
+        "input": {"map_group": 24, "map_id": 5, "x": 4, "y": 8, "party_count": 0},
+        "expected_phase": "explore",
+        "milestone_targets": ["Choose starter", "Pick a Poke Ball"],
+    },
+    {
+        "id": "mr_pokemon_house",
+        "description": "Player at Mr. Pokemon's house",
+        "input": {"map_group": 26, "map_id": 10, "x": 5, "y": 5},
+        "expected_phase": "explore",
+        "milestone_targets": ["Reached Mr. Pokemon's house"],
+    },
+    {
+        "id": "rival_battle",
+        "description": "First rival trainer battle in Elm's lab",
+        "input": {
+            "map_group": 24,
+            "map_id": 5,
+            "x": 4,
+            "y": 8,
+            "in_battle": True,
+            "battle_mode": 2,
+        },
+        "expected_phase": "battle",
+        "milestone_targets": ["First rival battle"],
+    },
 ]
 
 

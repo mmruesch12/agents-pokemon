@@ -8,9 +8,10 @@ from pathlib import Path
 import pytest
 
 from src.run.autonomous_runner import AutonomousRunner
-from src.state.gold_state_reader import MAP_KEY_NEW_BARK_TOWN
+from src.state.gold_state_reader import MAP_KEY_ELMS_LAB, MAP_KEY_NEW_BARK_TOWN
 
 HOUSE_EXIT_MILESTONE = "Left house — New Bark Town"
+ENTERED_LAB_MILESTONE = "Entered Elm's lab"
 MAX_STEPS = 100
 
 
@@ -53,6 +54,9 @@ def test_cold_boot_leaves_starting_house(rom_path: Path, tmp_path_factory):
         f"Expected milestone {HOUSE_EXIT_MILESTONE!r}, got {result['milestones']!r} "
         f"after {result['steps']} steps"
     )
-    assert result["final_map_key"] == MAP_KEY_NEW_BARK_TOWN, result
-    assert result["final_map_name"] == "New Bark Town"
+    assert result["final_map_key"] in (MAP_KEY_NEW_BARK_TOWN, MAP_KEY_ELMS_LAB), result
+    if result["final_map_key"] == MAP_KEY_ELMS_LAB:
+        assert ENTERED_LAB_MILESTONE in result["milestones"], result
+    else:
+        assert result["final_map_name"] == "New Bark Town"
     assert result["steps"] <= MAX_STEPS

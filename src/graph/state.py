@@ -44,6 +44,7 @@ class AgentState(TypedDict, total=False):
     bootstrap_complete: bool
     bootstrap_action_index: int
     house_exit_complete: bool
+    starter_quest_complete: bool
     error: str
 
 
@@ -53,7 +54,13 @@ def initial_agent_state(game_state: GameState | dict | None = None) -> AgentStat
         messages=[],
         game_state=gs,
         current_plan=["Start new game", "Explore New Bark Town", "Reach Route 29"],
-        subgoals=["Leave player house", "Visit lab or rival", "Head toward Cherrygrove"],
+        subgoals=[
+            "Leave player house",
+            "Visit Elm's lab",
+            "Choose starter",
+            "Deliver egg and battle rival",
+            "Head toward Cherrygrove",
+        ],
         active_subgoal="Leave player house",
         short_term_history=[],
         visited_positions=[],
@@ -78,6 +85,7 @@ def initial_agent_state(game_state: GameState | dict | None = None) -> AgentStat
         bootstrap_complete=False,
         bootstrap_action_index=0,
         house_exit_complete=False,
+        starter_quest_complete=False,
         error="",
     )
 
