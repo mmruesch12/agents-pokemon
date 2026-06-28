@@ -86,6 +86,13 @@ class PyBoyWrapper:
                 return self._frame_count
         return self._frame_count
 
+    def read_byte(self, address: int) -> int:
+        """Read a WRAM/I/O byte with live-thread lock protection when headed."""
+        if self._lock:
+            with self._lock:
+                return int(self._pyboy.memory[address])
+        return int(self._pyboy.memory[address])
+
     def set_fast_forward(self, enabled: bool) -> None:
         """Accelerate the live background tick loop (headed mode only)."""
         if self._lock:
@@ -125,7 +132,7 @@ class PyBoyWrapper:
             with self._lock:
                 while self._frame_count < target:
                     self._advance_locked(1)
-            return self._frame_count
+                return self._frame_count
 
         for _ in range(frames):
             if not self._pyboy.tick():

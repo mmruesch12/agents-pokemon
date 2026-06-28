@@ -39,8 +39,9 @@ class BootstrapResult:
 
 
 def read_memory_byte(emu: PyBoyWrapper, address: int) -> int:
-    if hasattr(emu, "_pyboy"):
-        return int(emu._pyboy.memory[address])
+    read_byte = getattr(emu, "read_byte", None)
+    if callable(read_byte):
+        return int(read_byte(address))
     memory = getattr(emu, "_memory", None)
     if memory is not None:
         return int(memory.get(address, 0))

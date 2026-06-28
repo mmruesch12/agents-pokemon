@@ -15,7 +15,7 @@ Pragmatic dual-path implementation:
 
 - **Live daemon thread** in `PyBoyWrapper` (`_start_live_thread` / `_live_loop`):
   - For `window != "null"`, a daemon thread continuously calls `tick()` (bursts of 8 during `_ff` fast-forward).
-  - `RLock` protects *every* access (`tick`, `press_button`, `get_game_state`, `read_memory_byte`, save/load, screenshot, set_speed).
+  - `RLock` protects *every* access (`tick`, `press_button`, `get_game_state`, `read_byte`, save/load, screenshot, set_speed).
   - Button holds are scheduled (`_held_key` / `_hold_remaining`) so the live thread does press/release/tick timing; main thread waits briefly.
   - `set_fast_forward()` / `fast_forward()` context accelerates title waits in bootstrap (`run_bootstrap`).
 - **MemorySaver instead of SqliteSaver** for headed runs:

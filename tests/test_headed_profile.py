@@ -141,6 +141,36 @@ def test_pyboy_wrapper_load_state_resets_frame_count(fake_rom, fake_pyboy):
         assert gs.frame_count == 0
 
 
+def test_live_thread_memory_reads_under_concurrent_tick(fake_rom, fake_pyboy):
+    from src.emulator.bootstrap import read_loaded_map, read_memory_byte
+    from src.state.gold_state_reader import ADDR_MAP_GROUP, ADDR_MAP_NUMBER
+
+    wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
+    wrapper._pyboy._memory[ADDR_MAP_GROUP] = 3
+    wrapper._pyboy._memory[ADDR_MAP_NUMBER] = 4
+    try:
+        assert wrapper._live_thread is not None
+        assert wrapper._live_thread.is_alive()
+        for _ in range(40):
+            read_memory_byte(wrapper, ADDR_MAP_GROUP)
+            read_loaded_map(wrapper)
+            wrapper.get_game_state()
+            time.sleep(0.002)
+        assert read_loaded_map(wrapper) == (3, 4)
+    finally:
+        wrapper.stop()
+
+
+def test_pyboy_wrapper_read_byte_uses_lock(fake_rom, fake_pyboy):
+    wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
+    try:
+        assert wrapper._lock is not None
+        wrapper._pyboy._memory[0xD087] = 7
+        assert wrapper.read_byte(0xD087) == 7
+    finally:
+        wrapper.stop()
+
+
 def test_pyboy_wrapper_live_loop_uses_lock_for_ff(fake_rom, fake_pyboy):
     wrapper = PyBoyWrapper(fake_rom, window="SDL2", save_dir=fake_rom.parent / "saves")
     try:
@@ -169,6 +199,14 @@ def test_compile_graph_sqlite_default_unchanged(tmp_path):
     assert graph is not None
     assert graph.checkpointer is not None
     assert db.exists() or db.parent.exists()
+
+
+def test_compile_graph_explicit_none_skips_sqlite(tmp_path):
+    db = tmp_path / "should_not_exist.sqlite"
+    graph = compile_graph(None, checkpoint_path=None, checkpointer=None)
+    assert graph is not None
+    assert graph.checkpointer is None
+    assert not db.exists()
 
 
 def test_configure_tracing_disables_for_headed(monkeypatch):
@@ -227,7 +265,7 @@ def test_headed_runner_uses_memory_saver_not_sqlite(tmp_path):
         runner = AutonomousRunner(rom_path=rom, max_steps=1, headed=True, save_dir=tmp_path / "saves")
         runner.run()
 
-    assert captured["checkpoint_path"] is None
+    assert captured.get("checkpoint_path") is None
     assert captured["checkpointer"] is not None
     assert type(captured["checkpointer"]).__name__ in ("InMemorySaver", "MemorySaver")
 

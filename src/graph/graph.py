@@ -31,6 +31,8 @@ from src.graph.router import (
 )
 from src.graph.state import AgentState, initial_agent_state
 
+_CHECKPOINTER_UNSET = object()
+
 
 def _make_apply_action(emulator: Any):
     def node(state: AgentState) -> AgentState:
@@ -74,11 +76,13 @@ def compile_graph(
     emulator: Any = None,
     *,
     checkpoint_path: str | Path | None = "data/checkpoints.sqlite",
-    checkpointer: Any | None = None,
+    checkpointer: Any | None = _CHECKPOINTER_UNSET,
 ) -> Any:
     """Compile graph with an optional explicit or SQLite checkpointer."""
     graph = build_graph(emulator, checkpoint_path=checkpoint_path)
-    if checkpointer is not None:
+    if checkpointer is not _CHECKPOINTER_UNSET:
+        if checkpointer is None:
+            return graph.compile()
         return graph.compile(checkpointer=checkpointer)
     if checkpoint_path is not None:
         Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)

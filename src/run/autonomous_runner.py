@@ -224,7 +224,9 @@ class AutonomousRunner:
                     checkpointer = MemorySaver()
                 except ImportError:
                     checkpointer = None
-                graph = compile_graph(emu, checkpointer=checkpointer)
+                graph = compile_graph(
+                    emu, checkpoint_path=None, checkpointer=checkpointer
+                )
             else:
                 graph = compile_graph(emu, checkpoint_path=self.checkpoint_db)
             config = {"configurable": {"thread_id": thread_id}}
