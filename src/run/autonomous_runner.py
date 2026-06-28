@@ -299,6 +299,20 @@ class AutonomousRunner:
                     steps = state.get("metrics", {}).get("steps", 0)
                     log_intent_card(state)
 
+                    # Emit compact snapshot for dashboard UI (data/watch/current.{json,png})
+                    try:
+                        from src.run.dashboard_server import emit_snapshot
+
+                        png_bytes: bytes | None = None
+                        try:
+                            png_bytes = emu.screenshot()
+                        except Exception:
+                            png_bytes = None
+                        emit_snapshot(state, png_bytes)
+                    except Exception:
+                        # Dashboard emission is best-effort; never break the run loop
+                        pass
+
                     for m in state.get("milestones", []):
                         if m not in milestones:
                             milestones.append(m)

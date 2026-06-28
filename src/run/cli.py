@@ -80,13 +80,41 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 
 def cmd_dashboard(args: argparse.Namespace) -> int:
-    project = trace_project_name()
-    print(f"LangSmith project: {project}")
-    print(f"  UI: {trace_ui_url()}")
-    print("  Full traces (CLI):")
-    print(f"    langsmith trace list --project {project} --full --show-hierarchy")
-    print("    poke-agent traces --full")
-    print("    poke-agent traces --trace-id <TRACE_ID>")
+    """Launch the React dashboard + API server (replaces old LangSmith-only stub).
+
+    Serves the built UI (dashboard/dist) + /api/state populated from demo or live snapshots.
+    Use after `cd dashboard && npm run build` (or let first run instruct).
+    """
+    from src.run.dashboard_server import create_app, get_current_snapshot
+
+    host = getattr(args, "host", "127.0.0.1")
+    port = int(getattr(args, "port", 8765))
+    # Touch to ensure a demo snapshot exists for immediate /api/state utility
+    _ = get_current_snapshot()
+
+    print(f"Starting Agent Dashboard on http://{host}:{port}")
+    print("  /          -> UI (built React) or build instructions")
+    print("  /api/state -> current agent snapshot (demo or live)")
+    print("  /api/screenshot -> current or demo frame PNG")
+    print("Press Ctrl-C to stop.")
+
+    try:
+        import uvicorn
+
+        uvicorn.run(
+            "src.run.dashboard_server:app",
+            host=host,
+            port=port,
+            log_level="info",
+            reload=False,
+        )
+    except KeyboardInterrupt:
+        print("\nDashboard stopped.")
+    except Exception as exc:
+        print(f"Failed to start dashboard server: {exc}", file=sys.stderr)
+        # Still return success for basic API test in non-uvicorn envs
+        print("Tip: pip install uvicorn; or run `uvicorn src.run.dashboard_server:app --port 8765`")
+        return 1
     return 0
 
 
@@ -206,7 +234,9 @@ def build_parser() -> argparse.ArgumentParser:
     eval_p.add_argument("--dataset", default="early_game")
     eval_p.set_defaults(func=cmd_eval)
 
-    dashboard_p = sub.add_parser("dashboard", parents=[common], help="Dashboard info")
+    dashboard_p = sub.add_parser("dashboard", parents=[common], help="Launch React dashboard + API server (replaces old traces stub)")
+    dashboard_p.add_argument("--host", default="127.0.0.1", help="Bind host for dashboard server")
+    dashboard_p.add_argument("--port", type=int, default=8765, help="Port for dashboard server (default 8765)")
     dashboard_p.set_defaults(func=cmd_dashboard)
 
     traces_p = sub.add_parser("traces", parents=[common], help="List or inspect LangSmith traces")
