@@ -40,6 +40,8 @@ Using --headed enables a visible emulator window (headless by default; use --hea
 
 **Simplest way to watch:** `uv run poke-watch` (headed + resume latest by default; pass `--steps N` to limit). The SDL2 window will appear on your desktop.
 
+**Headed profile:** Watch mode uses in-memory LangGraph checkpoints (`MemorySaver`) and disables LangSmith tracing unless you pass `--langsmith`. Agent “mind” resets each process; `--resume latest` loads the newest emulator `.state` and seeds agent state from RAM. SDL2 ticks run on the main thread so the window stays in sync (see `docs/future-headed-optimizations.md`).
+
 **Note on boot/intro:** Even the title screen + naming/clock dialogs are not instant. A cold boot does an upfront frame wait (fast-forwarded in code) followed by ~dozens of individual button presses. Each press during the graph phase of bootstrap goes through the full supervisor/bootstrap/apply/critic/memory cycle + checkpoint. This creates pauses between inputs even though no LLM is involved.
 
 ### Why does the game feel "laggy" or slow when watching?

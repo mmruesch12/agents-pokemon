@@ -14,11 +14,12 @@ def test_future_headed_doc_no_stale_sqlite_always_peek():
     assert "peeks sqlite only when **not** headed" in text
 
 
-def test_future_headed_doc_mentions_memory_saver_and_live_thread():
+def test_future_headed_doc_mentions_memory_saver_and_headed_tick_profile():
     text = Path("docs/future-headed-optimizations.md").read_text(encoding="utf-8")
-    assert "_live_loop" in text
     assert "MemorySaver" in text
     assert "read_byte" in text
+    assert "main-thread" in text.lower() or "main thread" in text.lower()
+    assert "does **not** start" in text or "does not start" in text
 
 
 def test_resolve_thread_id_headed_skips_sqlite_peek(tmp_path):

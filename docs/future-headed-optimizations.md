@@ -13,11 +13,11 @@
 
 Pragmatic dual-path implementation:
 
-- **Live daemon thread** in `PyBoyWrapper` (`_start_live_thread` / `_live_loop`):
-  - For `window != "null"`, a daemon thread continuously calls `tick()` (bursts of 8 during `_ff` fast-forward).
-  - `RLock` protects *every* access (`tick`, `press_button`, `get_game_state`, `read_byte`, save/load, screenshot, set_speed).
-  - Button holds are scheduled (`_held_key` / `_hold_remaining`) so the live thread does press/release/tick timing; main thread waits briefly.
-  - `set_fast_forward()` / `fast_forward()` context accelerates title waits in bootstrap (`run_bootstrap`).
+- **SDL2 main-thread ticking** in `PyBoyWrapper` (no background `_live_loop` for headed):
+  - PyBoy creates the SDL2 window on the thread that constructs it; `post_tick()` calls `SDL_RenderPresent` from the thread that invokes `tick()`.
+  - A background daemon `_live_loop` would advance emulation but leave a **frozen compositor snapshot** in the window, so headed mode does **not** start `_start_live_thread()`.
+  - Headed `tick()` runs synchronously on the main thread; `set_fast_forward()` / `fast_forward()` use burst batches (8 frames per inner loop) during long waits such as bootstrap title screen.
+  - `RLock` + `_live_loop` code remain for a future queue-based owner thread or non-SDL2 window modes; `read_byte`, `get_game_state`, save/load still use the lock when headed.
 - **MemorySaver instead of SqliteSaver** for headed runs:
   - In `AutonomousRunner.run()`: if `headed` then `MemorySaver()` (in-proc dict) else normal sqlite path.
   - `compile_graph(emu, checkpointer=...)` supports explicit checkpointer.
@@ -30,8 +30,10 @@ Pragmatic dual-path implementation:
 
 **Why it works for the pause problem**
 - No `fsync`/disk per graph step → no visible stutter from `SqliteSaver`.
-- Background thread keeps SDL2 window pumping frames even while the main thread does routing, state updates, or (when enabled) LLM calls.
-- Fast-forward during long title wait hides the 1800-frame blind tick.
+- LangSmith tracing forced off unless `--langsmith` → no tracing I/O pauses between steps.
+- Main-thread ticks during `apply_action` / bootstrap keep the SDL2 window updating on every emulator operation.
+- Fast-forward burst batches shorten long synchronous title waits without a background thread.
+- **Remaining pauses**: multi-second gaps during LLM calls in `graph.invoke()` are expected (see README); fixing those needs the queue-based owner-thread design below.
 
 **Trade-offs / Complexity (Why We Can Do Better Later)**
 - Large amount of `if self._is_live` branching + duplicated logic in `tick`/`press_button`.
@@ -133,7 +135,7 @@ Current approach is "good" (achieves the explicit `/goal` of no checkpoint-induc
 
 ## References (Current Code)
 
-- Live thread: `src/emulator/pyboy_wrapper.py` (`_live_loop`, `press_button`, `tick`)
+- Headed tick profile: `src/emulator/pyboy_wrapper.py` (`_sync_tick`, `fast_forward`, optional `_live_loop`)
 - MemorySaver choice: `src/run/autonomous_runner.py` (`run()` headed branch)
 - Tracing profile: `src/run/_langsmith.py` (`configure_tracing`)
 - Compile support: `src/graph/graph.py:80` (`compile_graph`)
