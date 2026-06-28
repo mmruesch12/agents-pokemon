@@ -5,15 +5,29 @@ from __future__ import annotations
 import logging
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+
+import pytest
 
 from src.graph.graph import compile_graph
 from src.graph.state import initial_agent_state
 from src.run.autonomous_runner import AutonomousRunner, format_intent_card
 from src.state.gold_state_reader import ByteArrayReader, GoldStateReader
-from tests.fake_emulator import MutableRamEmulator
 
 RUNNER_SOURCE = Path(__file__).resolve().parents[1] / "src" / "run" / "autonomous_runner.py"
+
+_ROM_CANDIDATES = (
+    Path("roms/pokemon_gold.gb"),
+    Path(
+        "roms/Pokemon - Silver Version (USA, Europe) (SGB Enhanced) (GB Compatible).gbc"
+    ),
+)
+
+
+def _find_pokemon_rom() -> Path | None:
+    for candidate in _ROM_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def test_format_intent_card_navigator_example_shape():
@@ -81,37 +95,20 @@ def test_runner_loop_logs_intent_card_after_invoke():
     assert while_idx != -1
 
 
-def test_runner_run_logs_intent_cards_after_invoke(new_bark_ram: dict, tmp_path, caplog):
-    """AutonomousRunner.run() emits post-invoke intent cards via logger.info each loop."""
-    emu = MutableRamEmulator(new_bark_ram)
-
-    def save_state(name: str) -> None:
-        pass
-
-    emu.save_state = save_state  # type: ignore[method-assign]
-
-    class FakePyBoyWrapper:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def __enter__(self):
-            return emu
-
-        def __exit__(self, *args):
-            return False
-
-    rom = tmp_path / "fake.gb"
-    rom.write_bytes(b"\x00")
+def test_runner_real_rom_logs_three_intent_cards(tmp_path, caplog):
+    """AutonomousRunner.run() on a real ROM logs one card per graph.invoke (no mocks)."""
+    rom = _find_pokemon_rom()
+    if rom is None:
+        pytest.skip("No Pokemon ROM available")
 
     with caplog.at_level(logging.INFO, logger="src.run.autonomous_runner"):
-        with patch("src.emulator.pyboy_wrapper.PyBoyWrapper", FakePyBoyWrapper):
-            runner = AutonomousRunner(
-                rom_path=rom,
-                max_steps=3,
-                checkpoint_db=tmp_path / "checkpoints.sqlite",
-                save_dir=tmp_path / "saves",
-            )
-            result = runner.run()
+        runner = AutonomousRunner(
+            rom_path=rom,
+            max_steps=3,
+            checkpoint_db=tmp_path / "checkpoints.sqlite",
+            save_dir=tmp_path / "saves",
+        )
+        result = runner.run()
 
     assert result["steps"] == 3
     intent_logs = [r.message for r in caplog.records if r.message.startswith("[step ")]
