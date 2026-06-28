@@ -52,6 +52,11 @@ class LongTermMemory:
             self._save()
 
     def add_landmark(self, landmark: dict[str, Any]) -> dict[str, Any]:
+        if not landmark.get("id"):
+            landmark = {
+                **landmark,
+                "id": f"landmark:{landmark.get('name', 'unknown')}:{landmark.get('map_key', '')}",
+            }
         self._landmarks = merge_landmark(self._landmarks, landmark)
         self._save()
         return landmark
