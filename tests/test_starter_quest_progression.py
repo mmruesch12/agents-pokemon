@@ -85,6 +85,7 @@ def test_post_starter_new_bark_east_exit_retired_without_landmark():
     assert starter_quest.navigation_target(gs) is None
     target = _navigation_target(gs, state=state)
     assert target != starter_quest.NEW_BARK_EAST_EXIT
+    assert target[0] > gs.player.x
 
 
 def test_post_starter_new_bark_uses_east_exit_landmark():

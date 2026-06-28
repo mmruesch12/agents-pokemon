@@ -206,18 +206,24 @@ def discover_quest_transition_landmarks(
                 metadata={"transition": "route_30_to_mr_pokemon"},
             )
         )
-        landmarks.append(
-            make_landmark(
-                landmark_id=MR_POKEMONS_HOUSE_ENTRANCE_ID,
-                name="Mr. Pokemon's House entrance",
-                map_key=map_key,
-                x=int(x),
-                y=int(y),
-                kind=LANDMARK_KIND_BUILDING_ENTRANCE,
-                metadata={"building": "mr_pokemon", "transition": "route_30_to_mr_pokemon"},
-            )
-        )
     return landmarks
+
+
+def discover_mr_pokemon_entrance_landmark(gs: GameState) -> dict[str, Any]:
+    """Record the interior door tile on first Mr. Pokemon's House visit."""
+    from src.graph.phases import starter_quest
+    from src.state.gold_state_reader import MAP_KEY_MR_POKEMONS_HOUSE
+
+    door = starter_quest.MR_POKEMON_DOOR
+    return make_landmark(
+        landmark_id=MR_POKEMONS_HOUSE_ENTRANCE_ID,
+        name="Mr. Pokemon's House entrance",
+        map_key=MAP_KEY_MR_POKEMONS_HOUSE,
+        x=door[0],
+        y=door[1],
+        kind=LANDMARK_KIND_BUILDING_ENTRANCE,
+        metadata={"building": "mr_pokemon", "discovered_on_first_visit": True},
+    )
 
 
 def apply_landmark_discovery(state: dict[str, Any], landmarks: list[dict[str, Any]]) -> list[dict[str, Any]]:

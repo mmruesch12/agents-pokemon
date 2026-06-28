@@ -25,10 +25,13 @@ def test_route_29_subgoals():
 
 
 def test_navigation_target_route_29():
-    gs = GameState(player={"map_group": 24, "map_id": 3, "x": 10, "y": 20})
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
+        raw_metadata={"has_starter": True},
+    )
     state = {"house_exit_complete": True}
     target = _navigation_target(gs, state=state)
-    assert target[1] == gs.player.y - 2
+    assert target[1] < gs.player.y
 
 
 def test_hold_phase_false_post_house_starter_active():
@@ -109,5 +112,6 @@ def test_navigator_with_starter_moves_east(new_bark_ram: dict):
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
     result = navigator_node(state)
-    assert result["last_action"] == "navigate_right"
+    assert result["last_action"].startswith("navigate_")
     assert result["last_action_result"]["target"][0] > gs.player.x
+    assert result["last_action_result"]["target"][1] >= gs.player.y

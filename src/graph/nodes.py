@@ -7,7 +7,7 @@ import os
 from typing import Any
 
 from src.emulator.bootstrap import needs_bootstrap, pick_bootstrap_button
-from src.graph.exploration import exploration_target, gated_phase_target
+from src.graph.exploration import exploration_target, gated_phase_target, retired_geography_target
 from src.graph.llm import llm_battle, llm_navigate, llm_plan
 from src.graph.pathfinding import direction_toward, find_path
 from src.graph.phases import house_exit, starter_quest
@@ -15,12 +15,11 @@ from src.graph.state import AgentState, update_game_state
 from src.memory.landmarks import (
     ELMS_LAB_ENTRANCE_ID,
     ELMS_LAB_INTERIOR_ID,
-    NEW_BARK_EAST_EXIT_ID,
-    ROUTE_29_NORTH_GATE_ID,
-    ROUTE_30_NORTH_GATE_ID,
+    MR_POKEMONS_HOUSE_ENTRANCE_ID,
     apply_landmark_discovery,
     discover_elms_lab_landmarks,
     discover_map_visit_landmark,
+    discover_mr_pokemon_entrance_landmark,
     discover_quest_transition_landmarks,
     find_landmark,
     format_landmarks_for_prompt,
@@ -33,6 +32,7 @@ from src.memory.landmarks import (
 from src.memory.long_term_memory import LongTermMemory
 from src.state.gold_state_reader import (
     MAP_KEY_ELMS_LAB,
+    MAP_KEY_MR_POKEMONS_HOUSE,
     MAP_KEY_NEW_BARK_TOWN,
     MAP_KEY_PLAYERS_HOUSE_1F,
     MAP_KEY_PLAYERS_HOUSE_2F,
@@ -454,51 +454,6 @@ def _direction_candidates(sx: int, sy: int, tx: int, ty: int) -> list[str]:
     return ["right", "up", "down", "left"]
 
 
-def _route_north_target(gs: GameState) -> tuple[int, int]:
-    """Bias north on outdoor routes when landmark coords are not yet known."""
-    return (gs.player.x, max(0, gs.player.y - 2))
-
-
-def _resolve_retired_quest_geography(
-    gs: GameState,
-    state: AgentState,
-) -> tuple[int, int] | None:
-    """Resolve east/route geography from landmarks or exploration fallbacks."""
-    landmarks = list(state.get("known_landmarks", []))
-    meta = gs.raw_metadata or {}
-    has_starter = bool(meta.get("has_starter"))
-    has_egg = bool(meta.get("has_mystery_egg"))
-
-    if gs.map_key == MAP_KEY_NEW_BARK_TOWN and has_starter and not has_egg:
-        if landmark_known(landmarks, NEW_BARK_EAST_EXIT_ID):
-            return gated_phase_target(
-                gs, starter_quest.NEW_BARK_EAST_EXIT, state=state, landmark_id=NEW_BARK_EAST_EXIT_ID
-            )
-        return (gs.player.x + 1, gs.player.y)
-
-    if gs.map_key == MAP_KEY_ROUTE_29 and has_starter and not has_egg:
-        if landmark_known(landmarks, ROUTE_29_NORTH_GATE_ID):
-            return gated_phase_target(
-                gs,
-                starter_quest.ROUTE_29_NORTH_GATE,
-                state=state,
-                landmark_id=ROUTE_29_NORTH_GATE_ID,
-            )
-        return _route_north_target(gs)
-
-    if gs.map_key == MAP_KEY_ROUTE_30 and has_starter and not has_egg:
-        if landmark_known(landmarks, ROUTE_30_NORTH_GATE_ID):
-            return gated_phase_target(
-                gs,
-                starter_quest.ROUTE_30_NORTH_GATE,
-                state=state,
-                landmark_id=ROUTE_30_NORTH_GATE_ID,
-            )
-        return _route_north_target(gs)
-
-    return None
-
-
 def _navigation_target(
     gs: GameState,
     *,
@@ -513,11 +468,10 @@ def _navigation_target(
         quest_target = starter_quest.navigation_target(gs, map_key=map_key, state=state)
         if quest_target is not None:
             return _gate_starter_quest_target(gs, quest_target, state=state)
-        retired = _resolve_retired_quest_geography(gs, state)
+        retired = retired_geography_target(gs, state)
         if retired is not None:
             return retired
-    if map_key in (MAP_KEY_ROUTE_29, MAP_KEY_ROUTE_30):
-        return _route_north_target(gs)
+        return exploration_target(gs, state)
     return (gs.player.x + 1, gs.player.y)
 
 
@@ -573,6 +527,11 @@ def memory_node(state: AgentState) -> AgentState:
     if gs.map_key not in maps_visited:
         maps_visited.append(gs.map_key)
         discoveries.append(discover_map_visit_landmark(gs))
+        if (
+            gs.map_key == MAP_KEY_MR_POKEMONS_HOUSE
+            and not landmark_known(state.get("known_landmarks", []), MR_POKEMONS_HOUSE_ENTRANCE_ID)
+        ):
+            discoveries.append(discover_mr_pokemon_entrance_landmark(gs))
     state["maps_visited"] = maps_visited
 
     transition = state.get("last_map_transition") or {}
