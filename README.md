@@ -49,7 +49,7 @@ The agent is an LLM-driven multi-agent system (supervisor → planner/navigator 
 Every movement decision typically requires 1+ remote LLM calls (via OpenRouter, xAI Grok or OpenAI). Even fast models introduce multi-second pauses between visible actions while the agent "thinks".
 
 During actual button presses the emulator runs at normal speed (especially nice in headed mode). The pauses are expected agent behavior, not a bug. For faster experimentation you can:
-- Use a faster model via env `OPENROUTER_MODEL=...` (or `XAI_MODEL=...`)
+- Use a faster/different model via env `OPENROUTER_MODEL=...` (or `XAI_MODEL=...` / `OPENAI_MODEL=...`)
 - Run headless for long training sessions
 - Use small `--steps` values when watching
 
@@ -58,8 +58,11 @@ Press Ctrl-C in the terminal (or close the window) to stop.
 Other commands:
 ```bash
 uv run python -m src.run.cli eval --dataset early_game   # evaluators
+uv run python -m src.run.cli --start-bedroom --steps 200 # fast bedroom start (skips intro)
 uv run pytest tests/ -q                                  # tests (no ROM needed)
 ```
+
+Use `--start-bedroom` (with `poke-watch` or `poke-agent`) for quick iteration on early house-exit logic. It caches `saves/bedroom_start.state` after first (slower) run. Incompatible with `--resume`.
 
 ## Setup (Ubuntu/Debian)
 
@@ -78,7 +81,7 @@ cp /path/to/pokemon_gold.gb roms/pokemon_gold.gb
 
 # Environment
 cp .env.example .env
-# Edit .env: OPENROUTER_API_KEY (preferred), XAI_API_KEY or OPENAI_API_KEY, LANGSMITH_API_KEY, ROM_PATH
+# Edit .env: set OPENROUTER_API_KEY= (recommended; get one at openrouter.ai), or fall back to XAI_/OPENAI_, plus LANGSMITH_API_KEY, ROM_PATH
 ```
 
 ## Architecture

@@ -52,6 +52,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         langsmith=args.langsmith,
         thread_id=args.thread_id,
         headed=getattr(args, "headed", False),
+        start_bedroom=getattr(args, "start_bedroom", False),
+        bedroom_state_name=getattr(args, "bedroom_state_name", None),
     )
     result = runner.run(resume=args.resume)
     print(f"Run complete: {result['steps']} steps, milestones={result['milestones']}")
@@ -175,6 +177,16 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("-v", "--verbose", action="store_true")
     common.add_argument("--max-steps", type=int, dest="steps", help="Alias for --steps")
     common.add_argument("--headed", action="store_true", help="Enable visible SDL2 window so you can watch the agent play (default is headless)")
+    common.add_argument(
+        "--start-bedroom",
+        action="store_true",
+        help="Fast-start in Player's House 2F; skips title/graph bootstrap (not compatible with --resume)",
+    )
+    common.add_argument(
+        "--bedroom-state-name",
+        default=None,
+        help="Custom name for bedroom start save state (default: bedroom_start or $BEDROOM_START_STATE)",
+    )
 
     parser = argparse.ArgumentParser(
         prog="pokemon-gold-agent",
@@ -220,13 +232,18 @@ def _parse_cli(argv: list[str] | None = None):
     """Thin wrapper for tests: returns the namespace after normalization + parse.
 
     This is the exact namespace that would be passed to cmd_run / runner.
+    Pre-subcommand flags like --headed and --start-bedroom are popped
+    so they work in any position (e.g. `poke-agent --start-bedroom --steps 10`).
     """
     parser = build_parser()
     raw = list(argv) if argv is not None else None
     headed_present, cleaned = pop_store_true_flag(raw, "--headed")
+    start_bedroom_present, cleaned = pop_store_true_flag(cleaned, "--start-bedroom")
     args = parser.parse_args(cleaned if raw is not None else None)
     if headed_present:
         args.headed = True
+    if start_bedroom_present:
+        args.start_bedroom = True
     return args
 
 
@@ -243,6 +260,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args)
     except FileNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    except RuntimeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:

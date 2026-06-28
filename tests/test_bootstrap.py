@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from src.emulator.bootstrap import (
+    INDOOR_BOOTSTRAP_ACTIONS,
     MAP_GROUP_ADDR,
     MAP_NUMBER_ADDR,
     PLAYERS_HOUSE_2F,
@@ -11,6 +12,8 @@ from src.emulator.bootstrap import (
     movement_responsive,
     needs_bootstrap,
     pick_bootstrap_button,
+    prepare_bedroom_start,
+    seed_bedroom_agent_state,
     run_bootstrap,
 )
 from src.graph.state import initial_agent_state
@@ -201,3 +204,64 @@ def test_supervisor_routes_to_navigator_when_bootstrapped(new_bark_ram: dict):
     state["bootstrap_complete"] = True
     result = supervisor_node(state)
     assert result["next_node"] == "navigator"
+
+
+def _bedroom_memory() -> dict[int, int]:
+    init_flag_byte = ADDR_EVENT_FLAGS + (EVENT_INITIALIZED_EVENTS // 8)
+    init_flag_bit = EVENT_INITIALIZED_EVENTS % 8
+    return {
+        MAP_GROUP_ADDR: MAPGROUP_NEW_BARK,
+        MAP_NUMBER_ADDR: MAP_PLAYERS_HOUSE_2F,
+        ADDR_X_COORD: 3,
+        ADDR_Y_COORD: 4,
+        init_flag_byte: 1 << init_flag_bit,
+    }
+
+
+def test_seed_bedroom_agent_state_skips_graph_bootstrap():
+    emu = ProbeEmulator(_bedroom_memory())
+    gs = emu.get_game_state()
+    state = initial_agent_state(gs)
+    result = seed_bedroom_agent_state(state, gs)
+
+    assert result["bootstrap_complete"] is True
+    assert result["phase"] == "explore"
+    assert result["bootstrap_action_index"] == INDOOR_BOOTSTRAP_ACTIONS
+    assert result["active_subgoal"] == "Leave player house"
+    assert "24:7" in result["maps_visited"]
+    assert needs_bootstrap(gs, result) is False
+
+
+def test_prepare_bedroom_start_loads_cached_state(tmp_path):
+    emu = ProbeEmulator(_bedroom_memory())
+
+    class _SaveEmu(ProbeEmulator):
+        def load_state(self, name: str) -> None:
+            assert name == "bedroom_start"
+
+        def save_state(self, name: str):
+            raise AssertionError("should not bootstrap when cache exists")
+
+    save_emu = _SaveEmu(_bedroom_memory())
+    (tmp_path / "bedroom_start.state").write_bytes(b"cached")
+
+    state = initial_agent_state()
+    result = prepare_bedroom_start(
+        save_emu,
+        state,
+        save_dir=tmp_path,
+        bedroom_state_name="bedroom_start",
+    )
+    assert result["bootstrap_complete"] is True
+    assert result["game_state"]["player"]["map_id"] == MAP_PLAYERS_HOUSE_2F
+
+
+def test_supervisor_routes_to_navigator_after_bedroom_seed():
+    from src.graph.nodes import supervisor_node
+
+    emu = ProbeEmulator(_bedroom_memory())
+    gs = emu.get_game_state()
+    state = seed_bedroom_agent_state(initial_agent_state(gs), gs)
+    result = supervisor_node(state)
+    assert result["next_node"] == "navigator"
+    assert result["phase"] != "bootstrap"

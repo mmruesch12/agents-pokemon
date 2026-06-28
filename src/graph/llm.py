@@ -48,7 +48,7 @@ def get_chat_model():
                 base_url="https://openrouter.ai/api/v1",
                 temperature=0,
             )
-            _log_selected_model(model)
+            _log_selected_model("OpenRouter", model)
             return chat
         if xai_key:
             model = (os.getenv("XAI_MODEL") or "").strip() or "grok-4-1-fast-reasoning"
@@ -59,22 +59,22 @@ def get_chat_model():
                 base_url=base_url,
                 temperature=0,
             )
-            _log_selected_model(model)
+            _log_selected_model("xAI", model)
             return chat
         model = (os.getenv("OPENAI_MODEL") or "").strip() or "gpt-4o-mini"
         chat = ChatOpenAI(model=model, api_key=openai_key, temperature=0)
-        _log_selected_model(model)
+        _log_selected_model("OpenAI", model)
         return chat
     except Exception as exc:
         logger.warning("LLM init failed: %s", exc)
         return None
 
 
-def _log_selected_model(model: str) -> None:
-    """Log chosen model name once per process at INFO (makes selected model visible in runs/verify)."""
+def _log_selected_model(provider: str, model: str) -> None:
+    """Log chosen provider + model name once per process at INFO."""
     global _MODEL_LOGGED
     if not _MODEL_LOGGED:
-        logger.info("LLM using model: %s", model)
+        logger.info("LLM using %s (model: %s)", provider, model)
         _MODEL_LOGGED = True
 
 

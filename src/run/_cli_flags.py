@@ -1,7 +1,7 @@
 """Pure argv utilities for CLI flags.
 
-Used to normalize --headed (and similar store_true flags) from any
-position in argv so that pre-subcommand placement works reliably.
+Used to normalize --headed / --start-bedroom (and similar store_true flags)
+from any position in argv so that pre-subcommand placement works reliably.
 """
 
 from __future__ import annotations

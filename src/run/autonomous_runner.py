@@ -81,6 +81,8 @@ class AutonomousRunner:
         stuck_threshold: int = 10,
         headed: bool = False,
         window: str | None = None,
+        start_bedroom: bool = False,
+        bedroom_state_name: str | None = None,
     ):
         self.rom_path = Path(rom_path)
         self.max_steps = max_steps
@@ -91,6 +93,8 @@ class AutonomousRunner:
         self.stuck_threshold = stuck_threshold
         self.headed = headed
         self.window = window
+        self.start_bedroom = start_bedroom
+        self.bedroom_state_name = bedroom_state_name
         self.memory = LongTermMemory()
 
         configure_tracing(langsmith=langsmith, headed=headed)
@@ -204,7 +208,12 @@ class AutonomousRunner:
         from src.emulator.pyboy_wrapper import PyBoyWrapper
         from src.tools.pokemon_tools import bind_emulator
 
+        if self.start_bedroom and resume:
+            raise ValueError("--start-bedroom cannot be used with --resume")
+
         thread_id = self._resolve_thread_id(resume)
+        if self.start_bedroom and self.thread_id == "default":
+            thread_id = "bedroom"
         self.save_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint_db.parent.mkdir(parents=True, exist_ok=True)
 
@@ -254,6 +263,22 @@ class AutonomousRunner:
                         else:
                             state = create_initial_state(emu)
                             logger.info("Fresh agent state thread_id=%s", thread_id)
+                elif self.start_bedroom:
+                    from src.emulator.bootstrap import prepare_bedroom_start
+
+                    state = create_initial_state(emu)
+                    state = prepare_bedroom_start(
+                        emu,
+                        state,
+                        rom_path=self.rom_path,
+                        save_dir=self.save_dir,
+                        bedroom_state_name=self.bedroom_state_name,
+                    )
+                    logger.info(
+                        "Bedroom start ready (map=%s, bootstrap_complete=%s)",
+                        state.get("game_state", {}).get("player", {}).get("map_name"),
+                        state.get("bootstrap_complete"),
+                    )
                 else:
                     state = create_initial_state(emu)
                     state = self._bootstrap_if_needed(emu, state)
@@ -331,6 +356,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--thread-id", default="default")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("--headed", action="store_true", help="Enable visible SDL2 window so you can watch the agent play (default is headless)")
+    parser.add_argument(
+        "--start-bedroom",
+        action="store_true",
+        help="Skip title/bootstrap graph work; fast-forward to Player's House 2F (caches saves/bedroom_start.state)",
+    )
+    parser.add_argument(
+        "--bedroom-state-name",
+        default=None,
+        help="Custom name for bedroom start save state (default via BEDROOM_START_STATE env)",
+    )
     return parser
 
 
@@ -357,6 +392,8 @@ def main(argv: list[str] | None = None) -> int:
             langsmith=args.langsmith,
             thread_id=args.thread_id,
             headed=getattr(args, "headed", False),
+            start_bedroom=getattr(args, "start_bedroom", False),
+            bedroom_state_name=getattr(args, "bedroom_state_name", None),
         )
         result = runner.run(resume=args.resume)
         print(f"Completed {result['steps']} steps")
@@ -368,6 +405,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Scores: {result['scores']}")
         return 0
     except FileNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    except RuntimeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 

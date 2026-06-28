@@ -34,6 +34,8 @@ def main() -> int:
     llm = get_chat_model()
     if llm is None:
         print("LLM: unavailable (heuristic-only mode)")
+        if not openrouter:
+            print("  Tip: OpenRouter is the preferred provider. Set OPENROUTER_API_KEY in .env to use it by default.")
     else:
         from langchain_core.messages import HumanMessage
 
@@ -42,7 +44,14 @@ def main() -> int:
             ping = resp.content.strip()[:40]
         except Exception as exc:
             ping = f"configured (ping failed: {type(exc).__name__})"
-        print(f"LLM: {llm.model_name} — ping: {ping}")
+        # Determine provider label for clarity
+        if openrouter:
+            provider = "OpenRouter (default)"
+        elif xai:
+            provider = "xAI"
+        else:
+            provider = "OpenAI"
+        print(f"LLM: {provider} — model={llm.model_name} — ping: {ping}")
 
     default_pyboy_rom = None
     cache_root = Path.home() / ".cache" / "uv"

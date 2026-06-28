@@ -10,7 +10,7 @@ from src.run.cli import _parse_cli, _setup_langsmith, _setup_logging, build_pars
 
 
 def normalize_watch_argv(argv: list[str]) -> list[str]:
-    """Inject --headed and --resume latest unless --no-resume is present."""
+    """Inject --headed and --resume latest unless --no-resume or --start-bedroom."""
     no_resume = False
     cleaned: list[str] = []
     for tok in argv:
@@ -18,10 +18,11 @@ def normalize_watch_argv(argv: list[str]) -> list[str]:
             no_resume = True
             continue
         cleaned.append(tok)
+    start_bedroom = "--start-bedroom" in cleaned
     if "--headed" not in cleaned:
         cleaned.insert(0, "--headed")
     has_resume = any(t == "--resume" or t.startswith("--resume=") for t in cleaned)
-    if not no_resume and not has_resume:
+    if not no_resume and not start_bedroom and not has_resume:
         cleaned = ["--resume", "latest", *cleaned]
     return cleaned
 

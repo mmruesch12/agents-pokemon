@@ -309,3 +309,103 @@ def apply_bootstrap_metadata(gs: GameState, result: BootstrapResult) -> GameStat
     meta["movement_ready"] = result.movement_ready
     meta["bootstrap_actions"] = result.actions_taken
     return gs.model_copy(update={"raw_metadata": meta})
+
+
+BEDROOM_START_STATE = os.getenv("BEDROOM_START_STATE", "bedroom_start")
+
+
+def seed_bedroom_agent_state(
+    state: dict,
+    gs: GameState,
+    *,
+    bootstrap_actions: int = 0,
+) -> dict:
+    """Seed agent state for house-exit gameplay from Player's House 2F."""
+    from src.graph.state import update_game_state
+    from src.state.gold_state_reader import MAP_KEY_PLAYERS_HOUSE_2F
+
+    result = BootstrapResult(
+        success=True,
+        movement_ready=True,
+        map_loaded=True,
+        actions_taken=bootstrap_actions,
+        frames_elapsed=0,
+    )
+    gs = apply_bootstrap_metadata(gs, result)
+    state = update_game_state(state, gs)
+    state["bootstrap_complete"] = True
+    state["phase"] = "explore"
+    state["bootstrap_action_index"] = INDOOR_BOOTSTRAP_ACTIONS
+    state["movement_observed"] = True
+    maps = list(state.get("maps_visited", []))
+    if MAP_KEY_PLAYERS_HOUSE_2F not in maps:
+        maps.append(MAP_KEY_PLAYERS_HOUSE_2F)
+    state["maps_visited"] = maps
+    state["active_subgoal"] = "Leave player house"
+    state["house_exit_complete"] = False
+    state["starter_quest_complete"] = False
+    return state
+
+
+def prepare_bedroom_start(
+    emu: PyBoyWrapper,
+    state: dict,
+    *,
+    rom_path: str | Path | None = None,
+    save_dir: str | Path | None = None,
+    bedroom_state_name: str | None = None,
+) -> dict:
+    """Fast-start emulator in Player's House 2F; skip graph intro/bootstrap."""
+    from src.state.gold_state_reader import MAP_KEY_PLAYERS_HOUSE_2F
+
+    save_dir = Path(save_dir or "saves")
+    bedroom_state_name = bedroom_state_name or BEDROOM_START_STATE
+    cache_path = save_dir / f"{bedroom_state_name}.state"
+
+    if cache_path.is_file():
+        emu.load_state(bedroom_state_name)
+        gs = emu.get_game_state()
+        if gs.map_key == MAP_KEY_PLAYERS_HOUSE_2F:
+            logger.info("Loaded cached bedroom start from %s", cache_path.name)
+            return seed_bedroom_agent_state(state, gs)
+        logger.warning(
+            "Cached bedroom save invalid (map=%s); removing and re-bootstrapping",
+            gs.map_key,
+        )
+        try:
+            cache_path.unlink()
+        except Exception:
+            pass
+
+    logger.info("Bedroom start: running emulator bootstrap to Player's House 2F")
+    result = run_bootstrap(emu, rom_path=rom_path)
+    wait_for_init_events(emu)
+    gs = emu.get_game_state()
+    loaded_map = read_loaded_map(emu)
+    if loaded_map != PLAYERS_HOUSE_2F:
+        raise RuntimeError(
+            "Bedroom start failed: expected Player's House 2F "
+            f"(map={loaded_map}), bootstrap movement_ready={result.movement_ready}"
+        )
+    if not result.movement_ready and not movement_responsive(emu):
+        raise RuntimeError(
+            "Bedroom start failed: player cannot move in bedroom after bootstrap"
+        )
+
+    gs = apply_bootstrap_metadata(
+        gs,
+        BootstrapResult(
+            success=True,
+            movement_ready=True,
+            map_loaded=True,
+            actions_taken=result.actions_taken,
+            frames_elapsed=result.frames_elapsed,
+        ),
+    )
+    try:
+        emu.save_state(bedroom_state_name)
+        logger.info("Cached bedroom start as %s.state", bedroom_state_name)
+    except OSError as exc:
+        logger.warning("Could not cache bedroom start: %s", exc)
+
+    return seed_bedroom_agent_state(state, gs, bootstrap_actions=result.actions_taken)

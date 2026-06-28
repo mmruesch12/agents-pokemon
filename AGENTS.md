@@ -41,7 +41,7 @@ Autonomous multi-agent Pokemon Gold/Silver player:
 - **PyBoy** — headless emulator control plane
 - **LangGraph** — Supervisor → Planner → Navigator/Battler → Critic → Memory
 - **LangSmith** — optional tracing
-- **OpenRouter** (default), **xAI Grok**, or **OpenAI** — LLM for planner/navigator/battler nodes
+- **OpenRouter** (preferred/default when its key is set), **xAI Grok**, or **OpenAI** — LLM for planner/navigator/battler nodes
 
 Design spec: [spec.md](spec.md)
 
@@ -78,6 +78,10 @@ uv run poke-runner --resume latest --max-steps 5000
 # Headed mode: watch visible PyBoy window while agent plays (not default)
 uv run python -m src.run.cli --headed --steps 200
 uv run python -m src.run.autonomous_runner --headed --resume latest --max-steps 1000
+
+# Fast bedroom start (skips title + graph bootstrap for early-game iteration)
+uv run python -m src.run.cli --start-bedroom --steps 200
+uv run poke-watch --start-bedroom --steps 500   # headed + default resume skipped
 
 uv run pytest tests/ -q                          # run tests (expect ~60+)
 ```

@@ -91,6 +91,51 @@ def test_watch_no_resume_skips_resume_flag():
     assert argv[0] == "--headed"
 
 
+def test_cli_start_bedroom_flag():
+    parser = build_parser()
+    args = parser.parse_args(["--start-bedroom", "--steps", "200"])
+    assert args.start_bedroom is True
+    assert args.resume is None
+
+
+def test_parse_cli_start_bedroom_pre_subcommand():
+    """--start-bedroom before subcommand must be recognized (via pop)."""
+    from src.run.cli import _parse_cli
+
+    args = _parse_cli(["--start-bedroom", "run", "--steps", "50"])
+    assert args.start_bedroom is True
+    assert args.steps == 50
+
+    args2 = _parse_cli(["--start-bedroom", "--steps", "123"])
+    assert args2.start_bedroom is True
+
+
+def test_runner_start_bedroom_flag():
+    parser = runner_parser()
+    args = parser.parse_args(["--start-bedroom", "--max-steps", "200"])
+    assert args.start_bedroom is True
+
+
+def test_watch_start_bedroom_skips_resume():
+    argv = normalize_watch_argv(["--start-bedroom", "--steps", "120"])
+    assert "--resume" not in argv
+    assert "--start-bedroom" in argv
+
+
+def test_start_bedroom_rejects_resume():
+    from src.run.autonomous_runner import AutonomousRunner
+
+    runner = AutonomousRunner(
+        rom_path="roms/pokemon_gold.gb",
+        max_steps=10,
+        start_bedroom=True,
+    )
+    import pytest
+
+    with pytest.raises(ValueError, match="start-bedroom"):
+        runner.run(resume="latest")
+
+
 @pytest.mark.parametrize(
     "argv,expected_steps",
     [
