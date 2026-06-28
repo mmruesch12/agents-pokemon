@@ -1,14 +1,17 @@
-"""Tests for post-invoke terminal intent card formatting and runner log site."""
+"""Tests for post-invoke terminal intent card formatting and runner logging."""
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from src.graph.graph import compile_graph
 from src.graph.state import initial_agent_state
-from src.run.autonomous_runner import format_intent_card
+from src.run.autonomous_runner import AutonomousRunner, format_intent_card
 from src.state.gold_state_reader import ByteArrayReader, GoldStateReader
+from tests.fake_emulator import MutableRamEmulator
 
 RUNNER_SOURCE = Path(__file__).resolve().parents[1] / "src" / "run" / "autonomous_runner.py"
 
@@ -76,4 +79,48 @@ def test_runner_loop_logs_intent_card_after_invoke():
     assert "format_intent_card(state)" in following
     while_idx = source.rfind("while state.get", 0, idx)
     assert while_idx != -1
-    assert source[while_idx:idx].count("while ") >= 1
+
+
+def test_runner_run_logs_intent_cards_after_invoke(new_bark_ram: dict, tmp_path, caplog):
+    """AutonomousRunner.run() emits post-invoke intent cards via logger.info each loop."""
+    emu = MutableRamEmulator(new_bark_ram)
+
+    def save_state(name: str) -> None:
+        pass
+
+    emu.save_state = save_state  # type: ignore[method-assign]
+
+    class FakePyBoyWrapper:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return emu
+
+        def __exit__(self, *args):
+            return False
+
+    rom = tmp_path / "fake.gb"
+    rom.write_bytes(b"\x00")
+
+    with caplog.at_level(logging.INFO, logger="src.run.autonomous_runner"):
+        with patch("src.emulator.pyboy_wrapper.PyBoyWrapper", FakePyBoyWrapper):
+            runner = AutonomousRunner(
+                rom_path=rom,
+                max_steps=3,
+                checkpoint_db=tmp_path / "checkpoints.sqlite",
+                save_dir=tmp_path / "saves",
+            )
+            result = runner.run()
+
+    assert result["steps"] == 3
+    intent_logs = [r.message for r in caplog.records if r.message.startswith("[step ")]
+    assert len(intent_logs) == 3
+    assert intent_logs[0].startswith("[step 1]")
+    assert intent_logs[1].startswith("[step 2]")
+    assert intent_logs[2].startswith("[step 3]")
+    for line in intent_logs:
+        assert "→" in line
+        assert "subgoal:" in line
+        assert "map:" in line
+        assert "critic:" in line
