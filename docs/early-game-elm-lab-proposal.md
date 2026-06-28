@@ -16,8 +16,8 @@ The post-house early game is a **script-driven quest chain** gated by event flag
 | 2 | `24:5` Elm's Lab | `ElmsLabMeetElmScene`: player auto-walks up; Elm intro dialog; `SCENE_ELMSLAB_CANT_LEAVE` blocks exit at `(4,6)/(5,6)` until starter chosen | `LabTryToLeaveScript`, `ElmText_Intro` |
 | 3 | `24:5` | Interact with one of three Poke Balls `(6,3)/(7,3)/(8,3)` → yes/no → `givepoke` + `EVENT_GOT_*_FROM_ELM` + `EVENT_GOT_A_POKEMON_FROM_ELM` | `CyndaquilPokeBallScript` etc. |
 | 4 | `24:5` | Post-choice: Elm directions, phone number; aide walks to player at `(4,8)/(5,8)` and gives **Potion** (`SCENE_ELMSLAB_AIDE_GIVES_POTION`) | `AideScript_GivePotion`, `verbosegiveitem POTION` |
-| 5 | `24:4` | Exit lab; teacher at west edge `(1,8)/(1,9)` no longer blocks (requires `EVENT_GOT_A_POKEMON_FROM_ELM`) | `SCENE_NEWBARKTOWN_TEACHER_STOPS_YOU` |
-| 6 | `24:3` Route 29 → `26:1` Route 30 → `26:10` Mr. Pokémon's House | Travel east/north; gate guard on Route 29 requires party Pokémon | Route gate scripts (party check) |
+| 5 | `24:4` | Exit lab; **teacher coord_event** at west edge `(1,8)/(1,9)` blocks leaving town without a Pokémon until `EVENT_GOT_A_POKEMON_FROM_ELM` (script pulls player back) | `SCENE_NEWBARKTOWN_TEACHER_STOPS_YOU`, `NewBarkTown_TeacherStopsYouScene1/2` |
+| 6 | `24:3` Route 29 → `26:1` Route 30 → `26:10` Mr. Pokémon's House | Travel **east** from New Bark into Route 29, then north on Route 30 (open-world segment once teacher gate cleared) | `ROUTE_29` / `ROUTE_30` warps |
 | 7 | `26:10` | Mr. Pokémon gives **Mystery Egg**; Oak appears, gives **Pokedex** | `EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON`, `EVENT_MR_POKEMONS_HOUSE_OAK` |
 | 8 | Return `24:5` | Give egg to Elm → long dialog → rival theft cutscene setup | `EVENT_GAVE_MYSTERY_EGG_TO_ELM`, `EVENT_ELM_CALLED_ABOUT_STOLEN_POKEMON` |
 | 9 | `24:5` | Rival battle (trainer battle) on return; officer scene may interleave | `battle.phase == TRAINER`, rival trainer event |
@@ -32,18 +32,18 @@ The post-house early game is a **script-driven quest chain** gated by event flag
 | `ROUTE_30` | `26:1` | North toward Cherrygrove |
 | `MR_POKEMONS_HOUSE` | `26:10` | Egg + Oak |
 
-**Key event flags (pret `event_flags.asm`; verify indices on ROM like existing Mom flag):**
+**Key event flags (pret `event_flags.asm`; story flags in main `const_def` block, sprite-visibility flags in `const_next 1600` “Johto people” section — verify on ROM via `tests/test_event_flags.py` pattern, same as `EVENT_PLAYERS_HOUSE_MOM_1 = 1735`):**
 
-| Symbol | Index (pret parse) | Role |
-|--------|-------------------|------|
+| Symbol | Index (pret `const_def` order) | Role |
+|--------|-------------------------------|------|
 | `EVENT_GOT_A_POKEMON_FROM_ELM` | 26 | Master “has starter” flag |
 | `EVENT_GOT_CYNDAQUIL_FROM_ELM` | 27 | Per-starter variant |
 | `EVENT_GOT_TOTODILE_FROM_ELM` | 28 | Per-starter variant |
 | `EVENT_GOT_CHIKORITA_FROM_ELM` | 29 | Per-starter variant |
 | `EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON` | 30 | Egg quest complete |
 | `EVENT_GAVE_MYSTERY_EGG_TO_ELM` | 31 | Returned to lab |
-| `EVENT_RIVAL_NEW_BARK_TOWN` | 1040 | Rival sprite visibility (pre-battle) |
-| `EVENT_MR_POKEMONS_HOUSE_OAK` | 1052 | Oak scene done |
+| `EVENT_RIVAL_NEW_BARK_TOWN` | 1725 | Rival sprite visibility at lab sign (`const_next 1600`) |
+| `EVENT_MR_POKEMONS_HOUSE_OAK` | 1737 | Oak scene done at Mr. Pokémon's house (`const_next 1600`) |
 
 Starter selection is **object interaction + yes/no dialog**, not a menu macro: face ball → `pokepic`/`cry` → `yesorno` → `givepoke`. The agent's existing `interactor_node` (A/B alternation) plus `needs_interaction()` / `needs_script_wait()` should carry this — no hardcoded button sequences.
 
@@ -65,7 +65,7 @@ Starter selection is **object interaction + yes/no dialog**, not a menu macro: f
 | Milestones | `_check_milestone()` | **No** `"Chose first Pokemon"`, `"Reached Mr. Pokemon's house"`, `"First rival battle"` |
 | Eval dataset | `eval/datasets.py` | Stale inputs (`map_group: 0,0`); **no lab/rival cases** |
 | Battle | `battler_node` + `BattlePhase.TRAINER` | Exists generically; **no rival-specific milestone or forced routing when trainer battle starts mid-script** |
-| Gate guard | — | **No party_count check** in navigation or phase guards |
+| Teacher gate (`24:4` west edge) | — | **No check** for `party_count == 0` / `¬EVENT_GOT_A_POKEMON_FROM_ELM` before routing east toward Route 29 |
 
 **What already works (reuse, do not duplicate):**
 
@@ -83,31 +83,42 @@ Starter selection is **object interaction + yes/no dialog**, not a menu macro: f
 
 ### 3.1 Phase composition
 
-Replace the house-exit-only terminal with a **sequential early-game phase chain** registered from `phases/__init__.py` and delegated by `nodes.py` (same as `house_exit` today):
+Add a second phase module alongside `house_exit.py` and wire it through the **existing delegation call sites** in `nodes.py` — the same pattern today:
+
+```python
+from src.graph.phases import house_exit  # nodes.py line 12
+```
+
+`phases/__init__.py` is currently a one-line package docstring only; there is **no registry**. Implementation adds `src/graph/phases/starter_quest.py` and `from src.graph.phases import house_exit, starter_quest` in `nodes.py`, then chains helpers at the same sites that already call `house_exit.*` (navigation, subgoals, milestones, interaction, map-change).
 
 ```
-house_exit → starter_quest → (optional: open-world handoff)
+house_exit (complete) → starter_quest (active) → starter_quest.is_satisfied → idle
 ```
 
-For this scope, implement **`starter_quest`** as one phase module covering lab + egg quest + rival battle (internal sub-states driven by event flags, not separate graph nodes). Alternative: split `elm_lab.py` + `mr_pokemon_quest.py` — still the same pattern, no new routing layer.
+For this scope, **`starter_quest`** is one module covering lab + egg quest + rival battle (internal sub-states driven by event flags, not separate graph nodes). Alternative: split `elm_lab.py` + `mr_pokemon_quest.py` — still the same pattern, no new routing layer.
 
-Each phase exports the **same function surface** as `house_exit.py`:
+Each new phase mirrors the **actual exports** of `house_exit.py` (names below are the template — prefix/suffix follows house naming):
 
-| Function | Purpose for early-game |
-|----------|------------------------|
-| `in_phase(gs, state)` | True while quest incomplete |
-| `is_satisfied(gs, state)` | True when rival battle entered or beaten (configurable terminal) |
-| `force_interactor(gs, state)` | Lab: during Elm intro / ball yes-no / aide potion scene |
-| `needs_extra_interaction(gs, state)` | Stuck indoors → prefer `interact_a` |
-| `navigation_target(gs, state)` | Lab: Elm `(5,2)` then default ball tile; New Bark: lab warp `(6,3)`; Route 29: gate then north; Mr. Pokémon house warp |
-| `door_exit_direction(gs)` | Lab exit warp at `(4,11)/(5,11)` → `down` when post-starter |
-| `decompose_subgoals(gs)` | Flag-driven list (see §3.3) |
-| `planner_allows_llm(gs, state)` | False in `24:5` (script-heavy); **True on `24:3`/`26:1`/`24:4` post-starter** |
-| `on_map_change(...)` | Post-lab-warp settle ticks (mirror house stairs) |
-| `milestone(gs, maps_visited, state)` | Emit target strings |
-| `on_phase_complete(state, gs)` | Set `starter_quest_complete` (or similar) agent flag |
+| `house_exit.py` export | `starter_quest.py` analogue | Purpose for early-game |
+|------------------------|----------------------------|------------------------|
+| `is_satisfied(gs, state)` | `is_satisfied(gs, state)` | True when rival battle entered (or beaten — configurable terminal) |
+| `in_house_exit(gs, state)` | `in_starter_quest(gs, state)` | True while on lab/quest maps and quest incomplete |
+| `mom_scene_pending(gs)` | `lab_scene_pending(gs)` | Elm intro / ball choice / aide potion script active |
+| `needs_house_interaction(gs, state)` | `needs_lab_interaction(gs, state)` | Extra interact signals beyond generic `needs_interaction()` |
+| `force_interactor(gs, state)` | `force_interactor(gs, state)` | Route to interactor during lab scenes |
+| `navigation_target(gs, …)` | `navigation_target(gs, …)` | Lab warp `(6,3)` on `24:4`; ball tile on `24:5`; Route/MrP targets |
+| `door_exit_direction(gs)` | `door_exit_direction(gs)` | Lab exit warp `(4,11)/(5,11)` → `down` when post-starter |
+| `blocked_stairs_up(gs)` | `blocked_lab_exit(gs)` | Block premature lab exit at `(4,6)/(5,6)` until starter flag |
+| `prefer_interact_candidate(gs)` | `prefer_interact_candidate(gs)` | Hold position + prefer `interact_a` during lab dialog |
+| `stuck_interact_fallback(gs, state)` | `stuck_interact_fallback(gs, state)` | Stuck indoors → append `interact_a` candidate |
+| `decompose_subgoals(gs)` | `decompose_subgoals(gs)` | Flag-driven list (see §3.3) |
+| `planner_allows_llm(gs, state)` | `planner_allows_llm(gs, state)` | False in `24:5`; true on routes post-starter |
+| `on_map_change(…)` | `on_map_change(…)` | Post-warp settle ticks after lab entry |
+| `house_milestone(gs, maps_visited)` | `starter_milestone(gs, maps_visited)` | Emit target milestone strings |
+| `on_house_exit_complete(state, gs)` | `on_starter_quest_complete(state, gs)` | Set `starter_quest_complete` agent flag |
+| `format_map_context(gs)` | `format_map_context(gs)` | Optional log formatting |
 
-**Supervisor change (minimal):** After `house_exit.is_satisfied()`, route to **next active phase** instead of unconditional `idle`. `idle_node` becomes **generic terminal** when *all* registered phases satisfied — or rename to `hold_node`. Do **not** add parallel routing tables.
+**No changes to core supervisor/critic/memory/apply_action flow structure.** The existing graph order stays `bootstrap → [hold? → idle] → waiter → interactor → planner/navigator → critic → memory`. Today `supervisor_node` calls `house_exit.is_satisfied()` at the idle branch; extend by **swapping that predicate** for a thin delegator (e.g. `_hold_phase_satisfied(gs, state)`) that returns `starter_quest.is_satisfied()` once `house_exit_complete`, else `house_exit.is_satisfied()` — **one predicate at the existing call site**, no new branches, no `idle_node` rename. All other wiring is chained delegation in `_navigation_target`, `_decompose_subgoals`, `_check_milestone`, `needs_interaction`, `_navigation_candidates`, and `apply_action_node` — matching how `house_exit` is integrated today.
 
 ### 3.2 Event-flag-driven state machine (inside phase)
 
@@ -183,20 +194,20 @@ Minimum grids to add:
 - **`24:4`**: refine north path to `(6,3)` lab door; east path to Route 29 gate
 - **`24:3`**, **`26:1`**, **`26:10`**: walkable corridors for A* (start coarse, refine from ROM)
 
-Gate guard: if `party_count == 0` and map is Route 29 exit tile, `navigation_target` returns current position + `force_interactor` false — wait until starter (should not happen if flags correct).
+Teacher gate (`24:4`): while `party_count == 0` or `¬EVENT_GOT_A_POKEMON_FROM_ELM`, `navigation_target` on New Bark should **not** target the east Route 29 exit — prioritize lab warp `(6,3)` instead. If the player steps on `(1,8)/(1,9)`, existing `needs_script_wait()` / `needs_interaction()` handle the teacher pull-back script (no new macro).
 
 ### 3.7 Interaction and starter choice (no macros)
 
 1. Pathfind to default ball tile — **configurable** `STARTER_BALL_TILE` env default `(7,3)` (Totodile middle ball); ROM probe can pick any ball since all three trigger full flow.
 2. At ball tile: `navigation_target` returns current coords; `prefer_interact_candidate` true.
 3. `interactor_node` A/B advances yes/no — on `SCRIPT_READ` with joypad unblocked, existing `needs_interaction()` handles it.
-4. **Follow-up observation:** count typical dialog steps on live ROM; if yes/no stalls, add `needs_extra_interaction` when facing ball object (detect via position + map + ¬has_starter) — still not a button macro.
+4. **Follow-up observation:** count typical dialog steps on live ROM; if yes/no stalls, extend `needs_lab_interaction()` (same role as `needs_house_interaction`) when facing a ball tile — still not a button macro.
 
-### 3.8 Battle and rival (`battler_node` unchanged structurally)
+### 3.8 Battle and rival (`battler_node` unchanged)
 
 When `gs.battle.in_battle` and `gs.battle.phase == BattlePhase.TRAINER`:
 
-- Supervisor already routes to `battler` — no change
+- Existing `supervisor_node` battle branch routes to `battler` — unchanged
 - Milestone `"First rival battle"` when `in_battle` flips true with `party_count >= 1` and `EVENT_GAVE_MYSTERY_EGG_TO_ELM` or lab map context
 - Heuristic fallback: `fight` (rival cannot run); optional low-HP `item` if Potion in inventory (read from `gs.inventory`)
 
@@ -246,8 +257,8 @@ Mirror `tests/test_house_exit_phase.py` and `tests/test_event_flags.py`:
 
 **Extend `tests/test_early_progression.py`:**
 
-- After house exit state, supervisor routes to navigator (not idle) when `starter_quest` active
-- Navigator from New Bark `(13,6)` targets east/lab — not `house_exit_done`
+- When `house_exit_complete` and `¬starter_quest.is_satisfied()`, `_hold_phase_satisfied()` is false → navigator runs (not `house_exit_done`)
+- Navigator from New Bark `(13,6)` targets lab warp — not naive `(x+1, y)` only
 
 ### 4.3 Graph integration test
 
@@ -297,8 +308,8 @@ Add cases:
 ## 5. Implementation Order (When Building — Out of Scope for This Proposal)
 
 1. **Constants + reader flags** — unlocks test RAM fixtures
-2. **`starter_quest` phase module** — pure functions + tests
-3. **Supervisor handoff** — house_exit satisfied → starter_quest (not idle)
+2. **`starter_quest` phase module** — pure functions mirroring `house_exit.py` exports + tests
+3. **Delegation wiring in `nodes.py`** — chain `starter_quest.*` at existing call sites; extend hold predicate at existing `is_satisfied` call site
 4. **`MAP_GRIDS` for `24:5`, refine `24:4`** — ROM-validated
 5. **Milestones + subgoals + EARLY_GAME_OBJECTIVES**
 6. **Re-enable LLM planner outdoors** (`planner_allows_llm` true on routes)
@@ -337,7 +348,7 @@ Add cases:
 | Yes/no dialog | Uses `yesorno` — B may mean "no"; interactor alternation should eventually answer yes. Monitor stuck meter. |
 | Rival battle trigger | Occurs on return to lab after egg theft script — may need `post_warp_wait_steps` after map transitions |
 | `EVENT_INITIALIZED_EVENTS` index | pret parser yields 54; codebase uses 53 (live-verified). New flags: verify with `tests/test_event_flags.py` pattern |
-| Gate guard without Pokemon | Teacher/coord events on `24:4` west edge — agent must not leave east until `party_count >= 1` |
+| Teacher gate without Pokemon | `coord_event (1,8)/(1,9)` on `24:4` (`NewBarkTown.asm`) — navigation must target lab before east exit until `EVENT_GOT_A_POKEMON_FROM_ELM` |
 
 ---
 
@@ -345,4 +356,4 @@ Add cases:
 
 This proposal **keeps explicit phase scaffolding** but grounds completion in **pret event flags** and **generic script/battle routing** — the same two-layer model as house exit. As `GameState` enrichment and map grids improve, `starter_quest` should **shrink**: flag checks remain, coordinate hints become optional. Outdoors, re-enabling the LLM planner tests whether `_navigation_target` fallback `(x+1,y)` can be retired for Route segments.
 
-**Bottom line:** One phase module, same supervisor flow, event-flag terminal — extends reproducible house exit to reproducible **starter + egg + rival battle** without parallel abstractions or button macros.
+**Bottom line:** One phase module, same graph node flow, event-flag terminal — extends reproducible house exit to reproducible **starter + egg + rival battle** via delegation at existing `nodes.py` call sites, without parallel abstractions or button macros.
