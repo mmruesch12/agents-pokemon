@@ -31,15 +31,25 @@ def _match_token(choice: str, candidates: tuple[str, ...] | list[str]) -> str | 
 
 
 def get_chat_model():
-    """Return ChatOpenAI-compatible model (xAI Grok, OpenRouter or OpenAI) when configured."""
-    xai_key = os.getenv("XAI_API_KEY", "").strip()
+    """Return ChatOpenAI-compatible model (OpenRouter, xAI Grok or OpenAI) when configured."""
     openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    xai_key = os.getenv("XAI_API_KEY", "").strip()
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not (xai_key or openrouter_key or openai_key):
+    if not (openrouter_key or xai_key or openai_key):
         return None
     try:
         from langchain_openai import ChatOpenAI
 
+        if openrouter_key:
+            model = (os.getenv("OPENROUTER_MODEL") or "").strip() or "deepseek/deepseek-v4-flash"
+            chat = ChatOpenAI(
+                model=model,
+                api_key=openrouter_key,
+                base_url="https://openrouter.ai/api/v1",
+                temperature=0,
+            )
+            _log_selected_model(model)
+            return chat
         if xai_key:
             model = (os.getenv("XAI_MODEL") or "").strip() or "grok-4-1-fast-reasoning"
             base_url = (os.getenv("XAI_BASE_URL") or "").strip() or "https://api.x.ai/v1"
@@ -47,16 +57,6 @@ def get_chat_model():
                 model=model,
                 api_key=xai_key,
                 base_url=base_url,
-                temperature=0,
-            )
-            _log_selected_model(model)
-            return chat
-        if openrouter_key:
-            model = (os.getenv("OPENROUTER_MODEL") or "").strip() or "deepseek/deepseek-v4-flash"
-            chat = ChatOpenAI(
-                model=model,
-                api_key=openrouter_key,
-                base_url="https://openrouter.ai/api/v1",
                 temperature=0,
             )
             _log_selected_model(model)

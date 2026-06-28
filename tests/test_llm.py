@@ -23,8 +23,10 @@ def test_get_chat_model_without_api_key(monkeypatch):
     assert get_chat_model() is None
 
 
-def test_get_chat_model_prefers_xai(monkeypatch):
+def test_get_chat_model_xai_fallback(monkeypatch):
+    """XAI is used when only XAI_API_KEY is present (OpenRouter takes precedence if present)."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
     monkeypatch.setenv("XAI_MODEL", "grok-4-1-fast-reasoning")
     model = get_chat_model()
@@ -33,8 +35,7 @@ def test_get_chat_model_prefers_xai(monkeypatch):
 
 
 def test_get_chat_model_prefers_openrouter(monkeypatch):
-    """OpenRouter selection via OPENROUTER_API_KEY + OPENROUTER_MODEL; xai still wins if both present."""
-    monkeypatch.delenv("XAI_API_KEY", raising=False)
+    """OpenRouter takes precedence when OPENROUTER_API_KEY is present (even if XAI key is also set)."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test-xxx")
     monkeypatch.setenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash")
@@ -44,12 +45,12 @@ def test_get_chat_model_prefers_openrouter(monkeypatch):
     base = getattr(model, "openai_api_base", "")
     assert "openrouter" in str(base).lower()
 
-    # xai precedence: even with openrouter set, xai wins
+    # OpenRouter still wins even if XAI key is also present
     monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
-    monkeypatch.setenv("XAI_MODEL", "grok-xai-wins")
+    monkeypatch.setenv("XAI_MODEL", "grok-xai-should-lose")
     model2 = get_chat_model()
     assert model2 is not None
-    assert model2.model_name == "grok-xai-wins"
+    assert model2.model_name == "deepseek/deepseek-v4-flash"
 
 
 def test_get_chat_model_openrouter_blank_model_falls_back(monkeypatch):

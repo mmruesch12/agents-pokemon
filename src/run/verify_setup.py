@@ -20,12 +20,12 @@ def main() -> int:
     print(f"Project: {root}")
     print(f"ROM path: {rom} ({'found' if rom.exists() else 'MISSING'})")
 
-    xai = bool(os.getenv("XAI_API_KEY", "").strip())
     openrouter = bool(os.getenv("OPENROUTER_API_KEY", "").strip())
+    xai = bool(os.getenv("XAI_API_KEY", "").strip())
     openai = bool(os.getenv("OPENAI_API_KEY", "").strip())
     langsmith = bool(os.getenv("LANGSMITH_API_KEY", "").strip())
-    print(f"XAI_API_KEY: {'set' if xai else 'missing'}")
     print(f"OPENROUTER_API_KEY: {'set' if openrouter else 'missing'}")
+    print(f"XAI_API_KEY: {'set' if xai else 'missing'}")
     print(f"OPENAI_API_KEY: {'set' if openai else 'missing'}")
     print(f"LANGSMITH_API_KEY: {'set' if langsmith else 'missing'}")
 

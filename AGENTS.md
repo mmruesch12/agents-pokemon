@@ -41,7 +41,7 @@ Autonomous multi-agent Pokemon Gold/Silver player:
 - **PyBoy** — headless emulator control plane
 - **LangGraph** — Supervisor → Planner → Navigator/Battler → Critic → Memory
 - **LangSmith** — optional tracing
-- **xAI Grok** (preferred) or **OpenAI** — LLM for planner/navigator/battler nodes
+- **OpenRouter** (default), **xAI Grok**, or **OpenAI** — LLM for planner/navigator/battler nodes
 
 Design spec: [spec.md](spec.md)
 
@@ -95,7 +95,7 @@ System deps (Ubuntu): `libsdl2-dev`, `build-essential`, `python3-dev`
 ## Testing
 
 - **No ROM required** for CI — use `tests/fake_emulator.py` (`MutableRamEmulator`) and `ByteArrayReader` fixtures in `tests/conftest.py`
-- Monkeypatch `XAI_API_KEY` / `OPENAI_API_KEY` in LLM fallback tests
+- Monkeypatch `OPENROUTER_API_KEY`, `XAI_API_KEY`, or `OPENAI_API_KEY` in LLM fallback tests
 - Add tests for graph routing, stuck detection, and RAM parsing when changing those layers
 - Optional live ROM smoke: `@pytest.mark.rom` (not in default suite)
 
@@ -104,7 +104,7 @@ System deps (Ubuntu): `libsdl2-dev`, `build-essential`, `python3-dev`
 - One macro-step per outer `invoke()` — runner sets `run_max_steps = current_steps + 1`
 - Flow: specialist → `apply_action` → `critic` → `memory` → supervisor
 - Stuck meter updates in `apply_action_node` by comparing position before/after move
-- `XAI_API_KEY` preferred over `OPENAI_API_KEY` in `src/graph/llm.py`
+- `OPENROUTER_API_KEY` is preferred (first) in `src/graph/llm.py`, then XAI, then OpenAI
 
 ## Commit guidelines
 

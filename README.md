@@ -46,10 +46,10 @@ Using --headed enables a visible emulator window (headless by default; use --hea
 
 ### Why does the game feel "laggy" or slow when watching?
 The agent is an LLM-driven multi-agent system (supervisor → planner/navigator → apply action → critic → memory).  
-Every movement decision typically requires 1+ remote LLM calls (via xAI Grok, OpenRouter or OpenAI). Even fast models introduce multi-second pauses between visible actions while the agent "thinks".
+Every movement decision typically requires 1+ remote LLM calls (via OpenRouter, xAI Grok or OpenAI). Even fast models introduce multi-second pauses between visible actions while the agent "thinks".
 
 During actual button presses the emulator runs at normal speed (especially nice in headed mode). The pauses are expected agent behavior, not a bug. For faster experimentation you can:
-- Use a faster model via env `XAI_MODEL=...`
+- Use a faster model via env `OPENROUTER_MODEL=...` (or `XAI_MODEL=...`)
 - Run headless for long training sessions
 - Use small `--steps` values when watching
 
@@ -78,7 +78,7 @@ cp /path/to/pokemon_gold.gb roms/pokemon_gold.gb
 
 # Environment
 cp .env.example .env
-# Edit .env: XAI_API_KEY or OPENROUTER_API_KEY or OPENAI_API_KEY, LANGSMITH_API_KEY, ROM_PATH
+# Edit .env: OPENROUTER_API_KEY (preferred), XAI_API_KEY or OPENAI_API_KEY, LANGSMITH_API_KEY, ROM_PATH
 ```
 
 ## Architecture
