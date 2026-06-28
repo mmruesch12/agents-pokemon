@@ -316,8 +316,30 @@ def test_exploration_target_resolves_east_exit_without_landmark():
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
     target = exploration_target(gs, state)
-    assert target[0] > gs.player.x
-    assert target[1] >= gs.player.y
+    assert target == (19, 12)
+
+
+def test_gated_phase_target_wrong_map_east_landmark_no_recursion():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
+        raw_metadata={"has_starter": True},
+    )
+    state = {
+        "house_exit_complete": True,
+        "known_landmarks": [
+            make_landmark(
+                landmark_id=NEW_BARK_EAST_EXIT_ID,
+                name="New Bark east exit",
+                map_key=MAP_KEY_NEW_BARK_TOWN,
+                x=19,
+                y=12,
+                kind="map_visit",
+            )
+        ],
+    }
+    target = retired_geography_target(gs, state)
+    assert target == (10, 5)
+    assert target != (19, 12)
 
 
 def test_hydrate_state_enables_east_exit_navigation():
@@ -358,6 +380,60 @@ def test_hydrate_state_enables_east_exit_navigation():
         hydrated_route = mem.hydrate_state({**hydrated, "game_state": gs_route.model_dump()})
         assert _navigation_target(gs_route, state=hydrated_route) == (10, 5)
         assert retired_geography_target(gs_route, hydrated_route) == (10, 5)
+
+
+def test_hydrate_mr_entrance_enables_interior_navigation():
+    from src.graph.exploration import gated_phase_target
+    from src.memory.landmarks import find_landmark
+
+    gs = GameState(
+        player={"map_group": 26, "map_id": 10, "x": 5, "y": 7},
+        raw_metadata={"has_starter": True},
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        mem = LongTermMemory(data_dir=Path(tmp))
+        mem.add_landmark(
+            make_landmark(
+                landmark_id=MR_POKEMONS_HOUSE_ENTRANCE_ID,
+                name="Mr. Pokemon's House entrance",
+                map_key=MAP_KEY_MR_POKEMONS_HOUSE,
+                x=starter_quest.MR_POKEMON_DOOR[0],
+                y=starter_quest.MR_POKEMON_DOOR[1],
+                kind="building_entrance",
+            )
+        )
+        state = initial_agent_state(gs)
+        state["house_exit_complete"] = True
+        hydrated = mem.hydrate_state(state)
+        landmark = find_landmark(hydrated["known_landmarks"], landmark_id=MR_POKEMONS_HOUSE_ENTRANCE_ID)
+        assert landmark is not None
+        assert landmark["map_key"] == MAP_KEY_MR_POKEMONS_HOUSE
+        assert gated_phase_target(
+            gs, None, state=hydrated, landmark_id=MR_POKEMONS_HOUSE_ENTRANCE_ID
+        ) == starter_quest.MR_POKEMON_DOOR
+        assert _navigation_target(gs, state=hydrated) == starter_quest.MR_POKEMON_DOOR
+
+
+def test_mr_entrance_discovery_persists_and_hydrates(monkeypatch):
+    gs = GameState(
+        player={"map_group": 26, "map_id": 10, "x": 5, "y": 7, "map_name": "Mr. Pokemon's House"},
+        raw_metadata={"has_starter": True},
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["maps_visited"] = ["24:4", "24:3", "26:1"]
+    with tempfile.TemporaryDirectory() as tmp:
+        monkeypatch.setenv("POKEMON_MEMORY_DIR", tmp)
+        state = memory_node(state)
+        reloaded = LongTermMemory(data_dir=Path(tmp))
+        fresh = initial_agent_state(gs)
+        fresh["house_exit_complete"] = True
+        hydrated = reloaded.hydrate_state(fresh)
+        assert any(
+            entry.get("id") == MR_POKEMONS_HOUSE_ENTRANCE_ID
+            for entry in hydrated.get("known_landmarks", [])
+        )
+        assert _navigation_target(gs, state=hydrated) == starter_quest.MR_POKEMON_DOOR
 
 
 def test_memory_node_discovers_east_exit_on_route_transition(monkeypatch):

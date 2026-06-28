@@ -12,6 +12,13 @@ def _grid_from_rows(rows: list[str]) -> list[list[int]]:
     return [[int(c) for c in row] for row in rows]
 
 
+# Warp-hint rows derived from MAP_GRIDS layout (control plane, not phase curriculum).
+MAP_WARP_HINT_ROWS: dict[str, dict[str, int]] = {
+    "24:4": {"east": 12},
+    "24:3": {"north": 5},
+    "26:1": {"north": 3},
+}
+
 # Simplified walkable grids for early-game maps (0=walkable, 1=blocked)
 MAP_GRIDS: dict[str, list[list[int]]] = {
     "24:7": _grid_from_rows(
