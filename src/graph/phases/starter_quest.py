@@ -170,7 +170,7 @@ def navigation_target(
         if _has_egg(gs) and not _egg_delivered(gs):
             return NEW_BARK_LAB_WARP
         if not _has_egg(gs):
-            return NEW_BARK_EAST_EXIT
+            return None
         return NEW_BARK_LAB_WARP
 
     if map_key == MAP_KEY_ELMS_LAB:
@@ -185,10 +185,10 @@ def navigation_target(
         return (gs.player.x, gs.player.y)
 
     if map_key == MAP_KEY_ROUTE_29 and _has_starter(gs) and not _has_egg(gs):
-        return ROUTE_29_NORTH_GATE if gs.player.y > ROUTE_29_NORTH_GATE[1] else ROUTE_29_NORTH_GATE
+        return None
 
     if map_key == MAP_KEY_ROUTE_30 and _has_starter(gs) and not _has_egg(gs):
-        return ROUTE_30_NORTH_GATE if gs.player.y > ROUTE_30_NORTH_GATE[1] else ROUTE_30_NORTH_GATE
+        return None
 
     if map_key == MAP_KEY_MR_POKEMONS_HOUSE:
         if not _has_egg(gs):

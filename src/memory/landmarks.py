@@ -13,6 +13,10 @@ LANDMARK_KIND_INTERIOR = "interior"
 
 ELMS_LAB_ENTRANCE_ID = "elms_lab_entrance"
 ELMS_LAB_INTERIOR_ID = "elms_lab_interior"
+NEW_BARK_EAST_EXIT_ID = "new_bark_east_exit"
+ROUTE_29_NORTH_GATE_ID = "route_29_north_gate"
+ROUTE_30_NORTH_GATE_ID = "route_30_north_gate"
+MR_POKEMONS_HOUSE_ENTRANCE_ID = "mr_pokemons_house_entrance"
 
 # Secondary lab door on New Bark Town (see starter_quest.NEW_BARK_LAB_WARP).
 _ELMS_LAB_ALT_DOOR = (5, 3)
@@ -140,6 +144,79 @@ def discover_elms_lab_landmarks(gs: GameState, *, entrance_map_key: str | None =
         )
         landmarks.append(make_landmark(landmark_id=ELMS_LAB_ENTRANCE_ID, name="Elm's Lab entrance", map_key=entrance_map_key, x=entrance_x, y=entrance_y, kind=LANDMARK_KIND_BUILDING_ENTRANCE, metadata={"building": "elms_lab"}))
     landmarks.append(make_landmark(landmark_id=ELMS_LAB_INTERIOR_ID, name="Elm's Lab", map_key=gs.map_key, x=gs.player.x, y=gs.player.y, kind=LANDMARK_KIND_INTERIOR, metadata={"building": "elms_lab"}))
+    return landmarks
+
+
+def discover_quest_transition_landmarks(
+    *,
+    from_map: str | None,
+    to_map: str | None,
+    from_pos: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Record warp tiles discovered on first east/route/Mr. Pokemon transitions."""
+    from src.state.gold_state_reader import (
+        MAP_KEY_MR_POKEMONS_HOUSE,
+        MAP_KEY_NEW_BARK_TOWN,
+        MAP_KEY_ROUTE_29,
+        MAP_KEY_ROUTE_30,
+    )
+
+    if not from_map or not to_map or not from_pos:
+        return []
+    map_key = from_pos.get("map_key")
+    x = from_pos.get("x")
+    y = from_pos.get("y")
+    if map_key is None or x is None or y is None:
+        return []
+
+    landmarks: list[dict[str, Any]] = []
+    if from_map == MAP_KEY_NEW_BARK_TOWN and to_map == MAP_KEY_ROUTE_29:
+        landmarks.append(
+            make_landmark(
+                landmark_id=NEW_BARK_EAST_EXIT_ID,
+                name="New Bark east exit",
+                map_key=map_key,
+                x=int(x),
+                y=int(y),
+                kind=LANDMARK_KIND_MAP_VISIT,
+                metadata={"transition": "new_bark_to_route_29"},
+            )
+        )
+    elif from_map == MAP_KEY_ROUTE_29 and to_map == MAP_KEY_ROUTE_30:
+        landmarks.append(
+            make_landmark(
+                landmark_id=ROUTE_29_NORTH_GATE_ID,
+                name="Route 29 north gate",
+                map_key=map_key,
+                x=int(x),
+                y=int(y),
+                kind=LANDMARK_KIND_MAP_VISIT,
+                metadata={"transition": "route_29_to_route_30"},
+            )
+        )
+    elif from_map == MAP_KEY_ROUTE_30 and to_map == MAP_KEY_MR_POKEMONS_HOUSE:
+        landmarks.append(
+            make_landmark(
+                landmark_id=ROUTE_30_NORTH_GATE_ID,
+                name="Route 30 north approach",
+                map_key=map_key,
+                x=int(x),
+                y=int(y),
+                kind=LANDMARK_KIND_MAP_VISIT,
+                metadata={"transition": "route_30_to_mr_pokemon"},
+            )
+        )
+        landmarks.append(
+            make_landmark(
+                landmark_id=MR_POKEMONS_HOUSE_ENTRANCE_ID,
+                name="Mr. Pokemon's House entrance",
+                map_key=map_key,
+                x=int(x),
+                y=int(y),
+                kind=LANDMARK_KIND_BUILDING_ENTRANCE,
+                metadata={"building": "mr_pokemon", "transition": "route_30_to_mr_pokemon"},
+            )
+        )
     return landmarks
 
 

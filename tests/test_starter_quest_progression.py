@@ -59,24 +59,22 @@ def _macro_step(state: dict, emu: StarterQuestEmulator) -> dict:
     return state
 
 
-def test_navigation_targets_route_maps_use_local_coords():
-    """Route 29/30 targets must be map-local, not New Bark east-exit coords."""
+def test_navigation_targets_route_maps_retired_from_phase():
+    """Route 29/30 geography is learned via landmarks, not phase tables."""
     gs_route29 = GameState(
         player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
         raw_metadata={"has_starter": True},
     )
-    target = starter_quest.navigation_target(gs_route29)
-    assert target == starter_quest.ROUTE_29_NORTH_GATE
-    assert target[0] <= 20
+    assert starter_quest.navigation_target(gs_route29) is None
 
     gs_route30 = GameState(
         player={"map_group": 26, "map_id": 1, "x": 10, "y": 8},
         raw_metadata={"has_starter": True},
     )
-    assert starter_quest.navigation_target(gs_route30) == starter_quest.ROUTE_30_NORTH_GATE
+    assert starter_quest.navigation_target(gs_route30) is None
 
 
-def test_post_starter_new_bark_targets_east_exit():
+def test_post_starter_new_bark_east_exit_retired_without_landmark():
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         raw_metadata={"has_starter": True},
@@ -84,7 +82,33 @@ def test_post_starter_new_bark_targets_east_exit():
     from src.graph.nodes import _navigation_target
 
     state = {"house_exit_complete": True}
-    assert _navigation_target(gs, state=state) == starter_quest.NEW_BARK_EAST_EXIT
+    assert starter_quest.navigation_target(gs) is None
+    target = _navigation_target(gs, state=state)
+    assert target != starter_quest.NEW_BARK_EAST_EXIT
+
+
+def test_post_starter_new_bark_uses_east_exit_landmark():
+    from src.graph.nodes import _navigation_target
+    from src.memory.landmarks import NEW_BARK_EAST_EXIT_ID, make_landmark
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
+        raw_metadata={"has_starter": True},
+    )
+    state = {
+        "house_exit_complete": True,
+        "known_landmarks": [
+            make_landmark(
+                landmark_id=NEW_BARK_EAST_EXIT_ID,
+                name="New Bark east exit",
+                map_key="24:4",
+                x=19,
+                y=12,
+                kind="map_visit",
+            )
+        ],
+    }
+    assert _navigation_target(gs, state=state) == (19, 12)
 
 
 def test_shipped_nodes_progress_post_house_to_rival_battle(post_house_ram: dict):

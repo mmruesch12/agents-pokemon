@@ -18,7 +18,11 @@ from src.graph.state import initial_agent_state
 from src.memory.landmarks import (
     ELMS_LAB_ENTRANCE_ID,
     ELMS_LAB_INTERIOR_ID,
+    NEW_BARK_EAST_EXIT_ID,
+    ROUTE_29_NORTH_GATE_ID,
+    ROUTE_30_NORTH_GATE_ID,
     discover_elms_lab_landmarks,
+    discover_quest_transition_landmarks,
     make_landmark,
     normalize_elms_lab_entrance_coords,
 )
@@ -246,6 +250,81 @@ def test_interior_target_gated_until_lab_discovered():
         _gate_starter_quest_target(gs, starter_quest.STARTER_BALL_TILE, state=state)
         == starter_quest.STARTER_BALL_TILE
     )
+
+
+def test_discover_quest_transition_landmarks_east_exit():
+    landmarks = discover_quest_transition_landmarks(
+        from_map="24:4",
+        to_map="24:3",
+        from_pos={"map_key": "24:4", "x": 19, "y": 12},
+    )
+    assert any(entry.get("id") == NEW_BARK_EAST_EXIT_ID for entry in landmarks)
+
+
+def test_discover_quest_transition_landmarks_route_gates():
+    route29 = discover_quest_transition_landmarks(
+        from_map="24:3",
+        to_map="26:1",
+        from_pos={"map_key": "24:3", "x": 10, "y": 5},
+    )
+    assert any(entry.get("id") == ROUTE_29_NORTH_GATE_ID for entry in route29)
+
+    route30 = discover_quest_transition_landmarks(
+        from_map="26:1",
+        to_map="26:10",
+        from_pos={"map_key": "26:1", "x": 10, "y": 3},
+    )
+    assert any(entry.get("id") == ROUTE_30_NORTH_GATE_ID for entry in route30)
+
+
+def test_memory_node_discovers_east_exit_on_route_transition(monkeypatch):
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 10, "y": 12, "map_name": "Route 29"},
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["maps_visited"] = ["24:4"]
+    state["last_map_transition"] = {
+        "from_map": "24:4",
+        "from_pos": {"map_key": "24:4", "x": 19, "y": 12},
+        "to_map": "24:3",
+        "to_pos": {"x": 10, "y": 12},
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        monkeypatch.setenv("POKEMON_MEMORY_DIR", tmp)
+        state = memory_node(state)
+    assert any(entry.get("id") == NEW_BARK_EAST_EXIT_ID for entry in state.get("known_landmarks", []))
+
+
+def test_navigation_without_landmark_uses_north_bias_on_route_29():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
+        raw_metadata={"has_starter": True},
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    target = _navigation_target(gs, state=state)
+    assert target == (10, 10)
+
+
+def test_navigation_uses_route_29_landmark():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
+        raw_metadata={"has_starter": True},
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["known_landmarks"] = [
+        make_landmark(
+            landmark_id=ROUTE_29_NORTH_GATE_ID,
+            name="Route 29 north gate",
+            map_key="24:3",
+            x=10,
+            y=5,
+            kind="map_visit",
+        )
+    ]
+    assert _navigation_target(gs, state=state) == (10, 5)
 
 
 def test_exploration_hint_targets_lab_warp():

@@ -22,13 +22,11 @@ def exploration_hint_tile(state: dict[str, Any], gs: GameState):
     landmarks = list(state.get("known_landmarks", []))
     if gs.map_key == "24:4" and not landmark_known(landmarks, ELMS_LAB_ENTRANCE_ID):
         if "lab" in text or "elm" in text or "starter" in text: return starter_quest.NEW_BARK_LAB_WARP
-    if "east" in text or ("route" in text and gs.map_key == "24:4"): return starter_quest.NEW_BARK_EAST_EXIT
     return None
 
 def _subgoal_exploration_bias(text: str):
     text = text.lower()
     if "lab" in text or "elm" in text: return (0, 0)
-    if "east" in text or "route" in text: return (19, 12)
     return None
 
 def exploration_target(gs: GameState, state: dict[str, Any] | None = None, *, hint_tile=None):
