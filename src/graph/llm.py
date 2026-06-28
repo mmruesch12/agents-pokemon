@@ -13,6 +13,8 @@ from src.state.models import GameState
 
 logger = logging.getLogger(__name__)
 
+_MODEL_LOGGED = False
+
 _BATTLE_ACTIONS = ("fight", "run", "switch", "item")
 
 
@@ -41,25 +43,39 @@ def get_chat_model():
         if xai_key:
             model = (os.getenv("XAI_MODEL") or "").strip() or "grok-4-1-fast-reasoning"
             base_url = (os.getenv("XAI_BASE_URL") or "").strip() or "https://api.x.ai/v1"
-            return ChatOpenAI(
+            chat = ChatOpenAI(
                 model=model,
                 api_key=xai_key,
                 base_url=base_url,
                 temperature=0,
             )
+            _log_selected_model(model)
+            return chat
         if openrouter_key:
             model = (os.getenv("OPENROUTER_MODEL") or "").strip() or "deepseek/deepseek-v4-flash"
-            return ChatOpenAI(
+            chat = ChatOpenAI(
                 model=model,
                 api_key=openrouter_key,
                 base_url="https://openrouter.ai/api/v1",
                 temperature=0,
             )
+            _log_selected_model(model)
+            return chat
         model = (os.getenv("OPENAI_MODEL") or "").strip() or "gpt-4o-mini"
-        return ChatOpenAI(model=model, api_key=openai_key, temperature=0)
+        chat = ChatOpenAI(model=model, api_key=openai_key, temperature=0)
+        _log_selected_model(model)
+        return chat
     except Exception as exc:
         logger.warning("LLM init failed: %s", exc)
         return None
+
+
+def _log_selected_model(model: str) -> None:
+    """Log chosen model name once per process at INFO (makes selected model visible in runs/verify)."""
+    global _MODEL_LOGGED
+    if not _MODEL_LOGGED:
+        logger.info("LLM using model: %s", model)
+        _MODEL_LOGGED = True
 
 
 def _llm_invoke_config():
