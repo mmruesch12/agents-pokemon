@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from src.run.autonomous_runner import build_parser as runner_parser
 from src.run.cli import build_parser
 
 
 def test_cli_help_flags():
-    import pytest
-
     parser = build_parser()
     with pytest.raises(SystemExit) as exc:
         parser.parse_args(["--help"])
@@ -67,9 +67,6 @@ def test_cli_headed_works_after_subcommand():
     a2 = parser.parse_args(["resume", "--headed"])
     assert a2.headed is True
     assert a2.resume == "latest"
-
-
-import pytest
 
 
 @pytest.mark.parametrize(

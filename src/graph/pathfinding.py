@@ -14,6 +14,15 @@ def _grid_from_rows(rows: list[str]) -> list[list[int]]:
 
 # Simplified walkable grids for early-game maps (0=walkable, 1=blocked)
 MAP_GRIDS: dict[str, list[list[int]]] = {
+    "3:4": _grid_from_rows(
+        [
+            "0000000000",
+            "0000000000",
+            "0111111110",
+            "0000000000",
+            "0000000000",
+        ]
+    ),
     "0:0": _grid_from_rows(
         [
             "00000000000000000000",

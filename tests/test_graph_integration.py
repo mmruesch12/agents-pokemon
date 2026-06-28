@@ -64,9 +64,6 @@ def test_stuck_increments_on_failed_movement(new_bark_ram: dict):
     """Blocked right movement increments stuck; successful move decrements."""
     from src.graph.nodes import apply_action_node, navigator_node
 
-    mem = dict(new_bark_ram)
-    mem_blocked = MutableRamEmulator(mem)
-
     class BlockedEmulator(MutableRamEmulator):
         def press_button(self, button: str, *, hold_frames: int = 2) -> None:
             if button == "right":

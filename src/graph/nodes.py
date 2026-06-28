@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 STUCK_THRESHOLD = int(os.getenv("STUCK_THRESHOLD", "10"))
 EARLY_GAME_OBJECTIVES = {
+    "3:4": "Leave bedroom, talk to Mom on 1F, then head to Professor Elm",
     "0:0": "Explore New Bark Town and head east toward Route 29",
     "1:1": "Travel north through Route 29 toward Cherrygrove City",
     "1:2": "Visit Pokemon Center and continue toward Violet City",
@@ -100,6 +101,8 @@ def planner_node(state: AgentState) -> AgentState:
 
 
 def _decompose_subgoals(gs: GameState) -> list[str]:
+    if gs.map_key == "3:4":
+        return ["Leave bedroom via stairs", "Talk to Mom downstairs", "Go to Professor Elm"]
     if gs.map_key == "0:0":
         if gs.player.x < 10:
             return ["Move east in New Bark Town", "Exit toward Route 29"]
@@ -111,12 +114,23 @@ def _decompose_subgoals(gs: GameState) -> list[str]:
     return ["Explore current map", "Progress toward next town"]
 
 
+def _effective_map_key(gs: GameState, state: AgentState) -> str:
+    """Prefer loaded_map_key when reader still reports 0:0 after bootstrap."""
+    if gs.map_key != "0:0" or gs.party_count > 0:
+        return gs.map_key
+    loaded = state.get("loaded_map_key")
+    if isinstance(loaded, (list, tuple)) and len(loaded) == 2:
+        return f"{loaded[0]}:{loaded[1]}"
+    return gs.map_key
+
+
 def navigator_node(state: AgentState) -> AgentState:
     """Navigate with pathfinding and LLM direction pick among candidates."""
     gs = GameState.model_validate(state.get("game_state", {}))
+    map_key = _effective_map_key(gs, state)
 
-    target = _navigation_target(gs)
-    path = find_path(gs.player.x, gs.player.y, target[0], target[1], map_key=gs.map_key)
+    target = _navigation_target(gs, map_key=map_key)
+    path = find_path(gs.player.x, gs.player.y, target[0], target[1], map_key=map_key)
     candidates = _navigation_candidates(gs, target, path)
 
     llm_choice = llm_navigate(gs, state, candidates)
@@ -164,10 +178,13 @@ def _direction_candidates(sx: int, sy: int, tx: int, ty: int) -> list[str]:
     return ["right", "up", "down", "left"]
 
 
-def _navigation_target(gs: GameState) -> tuple[int, int]:
-    if gs.map_key == "0:0":
+def _navigation_target(gs: GameState, *, map_key: str | None = None) -> tuple[int, int]:
+    map_key = map_key or gs.map_key
+    if map_key == "3:4":
+        return (gs.player.x, gs.player.y + 2)
+    if map_key == "0:0":
         return (gs.player.x + 2, gs.player.y)
-    if gs.map_key == "1:1":
+    if map_key == "1:1":
         return (gs.player.x, gs.player.y - 2)
     return (gs.player.x + 1, gs.player.y)
 
@@ -355,8 +372,6 @@ def _update_stuck_from_movement(
     if not action.startswith("navigate_"):
         return
     moved = pos_before != pos_after
-    if not moved and probe_before is not None and probe_after is not None:
-        moved = probe_before != probe_after
     if moved:
         state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
     else:

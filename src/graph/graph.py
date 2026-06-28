@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.graph import END, StateGraph
+from langgraph.graph import StateGraph
 
 from src.graph.nodes import (
     apply_action_node,

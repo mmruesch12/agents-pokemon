@@ -6,7 +6,6 @@ import argparse
 import logging
 import os
 import sys
-from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -131,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
     _setup_langsmith(args.langsmith)
 
     if not hasattr(args, "func"):
-        parser.print_help()
+        build_parser().print_help()
         return 0
 
     try:

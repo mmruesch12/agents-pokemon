@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from src.graph.llm import _match_token, get_chat_model, llm_battle, llm_navigate, llm_plan
+from src.graph.llm import _match_token, get_chat_model, llm_battle, llm_plan
 from src.graph.nodes import _navigation_candidates, navigator_node
 from src.graph.pathfinding import find_path
 from src.graph.state import initial_agent_state
 from src.state.gold_state_reader import ByteArrayReader, GoldStateReader
-from src.state.models import GameState
 
 
 def test_match_token_exact_not_substring():

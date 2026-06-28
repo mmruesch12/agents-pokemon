@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
+from src.state.gold_state_reader import ADDR_MAP_GROUP, ADDR_MAP_NUMBER
 from src.state.models import GameState
 
 if TYPE_CHECKING:
@@ -19,8 +20,8 @@ BOOTSTRAP_MAX_ACTIONS = int(os.getenv("BOOTSTRAP_MAX_ACTIONS", "700"))
 MIN_GRAPH_BOOTSTRAP_ACTIONS = int(os.getenv("MIN_GRAPH_BOOTSTRAP_ACTIONS", "15"))
 INDOOR_BOOTSTRAP_ACTIONS = int(os.getenv("INDOOR_BOOTSTRAP_ACTIONS", "80"))
 MOVEMENT_PROBE_ADDR = 0xC007
-MAP_GROUP_ADDR = 0xD087
-MAP_NUMBER_ADDR = 0xD088
+MAP_GROUP_ADDR = ADDR_MAP_GROUP
+MAP_NUMBER_ADDR = ADDR_MAP_NUMBER
 PLAYERS_HOUSE_2F = (3, 4)
 
 
@@ -88,8 +89,10 @@ def is_bootstrap_done(emu: PyBoyWrapper, gs: GameState, state: dict) -> bool:
         return False
 
     loaded_map = read_loaded_map(emu)
-    if loaded_map == PLAYERS_HOUSE_2F:
-        return idx >= INDOOR_BOOTSTRAP_ACTIONS
+    if loaded_map == PLAYERS_HOUSE_2F and idx < INDOOR_BOOTSTRAP_ACTIONS:
+        return False
+    if gs.party_count == 0 and loaded_map == (0, 0):
+        return False
     return True
 
 

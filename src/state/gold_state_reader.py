@@ -13,12 +13,12 @@ from src.state.models import (
     PlayerState,
 )
 
-# WRAM addresses from pret/pokegold
-ADDR_MAP_GROUP = 0xDC5D
-ADDR_MAP_NUMBER = 0xDC5E
-ADDR_X_COORD = 0xDC60
-ADDR_Y_COORD = 0xDC5F
-ADDR_FACING = 0xDC62
+# WRAM addresses from pret/pokegold (wCurMapData in WRAM bank 1)
+ADDR_MAP_GROUP = 0xD087  # wMapGroup
+ADDR_MAP_NUMBER = 0xD088  # wMapNumber
+ADDR_Y_COORD = 0xD089  # wYCoord
+ADDR_X_COORD = 0xD08A  # wXCoord
+ADDR_FACING = 0xD4B7  # wPlayerStruct + OBJECT_DIRECTION
 
 ADDR_PARTY_COUNT = 0xD163
 ADDR_PARTY_SPECIES = 0xD164
@@ -58,6 +58,7 @@ SPECIES_NAMES: dict[int, str] = {
 }
 
 MAP_NAMES: dict[tuple[int, int], str] = {
+    (3, 4): "Player's House 2F",
     (0, 0): "New Bark Town",
     (1, 1): "Route 29",
     (1, 2): "Cherrygrove City",

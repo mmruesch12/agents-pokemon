@@ -29,6 +29,13 @@ from src.state.gold_state_reader import (
 
 
 @pytest.fixture(autouse=True)
+def _clear_llm_api_keys(monkeypatch):
+    """Prevent real API keys in the environment from affecting heuristic tests."""
+    for key in ("XAI_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _reset_emulator_binding():
     pokemon_tools.unbind_emulator()
     yield
