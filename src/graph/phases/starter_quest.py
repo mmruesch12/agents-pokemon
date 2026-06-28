@@ -69,12 +69,9 @@ def _in_rival_battle(gs: GameState) -> bool:
 
 
 def is_satisfied(gs: GameState, state: dict[str, Any]) -> bool:
-    """True once rival battle milestone reached (persists after battle ends)."""
-    if state.get("starter_quest_complete"):
-        return True
-    if not _in_rival_battle(gs):
-        return False
-    return _egg_delivered(gs) or gs.map_key == MAP_KEY_ELMS_LAB
+    """True once rival battle milestone persisted via starter_quest_complete flag."""
+    del gs
+    return bool(state.get("starter_quest_complete"))
 
 
 def in_starter_quest(gs: GameState, state: dict[str, Any] | None = None) -> bool:

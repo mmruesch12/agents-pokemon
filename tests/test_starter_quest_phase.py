@@ -62,7 +62,7 @@ def test_is_satisfied_false_before_rival_battle():
     assert starter_quest.is_satisfied(gs, state) is False
 
 
-def test_is_satisfied_true_on_trainer_battle():
+def test_is_satisfied_true_only_with_complete_flag():
     battle = BattleState(in_battle=True, phase=BattlePhase.TRAINER)
     gs = _gs(
         24,
@@ -73,8 +73,13 @@ def test_is_satisfied_true_on_trainer_battle():
         party_count=1,
         battle=battle,
     )
-    state = {"house_exit_complete": True}
-    assert starter_quest.is_satisfied(gs, state) is True
+    assert starter_quest.is_satisfied(gs, {"house_exit_complete": True}) is False
+    assert (
+        starter_quest.is_satisfied(
+            gs, {"house_exit_complete": True, "starter_quest_complete": True}
+        )
+        is True
+    )
 
 
 def test_decompose_subgoals_egg_quest_stage():

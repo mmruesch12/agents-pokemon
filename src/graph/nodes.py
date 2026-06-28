@@ -55,10 +55,7 @@ def supervisor_node(state: AgentState) -> AgentState:
     """Route to appropriate specialist based on game phase."""
     gs = GameState.model_validate(state.get("game_state", {}))
 
-    if gs.battle.in_battle:
-        state["next_node"] = "battler"
-        state["phase"] = "battle"
-    elif needs_bootstrap(gs, state):
+    if needs_bootstrap(gs, state):
         state["next_node"] = "bootstrap"
         state["phase"] = "bootstrap"
     elif _hold_phase_satisfied(gs, state):
@@ -68,6 +65,9 @@ def supervisor_node(state: AgentState) -> AgentState:
             if state.get("house_exit_complete")
             else "house_exit_done"
         )
+    elif gs.battle.in_battle:
+        state["next_node"] = "battler"
+        state["phase"] = "battle"
     elif needs_script_wait(gs, state):
         state["next_node"] = "waiter"
         state["phase"] = "wait"
