@@ -27,9 +27,11 @@ STARTER_BALL_TILE = (
     int(os.getenv("STARTER_BALL_X", "7")),
     int(os.getenv("STARTER_BALL_Y", "3")),
 )
-ROUTE_29_EAST_EXIT = (19, 12)
-ROUTE_30_NORTH_TARGET = (10, 0)
+NEW_BARK_EAST_EXIT = (19, 12)
+ROUTE_29_NORTH_GATE = (10, 5)
+ROUTE_30_NORTH_GATE = (10, 3)
 MR_POKEMON_DOOR = (5, 5)
+ELM_DESK_TILE = (4, 2)
 
 INDOOR_INTERACT_STUCK = int(os.getenv("INDOOR_INTERACT_STUCK", "2"))
 POST_WARP_WAIT_TICKS = int(os.getenv("POST_WARP_WAIT_TICKS", "90"))
@@ -105,7 +107,22 @@ def needs_lab_interaction(gs: GameState, state: dict[str, Any]) -> bool:
         and (gs.player.x, gs.player.y) == STARTER_BALL_TILE
     ):
         return True
-    if _egg_delivered(gs) and gs.map_key == MAP_KEY_ELMS_LAB and gs.in_text_box:
+    if (
+        gs.map_key == MAP_KEY_MR_POKEMONS_HOUSE
+        and not _has_egg(gs)
+        and (gs.player.x, gs.player.y) == MR_POKEMON_DOOR
+    ):
+        return True
+    if (
+        gs.map_key == MAP_KEY_ELMS_LAB
+        and _has_egg(gs)
+        and not _egg_delivered(gs)
+        and (gs.player.x, gs.player.y) == ELM_DESK_TILE
+    ):
+        return True
+    if _egg_delivered(gs) and gs.map_key == MAP_KEY_ELMS_LAB and not _in_rival_battle(gs):
+        return True
+    if gs.in_text_box and gs.map_key == MAP_KEY_ELMS_LAB:
         return True
     if state.get("stuck_count", 0) >= INDOOR_INTERACT_STUCK:
         last = state.get("last_action", "")
@@ -152,24 +169,28 @@ def navigation_target(
     if map_key == MAP_KEY_NEW_BARK_TOWN:
         if not _has_starter(gs):
             return NEW_BARK_LAB_WARP
-        return (gs.player.x + 1, gs.player.y)
+        if _has_egg(gs) and not _egg_delivered(gs):
+            return NEW_BARK_LAB_WARP
+        if not _has_egg(gs):
+            return NEW_BARK_EAST_EXIT
+        return NEW_BARK_LAB_WARP
 
     if map_key == MAP_KEY_ELMS_LAB:
         if not _has_starter(gs):
             if lab_scene_pending(gs):
                 return (gs.player.x, gs.player.y)
             return STARTER_BALL_TILE
-        if not _egg_delivered(gs) and _has_egg(gs):
-            return (gs.player.x, gs.player.y)
+        if _has_egg(gs) and not _egg_delivered(gs):
+            return ELM_DESK_TILE
         if _has_starter(gs) and not _has_egg(gs):
             return ELMS_LAB_EXIT
         return (gs.player.x, gs.player.y)
 
-    if map_key == MAP_KEY_ROUTE_29 and _has_starter(gs):
-        return ROUTE_29_EAST_EXIT if gs.player.x < ROUTE_29_EAST_EXIT[0] else (gs.player.x, gs.player.y - 2)
+    if map_key == MAP_KEY_ROUTE_29 and _has_starter(gs) and not _has_egg(gs):
+        return ROUTE_29_NORTH_GATE if gs.player.y > ROUTE_29_NORTH_GATE[1] else ROUTE_29_NORTH_GATE
 
-    if map_key == MAP_KEY_ROUTE_30:
-        return (gs.player.x, max(0, gs.player.y - 2))
+    if map_key == MAP_KEY_ROUTE_30 and _has_starter(gs) and not _has_egg(gs):
+        return ROUTE_30_NORTH_GATE if gs.player.y > ROUTE_30_NORTH_GATE[1] else ROUTE_30_NORTH_GATE
 
     if map_key == MAP_KEY_MR_POKEMONS_HOUSE:
         if not _has_egg(gs):
@@ -180,7 +201,7 @@ def navigation_target(
         if map_key == MAP_KEY_NEW_BARK_TOWN:
             return NEW_BARK_LAB_WARP
         if map_key == MAP_KEY_ELMS_LAB:
-            return (4, 2)
+            return ELM_DESK_TILE
         if map_key == MAP_KEY_ROUTE_29:
             return (0, gs.player.y)
         if map_key == MAP_KEY_ROUTE_30:
@@ -209,6 +230,19 @@ def prefer_interact_candidate(gs: GameState) -> bool:
         gs.map_key == MAP_KEY_ELMS_LAB
         and not _has_starter(gs)
         and (gs.player.x, gs.player.y) == STARTER_BALL_TILE
+    ):
+        return True
+    if (
+        gs.map_key == MAP_KEY_MR_POKEMONS_HOUSE
+        and not _has_egg(gs)
+        and (gs.player.x, gs.player.y) == MR_POKEMON_DOOR
+    ):
+        return True
+    if (
+        gs.map_key == MAP_KEY_ELMS_LAB
+        and _has_egg(gs)
+        and not _egg_delivered(gs)
+        and (gs.player.x, gs.player.y) == ELM_DESK_TILE
     ):
         return True
     return False
@@ -249,17 +283,17 @@ def on_starter_quest_complete(state: dict[str, Any], gs: GameState) -> None:
 
 def starter_milestone(gs: GameState, maps_visited: list[str]) -> str | None:
     meta = _meta(gs)
-    if gs.map_key == MAP_KEY_ELMS_LAB and maps_visited.count(MAP_KEY_ELMS_LAB) == 1:
-        if MAP_KEY_NEW_BARK_TOWN in maps_visited:
-            return MILESTONE_ENTERED_LAB
-    if meta.get("has_starter") and gs.party_count >= 1:
-        return MILESTONE_CHOSE_STARTER
-    if gs.map_key == MAP_KEY_MR_POKEMONS_HOUSE and maps_visited.count(MAP_KEY_MR_POKEMONS_HOUSE) == 1:
-        return MILESTONE_MR_POKEMON
     if _in_rival_battle(gs) and (meta.get("egg_delivered") or gs.map_key == MAP_KEY_ELMS_LAB):
         return MILESTONE_RIVAL_BATTLE
     if meta.get("egg_delivered"):
         return MILESTONE_EGG_DELIVERED
+    if gs.map_key == MAP_KEY_MR_POKEMONS_HOUSE and maps_visited.count(MAP_KEY_MR_POKEMONS_HOUSE) == 1:
+        return MILESTONE_MR_POKEMON
+    if meta.get("has_starter") and gs.party_count >= 1:
+        return MILESTONE_CHOSE_STARTER
+    if gs.map_key == MAP_KEY_ELMS_LAB and maps_visited.count(MAP_KEY_ELMS_LAB) == 1:
+        if MAP_KEY_NEW_BARK_TOWN in maps_visited:
+            return MILESTONE_ENTERED_LAB
     return None
 
 

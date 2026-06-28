@@ -64,12 +64,12 @@ MAP_GRIDS: dict[str, list[list[int]]] = {
             "0000000000",  # y=3 balls at (6,3)/(7,3)/(8,3) — interact targets
             "0000000000",  # y=4
             "0000000000",  # y=5
-            "0011000000",  # y=6 blocked exit (4,6)/(5,6) pre-starter
+            "0000110000",  # y=6 blocked exit (4,6)/(5,6) pre-starter
             "0000000000",  # y=7
             "0000000000",  # y=8 aide at (4,8)/(5,8)
             "0000000000",  # y=9
             "0000000000",  # y=10
-            "0011000000",  # y=11 exit warp (4,11)/(5,11)
+            "0000110000",  # y=11 exit warp (4,11)/(5,11)
         ]
     ),
     "24:3": _grid_from_rows(

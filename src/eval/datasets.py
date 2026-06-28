@@ -38,7 +38,7 @@ EARLY_GAME_DATASET: list[dict[str, Any]] = [
         "description": "Player in Elm's lab before choosing starter",
         "input": {"map_group": 24, "map_id": 5, "x": 4, "y": 8, "party_count": 0},
         "expected_phase": "explore",
-        "milestone_targets": ["Choose starter", "Pick a Poke Ball"],
+        "milestone_targets": ["Entered Elm's lab", "Chose first Pokemon"],
     },
     {
         "id": "mr_pokemon_house",

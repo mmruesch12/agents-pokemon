@@ -3,17 +3,48 @@
 from __future__ import annotations
 
 from src.state.gold_state_reader import (
-    MAP_NEW_BARK_TOWN,
-    MAP_ROUTE_29,
-    MAPGROUP_NEW_BARK,
+    ADDR_BATTLE_MODE,
+    ADDR_ENEMY_HP,
+    ADDR_ENEMY_MAX_HP,
+    ADDR_ENEMY_SPECIES,
+    ADDR_EVENT_FLAGS,
     ADDR_MAP_GROUP,
     ADDR_MAP_NUMBER,
+    ADDR_PARTY_COUNT,
+    ADDR_PARTY_MON1,
+    ADDR_PARTY_SPECIES,
     ADDR_X_COORD,
     ADDR_Y_COORD,
+    MAP_ELMS_LAB,
+    MAP_MR_POKEMONS_HOUSE,
+    MAP_NEW_BARK_TOWN,
+    MAP_ROUTE_29,
+    MAP_ROUTE_30,
+    MAPGROUP_JOHTO_ROUTES,
+    MAPGROUP_NEW_BARK,
     ByteArrayReader,
     GoldStateReader,
+    PARTYMON_HP_OFFSET,
+    PARTYMON_LEVEL_OFFSET,
 )
 from src.state.models import GameState
+from src.state.script_constants import (
+    EVENT_GAVE_MYSTERY_EGG_TO_ELM,
+    EVENT_GOT_A_POKEMON_FROM_ELM,
+    EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON,
+)
+
+
+def _set_flag(memory: dict[int, int], flag_index: int) -> None:
+    byte_addr = ADDR_EVENT_FLAGS + (flag_index // 8)
+    bit = flag_index % 8
+    memory[byte_addr] = memory.get(byte_addr, 0) | (1 << bit)
+
+
+def _has_flag(memory: dict[int, int], flag_index: int) -> bool:
+    byte_addr = ADDR_EVENT_FLAGS + (flag_index // 8)
+    bit = flag_index % 8
+    return bool(memory.get(byte_addr, 0) & (1 << bit))
 
 
 class MutableRamEmulator:
@@ -63,3 +94,122 @@ class MutableRamEmulator:
         return GoldStateReader(
             ByteArrayReader(self._memory), frame_count=self._frame_count
         ).read()
+
+
+class StarterQuestEmulator(MutableRamEmulator):
+    """Quest-aware RAM emulator: warps and flag progression for starter-quest integration."""
+
+    def __init__(self, memory: dict[int, int]):
+        super().__init__(memory, route_29_at_x=99)
+        self._last_button: str | None = None
+
+    def press_button(self, button: str, *, hold_frames: int = 2) -> None:
+        self._last_button = button
+        x = self._memory.get(ADDR_X_COORD, 0)
+        y = self._memory.get(ADDR_Y_COORD, 0)
+
+        if button in ("right", "left", "down", "up"):
+            if button == "right":
+                x += 1
+            elif button == "left":
+                x -= 1
+            elif button == "down":
+                y += 1
+            elif button == "up":
+                y -= 1
+            self._memory[ADDR_X_COORD] = max(0, x)
+            self._memory[ADDR_Y_COORD] = max(0, y)
+            self._apply_warps()
+        elif button == "a":
+            self._apply_interact()
+
+        self._frame_count += hold_frames + 1
+
+    def _apply_warps(self) -> None:
+        group = self._memory.get(ADDR_MAP_GROUP, 0)
+        map_id = self._memory.get(ADDR_MAP_NUMBER, 0)
+        x = self._memory.get(ADDR_X_COORD, 0)
+        y = self._memory.get(ADDR_Y_COORD, 0)
+
+        if group == MAPGROUP_NEW_BARK and map_id == MAP_NEW_BARK_TOWN:
+            if y <= 3 and x >= 6:
+                self._warp(MAPGROUP_NEW_BARK, MAP_ELMS_LAB, 4, 8)
+            elif _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM) and x >= 19:
+                self._warp(MAPGROUP_NEW_BARK, MAP_ROUTE_29, 10, 12)
+            return
+
+        if group == MAPGROUP_NEW_BARK and map_id == MAP_ELMS_LAB:
+            if y >= 11 and x in (4, 5):
+                self._warp(MAPGROUP_NEW_BARK, MAP_NEW_BARK_TOWN, 13, 6)
+            return
+
+        if group == MAPGROUP_NEW_BARK and map_id == MAP_ROUTE_29:
+            if _has_flag(self._memory, EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON) and x <= 1:
+                self._warp(MAPGROUP_NEW_BARK, MAP_NEW_BARK_TOWN, 13, 6)
+            elif (
+                _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM)
+                and not _has_flag(self._memory, EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON)
+                and y <= 5
+            ):
+                self._warp(MAPGROUP_JOHTO_ROUTES, MAP_ROUTE_30, 10, 12)
+            return
+
+        if group == MAPGROUP_JOHTO_ROUTES and map_id == MAP_ROUTE_30:
+            if _has_flag(self._memory, EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON) and y >= 12:
+                self._warp(MAPGROUP_NEW_BARK, MAP_ROUTE_29, 10, 8)
+            elif (
+                _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM)
+                and not _has_flag(self._memory, EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON)
+                and y <= 3
+            ):
+                self._warp(MAPGROUP_JOHTO_ROUTES, MAP_MR_POKEMONS_HOUSE, 5, 7)
+            return
+
+        if group == MAPGROUP_JOHTO_ROUTES and map_id == MAP_MR_POKEMONS_HOUSE:
+            if _has_flag(self._memory, EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON) and y >= 8:
+                self._warp(MAPGROUP_JOHTO_ROUTES, MAP_ROUTE_30, 10, 5)
+
+    def _warp(self, group: int, map_id: int, x: int, y: int) -> None:
+        self._memory[ADDR_MAP_GROUP] = group
+        self._memory[ADDR_MAP_NUMBER] = map_id
+        self._memory[ADDR_X_COORD] = x
+        self._memory[ADDR_Y_COORD] = y
+
+    def _apply_interact(self) -> None:
+        group = self._memory.get(ADDR_MAP_GROUP, 0)
+        map_id = self._memory.get(ADDR_MAP_NUMBER, 0)
+        x = self._memory.get(ADDR_X_COORD, 0)
+        y = self._memory.get(ADDR_Y_COORD, 0)
+
+        if group == MAPGROUP_NEW_BARK and map_id == MAP_ELMS_LAB:
+            if (x, y) == (7, 3) and not _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM):
+                _set_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM)
+                self._memory[ADDR_PARTY_COUNT] = 1
+                self._memory[ADDR_PARTY_SPECIES] = 158  # Totodile
+                base = ADDR_PARTY_MON1
+                self._memory[base + PARTYMON_HP_OFFSET] = 20
+                self._memory[base + PARTYMON_HP_OFFSET + 1] = 0
+                self._memory[base + PARTYMON_HP_OFFSET + 2] = 20
+                self._memory[base + PARTYMON_HP_OFFSET + 3] = 0
+                self._memory[base + PARTYMON_LEVEL_OFFSET] = 5
+            elif (
+                (x, y) in ((4, 2), (5, 2))
+                and _has_flag(self._memory, EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON)
+                and not _has_flag(self._memory, EVENT_GAVE_MYSTERY_EGG_TO_ELM)
+            ):
+                _set_flag(self._memory, EVENT_GAVE_MYSTERY_EGG_TO_ELM)
+            elif (
+                _has_flag(self._memory, EVENT_GAVE_MYSTERY_EGG_TO_ELM)
+                and self._memory.get(ADDR_BATTLE_MODE, 0) == 0
+            ):
+                self._memory[ADDR_BATTLE_MODE] = 2
+                self._memory[ADDR_ENEMY_SPECIES] = 155  # Cyndaquil (rival)
+                self._memory[ADDR_ENEMY_HP] = 18
+                self._memory[ADDR_ENEMY_HP + 1] = 0
+                self._memory[ADDR_ENEMY_MAX_HP] = 20
+                self._memory[ADDR_ENEMY_MAX_HP + 1] = 0
+            return
+
+        if group == MAPGROUP_JOHTO_ROUTES and map_id == MAP_MR_POKEMONS_HOUSE:
+            if (x, y) == (5, 5) and not _has_flag(self._memory, EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON):
+                _set_flag(self._memory, EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON)

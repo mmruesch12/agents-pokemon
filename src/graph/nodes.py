@@ -436,11 +436,12 @@ def memory_node(state: AgentState) -> AgentState:
 def _check_milestone(
     gs: GameState, state: AgentState, maps_visited: list[str]
 ) -> str | None:
+    earned = state.get("milestones", [])
     house = house_exit.house_milestone(gs, maps_visited)
-    if house:
+    if house and house not in earned:
         return house
     quest = starter_quest.starter_milestone(gs, maps_visited)
-    if quest:
+    if quest and quest not in earned:
         return quest
     if gs.map_key == MAP_KEY_ROUTE_29 and maps_visited.count(MAP_KEY_ROUTE_29) == 1:
         return "Reached Route 29"
