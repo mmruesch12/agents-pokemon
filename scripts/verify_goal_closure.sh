@@ -9,6 +9,9 @@ cd "$ROOT"
 mkdir -p "$SCRATCH"
 rm -f "$SCRATCH"/*.log
 
+# Match key-like material, not bare prefixes in docs or grep recipes.
+SECRET_RE='xai-[a-zA-Z0-9]{8,}|sk-[a-zA-Z0-9]{16,}|lsv2_pt_[a-zA-Z0-9]+|gho_[a-zA-Z0-9]+|Bearer [a-zA-Z0-9._-]+'
+
 echo "== initial git status =="
 git status --porcelain | tee "$SCRATCH/initial_status.log"
 
@@ -73,14 +76,15 @@ if git diff --cached --stat | grep -q .; then
 else
   echo "(no staged changes — working tree clean)" | tee "$SCRATCH/staged_scan.log"
 fi
-if git diff --cached | grep -qiE 'xai-|sk-|lsv2_pt_|gho_|Bearer '; then
+if git diff --cached | grep -qiE "$SECRET_RE"; then
   echo "FAIL: possible secrets in staged diff" >&2
   exit 1
 fi
 
 echo "== recent commit secret scan =="
-git log -7 -p --no-color 2>&1 | head -500 | tee "$SCRATCH/recent_commit_scan.log"
-if git log -7 -p --no-color | grep -qiE 'xai-|sk-|lsv2_pt_|gho_|Bearer '; then
+# Exclude this script's own grep patterns from the diff scan.
+git log -7 -p --no-color -- . ':!scripts/verify_goal_closure.sh' 2>&1 | head -500 | tee "$SCRATCH/recent_commit_scan.log"
+if git log -7 -p --no-color -- . ':!scripts/verify_goal_closure.sh' | grep -qiE "$SECRET_RE"; then
   echo "FAIL: possible secrets in recent commits" >&2
   exit 1
 fi
