@@ -1,10 +1,15 @@
-"""Custom evaluators: progress, stuck frequency, coherence."""
+"""Custom evaluators: progress, stuck frequency, coherence, Phase-4 gates."""
 
 from __future__ import annotations
 
+import ast
+import re
+from pathlib import Path
 from typing import Any
 
 from src.graph.state import AgentState
+
+_COORD_TUPLE_RE = re.compile(r"\(\s*\d+\s*,\s*\d+\s*\)")
 
 
 def progress_per_steps(state: AgentState, *, window: int = 500) -> float:
@@ -52,6 +57,47 @@ def exploration_coverage(state: AgentState) -> float:
     return min(1.0, visited / 20.0)
 
 
+def milestone_completion(state: AgentState) -> float:
+    """Fraction of early-game milestones earned (dataset-aligned)."""
+    milestones = state.get("milestones", [])
+    expected = 6
+    return min(1.0, len(milestones) / expected)
+
+
+def stuck_events_per_milestone(state: AgentState) -> float:
+    """Critic replans per milestone — self-correction load."""
+    replans = state.get("replan_count", 0)
+    milestones = max(1, len(state.get("milestones", [])))
+    return replans / milestones
+
+
+def replan_recovery_rate(state: AgentState) -> float:
+    """Share of replans followed by position change or stuck reduction."""
+    events = state.get("replan_events", [])
+    if not events:
+        return 1.0 if state.get("replan_count", 0) == 0 else 0.0
+    recovered = sum(1 for event in events if event.get("recovered"))
+    return recovered / len(events)
+
+
+def phase_coordinate_count(*, phases_dir: Path | None = None) -> int:
+    """Count coordinate tuples in phase modules (prescription budget)."""
+    root = phases_dir or Path(__file__).resolve().parents[1] / "graph" / "phases"
+    total = 0
+    for path in sorted(root.glob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            total += len(_COORD_TUPLE_RE.findall(text))
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Tuple) and len(node.elts) == 2:
+                if all(isinstance(elt, ast.Constant) and isinstance(elt.value, int) for elt in node.elts):
+                    total += 1
+    return total
+
+
 def evaluate_run(state: AgentState) -> dict[str, float]:
     """Run all evaluators and return metrics dict."""
     return {
@@ -60,6 +106,10 @@ def evaluate_run(state: AgentState) -> dict[str, float]:
         "coherence": coherence_score(state),
         "battle_efficiency": battle_efficiency(state),
         "exploration_coverage": exploration_coverage(state),
+        "milestone_completion": milestone_completion(state),
+        "stuck_events_per_milestone": stuck_events_per_milestone(state),
+        "replan_recovery_rate": replan_recovery_rate(state),
+        "phase_coordinate_count": float(phase_coordinate_count()),
     }
 
 
@@ -74,9 +124,10 @@ def evaluate_against_dataset(
         for k, v in inp.items()
         if k not in ("in_battle", "battle_mode")
     )
+    scores = evaluate_run(state)
     return {
         "entry_id": dataset_entry["id"],
         "input_match": matches,
-        "scores": evaluate_run(state),
+        "scores": scores,
         "milestones": state.get("milestones", []),
     }

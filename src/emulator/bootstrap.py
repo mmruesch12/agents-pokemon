@@ -430,6 +430,16 @@ def _clear_event_flag(emu: PyBoyWrapper, flag_index: int) -> None:
     emu.write_byte(byte_addr, current & ~(1 << bit))
 
 
+def _at_elm_desk(gs: GameState) -> bool:
+    return (gs.player.x, gs.player.y) in ((4, 2), (5, 2), (4, 3))
+
+
+def _desk_dialog_done_for_seed(gs: GameState) -> bool:
+    if (gs.player.x, gs.player.y) in ((5, 3), (6, 3), (7, 3), (8, 3)):
+        return True
+    return gs.player.y >= 3 and not _at_elm_desk(gs)
+
+
 def repair_elms_lab_snapshot(emu: PyBoyWrapper, gs: GameState) -> GameState:
     """Fix fast-start saves: starter flag without party, invalid facing byte."""
     from src.graph.phases import starter_quest
@@ -450,14 +460,13 @@ def repair_elms_lab_snapshot(emu: PyBoyWrapper, gs: GameState) -> GameState:
         emu.write_byte(ADDR_PARTY_SPECIES, 0)
         logger.info("Cleared desynced Elm starter flag (party empty)")
         gs = emu.get_game_state()
-    elif not meta.get("has_starter") and starter_quest.is_at_elm_desk(gs):
+    elif not meta.get("has_starter") and _at_elm_desk(gs):
         if emu.read_byte(ADDR_PARTY_COUNT) == 0 and emu.read_byte(ADDR_PARTY_SPECIES) != 0:
             emu.write_byte(ADDR_PARTY_SPECIES, 0)
             logger.info("Cleared stale party species byte at Elm desk (count=0)")
             gs = emu.get_game_state()
 
-    facing_map = {"down": 0, "up": 4, "left": 8, "right": 12}
-    if starter_quest.is_at_elm_desk(gs) and not starter_quest.has_starter(gs):
+    if _at_elm_desk(gs) and not starter_quest.has_starter(gs):
         if gs.player.facing != 4:
             emu.write_byte(ADDR_FACING, 4)
             logger.info(
@@ -466,22 +475,9 @@ def repair_elms_lab_snapshot(emu: PyBoyWrapper, gs: GameState) -> GameState:
                 gs.player.x,
                 gs.player.y,
             )
-    elif not starter_quest.facing_is_valid(gs):
-        face = starter_quest.starter_ball_face_direction(gs)
-        new_facing = facing_map.get(face or "", 0)
-        emu.write_byte(ADDR_FACING, new_facing)
-        logger.info("Normalized invalid facing %s -> %s", gs.player.facing, new_facing)
-    elif starter_quest.can_interact_starter_ball(gs):
-        face = starter_quest.starter_ball_face_direction(gs)
-        if face is not None and starter_quest.player_facing_direction(gs) != face:
-            emu.write_byte(ADDR_FACING, facing_map[face])
-            logger.info(
-                "Aligned ball-row facing %s -> %s at (%d,%d)",
-                gs.player.facing,
-                facing_map[face],
-                gs.player.x,
-                gs.player.y,
-            )
+    elif gs.player.facing not in (0, 4, 8, 12):
+        emu.write_byte(ADDR_FACING, 12)
+        logger.info("Normalized invalid facing %s -> 12", gs.player.facing)
 
     return emu.get_game_state()
 
@@ -536,7 +532,7 @@ def seed_lab_agent_state(
             milestones.append(milestone)
     state["milestones"] = milestones
     if reset_lab_counters:
-        state["lab_desk_dialog_done"] = starter_quest.desk_dialog_done(gs, state)
+        state["lab_desk_dialog_done"] = _desk_dialog_done_for_seed(gs)
         state["lab_desk_interact_count"] = 0
         state["lab_desk_script_seen"] = False
         state["lab_steps_without_party"] = 0

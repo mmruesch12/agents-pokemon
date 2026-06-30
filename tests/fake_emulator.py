@@ -138,6 +138,18 @@ class StarterQuestEmulator(MutableRamEmulator):
         self._elm_intro_done = False
         self._desk_script_pending = False
 
+    def _clamp_coords(self, x: int, y: int) -> tuple[int, int]:
+        from src.graph.pathfinding import MAP_GRIDS
+
+        group = self._memory.get(ADDR_MAP_GROUP, 0)
+        map_id = self._memory.get(ADDR_MAP_NUMBER, 0)
+        grid = MAP_GRIDS.get(f"{group}:{map_id}")
+        if grid:
+            max_x = len(grid[0]) - 1
+            max_y = len(grid) - 1
+            return max(0, min(x, max_x)), max(0, min(y, max_y))
+        return max(0, x), max(0, y)
+
     def _elm_lab_blocked(self, x: int, y: int) -> bool:
         group = self._memory.get(ADDR_MAP_GROUP, 0)
         map_id = self._memory.get(ADDR_MAP_NUMBER, 0)
@@ -177,8 +189,9 @@ class StarterQuestEmulator(MutableRamEmulator):
             if self._elm_lab_blocked(x, y):
                 self._memory[ADDR_FACING] = _BUTTON_TO_FACING[button]
             else:
-                self._memory[ADDR_X_COORD] = max(0, x)
-                self._memory[ADDR_Y_COORD] = max(0, y)
+                x, y = self._clamp_coords(x, y)
+                self._memory[ADDR_X_COORD] = x
+                self._memory[ADDR_Y_COORD] = y
                 self._memory[ADDR_FACING] = _BUTTON_TO_FACING[button]
             self._apply_warps()
         elif button == "a":
@@ -243,7 +256,7 @@ class StarterQuestEmulator(MutableRamEmulator):
         y = self._memory.get(ADDR_Y_COORD, 0)
 
         if group == MAPGROUP_NEW_BARK and map_id == MAP_ELMS_LAB:
-            if (x, y) in ((4, 2), (5, 2), (4, 3)):
+            if (x, y) in ((4, 2), (5, 2), (4, 3)) and not self._elm_intro_done:
                 self._elm_intro_done = True
                 self._set_script_active()
                 self._desk_script_pending = True

@@ -18,7 +18,8 @@ ROUTE_29_NORTH_GATE_ID = "route_29_north_gate"
 ROUTE_30_NORTH_GATE_ID = "route_30_north_gate"
 MR_POKEMONS_HOUSE_ENTRANCE_ID = "mr_pokemons_house_entrance"
 
-# Secondary lab door on New Bark Town (see starter_quest.NEW_BARK_LAB_WARP).
+# Lab door tiles on New Bark Town (discovered via map transitions, not phase routing).
+_ELMS_LAB_PRIMARY_DOOR = (6, 3)
 _ELMS_LAB_ALT_DOOR = (5, 3)
 
 
@@ -123,16 +124,15 @@ def normalize_elms_lab_entrance_coords(
     y: int | None,
 ) -> tuple[str | None, int | None, int | None]:
     """Snap pre-warp positions adjacent to the lab door to the actual door tile."""
-    from src.graph.phases import starter_quest
     from src.state.gold_state_reader import MAP_KEY_NEW_BARK_TOWN
 
     if map_key != MAP_KEY_NEW_BARK_TOWN or x is None or y is None:
         return map_key, x, y
     if y == 4 and x in (5, 6, 7):
-        door = starter_quest.NEW_BARK_LAB_WARP if x >= 6 else _ELMS_LAB_ALT_DOOR
+        door = _ELMS_LAB_PRIMARY_DOOR if x >= 6 else _ELMS_LAB_ALT_DOOR
         return map_key, door[0], door[1]
     if y == 3 and x == 7:
-        return map_key, starter_quest.NEW_BARK_LAB_WARP[0], starter_quest.NEW_BARK_LAB_WARP[1]
+        return map_key, _ELMS_LAB_PRIMARY_DOOR[0], _ELMS_LAB_PRIMARY_DOOR[1]
     return map_key, x, y
 
 
@@ -211,10 +211,9 @@ def discover_quest_transition_landmarks(
 
 def discover_mr_pokemon_entrance_landmark(gs: GameState) -> dict[str, Any]:
     """Record the interior door tile on first Mr. Pokemon's House visit."""
-    from src.graph.phases import starter_quest
     from src.state.gold_state_reader import MAP_KEY_MR_POKEMONS_HOUSE
 
-    door = starter_quest.MR_POKEMON_DOOR
+    door = (5, 5)
     return make_landmark(
         landmark_id=MR_POKEMONS_HOUSE_ENTRANCE_ID,
         name="Mr. Pokemon's House entrance",

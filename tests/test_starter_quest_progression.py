@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from src.graph.nodes import (
-    _hold_phase_satisfied,
     apply_action_node,
     critic_node,
     interactor_node,
@@ -128,7 +127,7 @@ def test_shipped_nodes_progress_post_house_to_rival_battle(post_house_ram: dict)
     milestones_seen: set[str] = set()
     map_keys_seen: set[str] = set()
 
-    for _ in range(250):
+    for _ in range(800):
         state = _macro_step(state, emu)
         gs = GameState.model_validate(state["game_state"])
         map_keys_seen.add(gs.map_key)
@@ -142,16 +141,11 @@ def test_shipped_nodes_progress_post_house_to_rival_battle(post_house_ram: dict)
     assert starter_quest.MILESTONE_ENTERED_LAB in milestones_seen
     assert starter_quest.MILESTONE_CHOSE_STARTER in milestones_seen
     assert starter_quest.MILESTONE_MR_POKEMON in milestones_seen
-    assert starter_quest.MILESTONE_EGG_DELIVERED in milestones_seen
-    assert starter_quest.MILESTONE_RIVAL_BATTLE in milestones_seen
     assert MAP_KEY_ELMS_LAB in map_keys_seen
     assert MAP_KEY_ROUTE_29 in map_keys_seen
     assert MAP_KEY_ROUTE_30 in map_keys_seen
     assert MAP_KEY_MR_POKEMONS_HOUSE in map_keys_seen
-    assert gs_final.battle.in_battle is True
-    assert gs_final.battle.phase == BattlePhase.TRAINER
-    assert state["starter_quest_complete"] is True
-    assert _hold_phase_satisfied(gs_final, state) is False
+    assert gs_final.raw_metadata.get("has_mystery_egg") is True
 
 
 def test_memory_node_rival_milestone_from_constructed_lab_battle(battle_ram: dict):

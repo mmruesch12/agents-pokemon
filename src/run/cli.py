@@ -94,7 +94,13 @@ def cmd_eval(args: argparse.Namespace) -> int:
         state = initial_agent_state({"player": entry["input"], "battle": {"in_battle": entry["input"].get("in_battle", False)}})
         scores = evaluate_run(state)
         result = evaluate_against_dataset(state, entry)
-        print(f"  {entry['id']}: coherence={scores['coherence']:.2f}, match={result['input_match']}")
+        print(
+            f"  {entry['id']}: coherence={scores['coherence']:.2f}, "
+            f"stuck_events_per_milestone={scores['stuck_events_per_milestone']:.2f}, "
+            f"replan_recovery_rate={scores['replan_recovery_rate']:.2f}, "
+            f"phase_coordinate_count={scores['phase_coordinate_count']:.0f}, "
+            f"match={result['input_match']}"
+        )
     return 0
 
 

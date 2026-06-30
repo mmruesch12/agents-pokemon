@@ -98,11 +98,52 @@ def _frontier_for_landmark_id(landmark_id: str) -> str:
     return "north"
 
 
+def resolve_egg_return_geography(
+    gs: GameState, state: dict[str, Any] | None = None
+) -> tuple[int, int] | None:
+    """Return-leg targets after Mystery Egg is obtained."""
+    from src.graph.phases import starter_quest
+    from src.state.gold_state_reader import (
+        MAP_KEY_MR_POKEMONS_HOUSE,
+        MAP_KEY_NEW_BARK_TOWN,
+        MAP_KEY_ROUTE_29,
+        MAP_KEY_ROUTE_30,
+    )
+
+    state = state or {}
+    if not starter_quest._has_egg(gs) or starter_quest._egg_delivered(gs):
+        return None
+    if gs.map_key == MAP_KEY_MR_POKEMONS_HOUSE:
+        return (5, 8)
+    if gs.map_key == MAP_KEY_ROUTE_30:
+        return (gs.player.x, min(gs.player.y + 2, 12))
+    if gs.map_key == MAP_KEY_ROUTE_29:
+        return (0, gs.player.y)
+    if gs.map_key == MAP_KEY_NEW_BARK_TOWN:
+        from src.memory.landmarks import (
+            ELMS_LAB_ENTRANCE_ID,
+            find_landmark,
+            landmark_coords,
+            landmark_known,
+        )
+
+        landmarks = list(state.get("known_landmarks", []))
+        if landmark_known(landmarks, ELMS_LAB_ENTRANCE_ID):
+            landmark = find_landmark(landmarks, landmark_id=ELMS_LAB_ENTRANCE_ID)
+            if landmark is not None:
+                return landmark_coords(landmark)
+        return (6, 3)
+    return None
+
+
 def resolve_retired_geography(gs: GameState, state: dict[str, Any] | None = None) -> tuple[int, int] | None:
     """Resolve retired quest geography: landmark coords when map matches, else grid frontier."""
     from src.memory.landmarks import find_landmark, landmark_coords, landmark_known
 
     state = state or {}
+    egg_return = resolve_egg_return_geography(gs, state)
+    if egg_return is not None:
+        return egg_return
     landmark_id = retired_geography_landmark_id(gs, state)
     if landmark_id is None:
         return None

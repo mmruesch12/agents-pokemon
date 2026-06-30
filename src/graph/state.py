@@ -53,6 +53,8 @@ class AgentState(TypedDict, total=False):
     lab_desk_script_seen: bool
     lab_steps_without_party: int
     lab_stall_position: str
+    session_walkable: dict[str, list[tuple[int, int]]]
+    replan_events: list[dict[str, Any]]
     error: str
 
 

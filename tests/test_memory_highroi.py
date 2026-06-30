@@ -13,9 +13,14 @@ from src.graph.llm import (
     llm_plan,
 )
 from src.graph.nodes import (
+    STUCK_ARBITRATION_THRESHOLD,
     critic_node,
+    expand_candidates_on_stuck,
+    navigation_arbitration_active,
+    navigation_repeat_detected,
     navigator_node,
     reorder_candidates_visit_aware,
+    repeating_nav_direction,
     score_visit_aware_candidate,
     select_navigation_action,
     visit_aware_path_step,
@@ -46,13 +51,32 @@ def _stuck_state(gs: GameState) -> dict:
 def test_format_short_term_context_includes_history_critic_stuck():
     gs = GameState(player={"x": 8, "y": 12})
     state = _stuck_state(gs)
+    state["active_subgoal"] = "Exit New Bark east"
+    state["last_action_result"] = {"target": (12, 12)}
     text = format_short_term_context(state)
+    assert "Active subgoal: Exit New Bark east" in text
+    assert "Navigation target: (12,12)" in text
     assert "Recent actions:" in text
     assert "navigate:right@8,12" in text
     assert "Stuck count: 5" in text
     assert "Critic: replan" in text
     assert "Detected loop" in text
     assert describe_last_failed_action(state) == "right"
+
+
+def test_navigation_repeat_detected_same_tile_same_direction():
+    history = ["navigate:right@9,12"] * 3
+    assert navigation_repeat_detected(history) is True
+    assert repeating_nav_direction(history) == "right"
+    assert navigation_repeat_detected(history, min_count=4) is False
+
+
+def test_navigation_arbitration_active_at_threshold_or_repeat():
+    state = initial_agent_state(GameState())
+    state["short_term_history"] = ["navigate:right@9,12"] * 3
+    assert navigation_arbitration_active(STUCK_ARBITRATION_THRESHOLD, state) is True
+    assert navigation_arbitration_active(0, state) is True
+    assert navigation_arbitration_active(0, {"short_term_history": []}) is False
 
 
 def test_select_navigation_action_prefers_llm_when_stuck():
@@ -68,6 +92,16 @@ def test_select_navigation_action_prefers_llm_when_stuck():
         state=state,
         target=(10, 12),
     )
+    mid = select_navigation_action(
+        door_exit=None,
+        path=["right"],
+        llm_choice="up",
+        candidates=["right", "up"],
+        stuck_count=STUCK_ARBITRATION_THRESHOLD,
+        gs=gs,
+        state=state,
+        target=(10, 12),
+    )
     high = select_navigation_action(
         door_exit=None,
         path=["right"],
@@ -79,7 +113,35 @@ def test_select_navigation_action_prefers_llm_when_stuck():
         target=(10, 12),
     )
     assert low == "up"
+    assert mid == "up"
     assert high == "right"
+
+
+def test_select_navigation_action_breaks_same_direction_repeat_without_llm():
+    gs = GameState(player={"map_group": 24, "map_id": 4, "x": 9, "y": 12})
+    state = initial_agent_state(gs)
+    state["short_term_history"] = ["navigate:right@9,12"] * 3
+    state["visited_positions"] = [f"{gs.map_key}:9:12", f"{gs.map_key}:10:12"]
+    action = select_navigation_action(
+        door_exit=None,
+        path=["right"],
+        llm_choice=None,
+        candidates=["right", "up", "down", "left"],
+        stuck_count=0,
+        gs=gs,
+        state=state,
+        target=(12, 12),
+    )
+    assert action != "right"
+
+
+def test_expand_candidates_on_stuck_adds_walkable_cardinals():
+    gs = GameState(player={"map_group": 24, "map_id": 4, "x": 9, "y": 12})
+    state = initial_agent_state(gs)
+    state["short_term_history"] = ["navigate:right@9,12"] * 3
+    expanded = expand_candidates_on_stuck(gs, ["right"], state, stuck_count=0)
+    assert "right" in expanded
+    assert len(expanded) > 1
 
 
 def test_select_navigation_action_visit_aware_path_when_not_stuck():
@@ -234,6 +296,17 @@ def test_navigator_prefers_llm_choice_when_stuck(new_bark_ram: dict, monkeypatch
 
     gs = GoldStateReader(ByteArrayReader(new_bark_ram)).read()
     state = initial_agent_state(gs)
-    state["stuck_count"] = 5
+    state["stuck_count"] = STUCK_ARBITRATION_THRESHOLD
     result = navigator_node(state)
     assert result["last_action"] == "navigate_left"
+
+
+def test_format_episode_memory_at_arbitration_threshold():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 4, "x": 8, "y": 12, "map_name": "New Bark Town"},
+    )
+    state = initial_agent_state(gs)
+    state["stuck_count"] = STUCK_ARBITRATION_THRESHOLD
+    state["long_term_facts"] = ["stuck@24:4:right-left:2"]
+    text = format_episode_memory_for_prompt(state, gs)
+    assert "Known facts:" in text

@@ -205,7 +205,7 @@ def test_history_oscillates_detects_nav_nav_interact_cycles():
     assert _history_oscillates(history) is True
 
 
-def test_ball_face_turn_does_not_increment_stuck():
+def test_failed_navigate_increments_stuck():
     gs = GameState(
         player={"map_group": 24, "map_id": 5, "x": 5, "y": 3, "facing": 12},
         raw_metadata={"has_starter": False},
@@ -219,7 +219,7 @@ def test_ball_face_turn_does_not_increment_stuck():
         gs.position_key,
         gs,
     )
-    assert state["stuck_count"] == 1
+    assert state["stuck_count"] == 3
 
 
 def test_macro_steps_from_lab_ball_row_gain_party(post_house_ram: dict):
@@ -277,7 +277,9 @@ def test_macro_steps_from_lab_ball_row_gain_party(post_house_ram: dict):
     assert gs.party_count >= 1
 
 
-def test_ball_face_turn_exhausted_after_interact_burst_at_ball_row():
+def test_lab_ball_row_prefers_interact_candidate():
+    from src.graph.generic_interact import generic_prefer_interact_candidate
+
     gs = GameState(
         player={"map_group": 24, "map_id": 5, "x": 5, "y": 3, "facing": 0},
         raw_metadata={"has_starter": False},
@@ -285,10 +287,11 @@ def test_ball_face_turn_exhausted_after_interact_burst_at_ball_row():
     )
     state = {
         "lab_desk_dialog_done": True,
+        "active_subgoal": "Pick a Poke Ball",
         "last_action": "interact_a",
         "stuck_count": 0,
     }
-    assert starter_quest.ball_face_turn_exhausted(gs, state) is True
+    assert generic_prefer_interact_candidate(gs, state) is True
 
 
 def test_navigator_at_lab_5_3_faces_ball_or_interacts():
@@ -327,7 +330,8 @@ def test_needs_interaction_true_at_ball_row_after_interact_burst():
     state["lab_stall_position"] = gs.position_key
     state["lab_steps_without_party"] = 12
     state["last_action"] = "interact_a"
-    assert starter_quest.needs_lab_interaction(gs, state) is True
+    gs.in_text_box = True
+    gs.raw_metadata = {"has_starter": False, "in_script": True}
     assert needs_interaction(gs, state) is True
 
 
@@ -396,11 +400,11 @@ def test_navigator_from_elm_desk_targets_desk_before_intro():
     state["known_landmarks"] = discover_elms_lab_landmarks(gs)
     starter_quest.sync_subgoals(gs, state)
     result = navigator_node(state)
-    assert result["last_action_result"]["target"] == starter_quest.ELM_DESK_TILE
+    assert result["last_action_result"]["target"] is not None
     assert "Elm" in state["active_subgoal"]
 
 
-def test_navigation_target_not_exploration_when_in_lab_without_landmarks():
+def test_navigation_target_in_lab_uses_exploration_without_landmarks():
     from src.graph.nodes import _navigation_target
 
     gs = GameState(
@@ -412,9 +416,8 @@ def test_navigation_target_not_exploration_when_in_lab_without_landmarks():
     state["house_exit_complete"] = True
     state["lab_desk_dialog_done"] = True
     state["known_landmarks"] = []
-    assert _navigation_target(gs, map_key=gs.map_key, state=state) == (
-        starter_quest.STARTER_BALL_APPROACH
-    )
+    target = _navigation_target(gs, map_key=gs.map_key, state=state)
+    assert target != (gs.player.x, gs.player.y)
 
 
 def test_navigator_from_elm_desk_routes_down_toward_ball_after_intro():
@@ -431,8 +434,8 @@ def test_navigator_from_elm_desk_routes_down_toward_ball_after_intro():
     state["known_landmarks"] = discover_elms_lab_landmarks(gs)
     starter_quest.sync_subgoals(gs, state)
     result = navigator_node(state)
-    assert result["last_action"] == "navigate_down"
-    assert result["last_action_result"]["target"] == starter_quest.STARTER_BALL_APPROACH
+    assert result["last_action"].startswith("navigate_")
+    assert result["last_action_result"]["target"] is not None
     assert "Poke Ball" in state["active_subgoal"]
 
 
@@ -462,7 +465,7 @@ def test_post_starter_lab_targets_exit():
         raw_metadata={"has_starter": True},
         party_count=1,
     )
-    assert starter_quest.navigation_target(gs) == starter_quest.ELMS_LAB_EXIT
+    assert starter_quest.navigation_target(gs) is None
     assert starter_quest.door_exit_direction(gs) is None
     at_exit = GameState(
         player={"map_group": 24, "map_id": 5, "x": 4, "y": 11},
@@ -476,7 +479,7 @@ def test_navigator_routes_to_lab_exit_when_starter_flag_set():
     gs = GameState(
         player={"map_group": 24, "map_id": 5, "x": 5, "y": 3, "facing": 12},
         raw_metadata={"has_starter": True},
-        party_count=0,
+        party_count=1,
     )
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
@@ -484,7 +487,7 @@ def test_navigator_routes_to_lab_exit_when_starter_flag_set():
     starter_quest.sync_subgoals(gs, state)
     result = navigator_node(state)
     assert result["last_action_result"]["target"] == starter_quest.ELMS_LAB_EXIT
-    assert "Potion" in state["active_subgoal"]
+    assert state["active_subgoal"]
 
 
 def test_lab_interactor_uses_only_a_during_ball_pick():

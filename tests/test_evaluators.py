@@ -7,7 +7,10 @@ from src.eval.evaluators import (
     coherence_score,
     evaluate_against_dataset,
     evaluate_run,
+    phase_coordinate_count,
     progress_per_steps,
+    replan_recovery_rate,
+    stuck_events_per_milestone,
     stuck_frequency,
 )
 from src.graph.state import initial_agent_state
@@ -42,6 +45,20 @@ def test_evaluate_run_returns_all_metrics():
     assert "progress_per_steps" in scores
     assert "stuck_frequency" in scores
     assert "coherence" in scores
+    assert "stuck_events_per_milestone" in scores
+    assert "replan_recovery_rate" in scores
+    assert "phase_coordinate_count" in scores
+    assert scores["phase_coordinate_count"] >= 0
+
+
+def test_phase4_metrics_non_empty():
+    state = initial_agent_state()
+    state["replan_count"] = 2
+    state["milestones"] = ["Left house — New Bark Town"]
+    state["replan_events"] = [{"recovered": True}, {"recovered": False}]
+    assert stuck_events_per_milestone(state) == 2.0
+    assert replan_recovery_rate(state) == 0.5
+    assert phase_coordinate_count() < 50
 
 
 def test_dataset_entries():

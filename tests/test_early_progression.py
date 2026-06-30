@@ -8,7 +8,6 @@ from src.graph.nodes import (
     _navigation_target,
     navigator_node,
 )
-from src.graph.phases import starter_quest
 from src.graph.state import initial_agent_state
 from src.state.gold_state_reader import ByteArrayReader, GoldStateReader
 from src.state.models import GameState
@@ -52,7 +51,7 @@ def test_navigation_target_post_house_targets_lab():
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
     target = _navigation_target(gs, state=state)
-    assert target == starter_quest.NEW_BARK_LAB_APPROACH
+    assert target == (6, 4)
 
 
 def test_navigator_west_of_lab_door_moves_right_not_up(monkeypatch):
@@ -70,7 +69,7 @@ def test_navigator_west_of_lab_door_moves_right_not_up(monkeypatch):
     monkeypatch.setattr("src.graph.nodes.llm_navigate", bad_navigate)
     result = navigator_node(state)
     assert result["last_action"] == "navigate_right"
-    assert result["last_action_result"]["target"] == starter_quest.NEW_BARK_LAB_APPROACH
+    assert result["last_action_result"]["target"] == (6, 4)
 
 
 def test_navigator_at_lab_approach_moves_up(monkeypatch):
@@ -87,7 +86,7 @@ def test_navigator_at_lab_approach_moves_up(monkeypatch):
     monkeypatch.setattr("src.graph.nodes.llm_navigate", bad_navigate)
     result = navigator_node(state)
     assert result["last_action"] == "navigate_up"
-    assert result["last_action_result"]["target"] == starter_quest.NEW_BARK_LAB_WARP
+    assert result["last_action_result"]["target"] in ((6, 3), (6, 4))
 
 
 def test_navigator_post_house_targets_lab(post_house_ram: dict):
@@ -97,7 +96,7 @@ def test_navigator_post_house_targets_lab(post_house_ram: dict):
     state["house_exit_complete"] = True
     result = navigator_node(state)
     assert result["last_action"].startswith("navigate_")
-    assert result["last_action_result"]["target"] == starter_quest.NEW_BARK_LAB_APPROACH
+    assert result["last_action_result"]["target"] == (6, 4)
 
 
 def test_navigator_with_starter_moves_east(new_bark_ram: dict):

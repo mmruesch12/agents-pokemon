@@ -141,15 +141,42 @@ def _is_walkable(
     y: int,
     *,
     goal: tuple[int, int] | None = None,
+    session_walkable: set[tuple[int, int]] | None = None,
 ) -> bool:
-    """Walkable check; defined grids treat out-of-bounds as blocked."""
+    """Walkable check; session overlay expands known tiles from movement outcomes."""
     if goal is not None and (x, y) == goal:
+        return True
+    if session_walkable and (x, y) in session_walkable:
         return True
     if grid is None:
         return True
     if not _in_bounds(grid, x, y):
         return False
     return grid[y][x] == 0
+
+
+def session_walkable_for_map(state: dict | None, map_key: str) -> set[tuple[int, int]]:
+    """Tiles confirmed walkable this session via successful navigation."""
+    if not state:
+        return set()
+    raw = state.get("session_walkable", {}).get(map_key, [])
+    return {tuple(tile) for tile in raw}
+
+
+def record_session_walkable(
+    state: dict,
+    map_key: str,
+    x: int,
+    y: int,
+) -> None:
+    """Mark a tile walkable after a successful move."""
+    session = dict(state.get("session_walkable", {}))
+    tiles = list(session.get(map_key, []))
+    key = (x, y)
+    if key not in tiles:
+        tiles.append(key)
+    session[map_key] = tiles
+    state["session_walkable"] = session
 
 
 def direction_toward(start_x: int, start_y: int, end_x: int, end_y: int) -> str:
@@ -175,12 +202,14 @@ def find_path(
     *,
     map_key: str = "",
     max_steps: int = 50,
+    state: dict | None = None,
 ) -> list[Direction]:
     """A* pathfinding on a collision grid. Returns list of directions."""
     if start_x == end_x and start_y == end_y:
         return []
 
     grid = MAP_GRIDS.get(map_key)
+    session_walkable = session_walkable_for_map(state, map_key)
     goal = (end_x, end_y)
     open_set: list[tuple[int, int, int, list[Direction]]] = []
     heapq.heappush(open_set, (0, start_x, start_y, []))
@@ -200,7 +229,9 @@ def find_path(
             nx, ny = x + dx, y + dy
             if (nx, ny) in visited:
                 continue
-            if not _is_walkable(grid, nx, ny, goal=goal):
+            if not _is_walkable(
+                grid, nx, ny, goal=goal, session_walkable=session_walkable
+            ):
                 continue
             new_path = path + [direction]  # type: ignore[list-item]
             if nx == end_x and ny == end_y:

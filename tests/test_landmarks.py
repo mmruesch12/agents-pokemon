@@ -8,13 +8,8 @@ from pathlib import Path
 from src.graph.exploration import exploration_target
 from src.graph.quest_geography import resolve_retired_geography
 from src.graph.llm import llm_navigate
-from src.graph.nodes import (
-    _gate_starter_quest_target,
-    _navigation_target,
-    memory_node,
-    navigator_node,
-)
-from src.graph.phases import starter_quest
+from src.graph.navigation_resolve import resolve_landmark_navigation_target
+from src.graph.nodes import _navigation_target, memory_node, navigator_node
 from src.graph.state import initial_agent_state
 from src.memory.landmarks import (
     ELMS_LAB_ENTRANCE_ID,
@@ -59,7 +54,7 @@ def test_navigation_without_landmark_uses_quest_hint():
     )
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
-    assert _navigation_target(gs, state=state) == starter_quest.NEW_BARK_LAB_APPROACH
+    assert _navigation_target(gs, state=state) == (6, 4)
     assert not state.get("known_landmarks")
 
 
@@ -79,12 +74,7 @@ def test_gated_phase_target_ignores_landmark_on_wrong_map():
     }
     from src.graph.exploration import gated_phase_target
 
-    target = gated_phase_target(
-        gs,
-        starter_quest.NEW_BARK_LAB_WARP,
-        state=state,
-        landmark_id=ELMS_LAB_ENTRANCE_ID,
-    )
+    target = gated_phase_target(gs, (6, 3), state=state, landmark_id=ELMS_LAB_ENTRANCE_ID)
     assert target != (6, 3)
 
 
@@ -125,7 +115,7 @@ def test_navigation_uses_discovered_entrance_landmark():
             kind="building_entrance",
         )
     ]
-    assert _navigation_target(gs, state=state) == starter_quest.NEW_BARK_LAB_APPROACH
+    assert _navigation_target(gs, state=state) == (6, 4)
 
 
 def test_normalize_elms_lab_entrance_snaps_adjacent_tiles():
@@ -208,7 +198,7 @@ def test_navigator_attaches_landmark_context(monkeypatch):
     monkeypatch.setattr("src.graph.nodes.llm_navigate", fake_navigate)
     navigator_node(state)
     assert captured["landmarks"]
-    assert captured["target"] == starter_quest.NEW_BARK_LAB_APPROACH
+    assert captured["target"] == (6, 4)
 
 
 def test_llm_navigate_prompt_includes_landmarks(monkeypatch):
@@ -241,19 +231,16 @@ def test_llm_navigate_prompt_includes_landmarks(monkeypatch):
     assert "Known landmarks" in prompts[0]
 
 
-def test_interior_target_gated_until_lab_discovered():
+def test_landmark_navigation_falls_back_to_exploration_without_entrance():
     gs = GameState(
-        player={"map_group": 24, "map_id": 5, "x": 4, "y": 8},
+        player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         raw_metadata={"has_starter": False},
     )
-    assert _gate_starter_quest_target(gs, starter_quest.STARTER_BALL_TILE, state={}) != (
-        starter_quest.STARTER_BALL_TILE
-    )
-    state = {"known_landmarks": discover_elms_lab_landmarks(gs)}
-    assert (
-        _gate_starter_quest_target(gs, starter_quest.STARTER_BALL_TILE, state=state)
-        == starter_quest.STARTER_BALL_TILE
-    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    target = resolve_landmark_navigation_target(gs, state)
+    assert target is not None
+    assert target == (6, 4)
 
 
 def test_discover_quest_transition_landmarks_east_exit():
@@ -287,7 +274,7 @@ def test_discover_mr_pokemon_entrance_on_interior_map():
     landmark = discover_mr_pokemon_entrance_landmark(gs)
     assert landmark["id"] == MR_POKEMONS_HOUSE_ENTRANCE_ID
     assert landmark["map_key"] == MAP_KEY_MR_POKEMONS_HOUSE
-    assert (landmark["x"], landmark["y"]) == starter_quest.MR_POKEMON_DOOR
+    assert (landmark["x"], landmark["y"]) == (5, 5)
 
 
 def test_memory_node_discovers_mr_pokemon_entrance_on_first_visit(monkeypatch):
@@ -306,7 +293,7 @@ def test_memory_node_discovers_mr_pokemon_entrance_on_first_visit(monkeypatch):
         if entry.get("id") == MR_POKEMONS_HOUSE_ENTRANCE_ID
     )
     assert entrance["map_key"] == MAP_KEY_MR_POKEMONS_HOUSE
-    assert (entrance["x"], entrance["y"]) == starter_quest.MR_POKEMON_DOOR
+    assert (entrance["x"], entrance["y"]) == (5, 5)
 
 
 def test_exploration_target_resolves_east_exit_without_landmark():
@@ -403,8 +390,8 @@ def test_hydrate_mr_entrance_enables_interior_navigation():
                 landmark_id=MR_POKEMONS_HOUSE_ENTRANCE_ID,
                 name="Mr. Pokemon's House entrance",
                 map_key=MAP_KEY_MR_POKEMONS_HOUSE,
-                x=starter_quest.MR_POKEMON_DOOR[0],
-                y=starter_quest.MR_POKEMON_DOOR[1],
+                x=5,
+                y=5,
                 kind="building_entrance",
             )
         )
@@ -416,8 +403,8 @@ def test_hydrate_mr_entrance_enables_interior_navigation():
         assert landmark["map_key"] == MAP_KEY_MR_POKEMONS_HOUSE
         assert gated_phase_target(
             gs, None, state=hydrated, landmark_id=MR_POKEMONS_HOUSE_ENTRANCE_ID
-        ) == starter_quest.MR_POKEMON_DOOR
-        assert _navigation_target(gs, state=hydrated) == starter_quest.MR_POKEMON_DOOR
+        ) == (5, 5)
+        assert _navigation_target(gs, state=hydrated) == (5, 5)
 
 
 def test_mr_entrance_discovery_persists_and_hydrates(monkeypatch):
@@ -440,7 +427,7 @@ def test_mr_entrance_discovery_persists_and_hydrates(monkeypatch):
             entry.get("id") == MR_POKEMONS_HOUSE_ENTRANCE_ID
             for entry in hydrated.get("known_landmarks", [])
         )
-        assert _navigation_target(gs, state=hydrated) == starter_quest.MR_POKEMON_DOOR
+        assert _navigation_target(gs, state=hydrated) == (5, 5)
 
 
 def test_memory_node_discovers_east_exit_on_route_transition(monkeypatch):
@@ -500,6 +487,6 @@ def test_exploration_hint_targets_lab_warp():
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
     assert (
-        exploration_target(gs, state, hint_tile=starter_quest.NEW_BARK_LAB_WARP)
-        == starter_quest.NEW_BARK_LAB_WARP
+        exploration_target(gs, state, hint_tile=(6, 3))
+        == (6, 3)
     )

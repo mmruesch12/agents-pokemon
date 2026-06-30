@@ -28,19 +28,44 @@ def exploration_hint_tile(state: dict[str, Any], gs: GameState):
     if not state.get("house_exit_complete"):
         return None
     from src.graph.phases import starter_quest
-    from src.memory.landmarks import ELMS_LAB_ENTRANCE_ID, landmark_known
+    from src.memory.landmarks import (
+        ELMS_LAB_ENTRANCE_ID,
+        landmark_coords,
+        landmark_known,
+        retrieve_landmarks_from_state,
+    )
 
     if not starter_quest.in_starter_quest(gs, state):
         return None
     text = exploration_hint_text(state, gs).lower()
     landmarks = list(state.get("known_landmarks", []))
-    if (
-        gs.map_key == "24:4"
-        and not landmark_known(landmarks, ELMS_LAB_ENTRANCE_ID)
-        and not starter_quest.has_starter(gs)
-    ):
+    if gs.map_key == "24:4" and not starter_quest.has_starter(gs):
+        if landmark_known(landmarks, ELMS_LAB_ENTRANCE_ID):
+            entry = retrieve_landmarks_from_state(
+                landmarks, "elm lab entrance", k=1
+            )[0]
+            return landmark_coords(entry)
         if "lab" in text or "elm" in text or "starter" in text:
-            return starter_quest.NEW_BARK_LAB_WARP
+            return (6, 3)
+    if starter_quest._has_egg(gs) and not starter_quest._egg_delivered(gs):
+        if gs.map_key == "24:4":
+            return (6, 3)
+        if gs.map_key == "24:5":
+            return (4, 2)
+        if gs.map_key == "26:10":
+            return (5, 8)
+        if gs.map_key == "26:1":
+            return (gs.player.x, min(gs.player.y + 2, 12))
+    if gs.map_key == "24:5" and starter_quest.starter_flag_set(gs) and not starter_quest._has_egg(gs):
+        return starter_quest.ELMS_LAB_EXIT
+    if gs.map_key == "24:5" and not starter_quest.has_starter(gs):
+        if state.get("lab_desk_dialog_done") or "poke ball" in text:
+            return (5, 3)
+        if "elm" in text:
+            if gs.player.y > 3:
+                return (4, 3)
+            if gs.player.x < 5:
+                return (5, 3)
     return None
 
 
@@ -65,7 +90,14 @@ def exploration_target(
         if resolved is not None:
             return resolved
     if hint_tile is not None:
-        path = find_path(gs.player.x, gs.player.y, hint_tile[0], hint_tile[1], map_key=gs.map_key)
+        path = find_path(
+            gs.player.x,
+            gs.player.y,
+            hint_tile[0],
+            hint_tile[1],
+            map_key=gs.map_key,
+            state=state,
+        )
         if path or (gs.player.x, gs.player.y) != hint_tile:
             return hint_tile
     visited = {k for k in state.get("visited_positions", []) if k.startswith(f"{gs.map_key}:")}
@@ -84,7 +116,12 @@ def exploration_target(
                 best_score, best_unvisited = score, (x, y)
         for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
             nx, ny = x + dx, y + dy
-            if (nx, ny) in visited_search or not _is_walkable(grid, nx, ny):
+            from src.graph.pathfinding import session_walkable_for_map
+
+            session_walkable = session_walkable_for_map(state, gs.map_key)
+            if (nx, ny) in visited_search or not _is_walkable(
+                grid, nx, ny, session_walkable=session_walkable
+            ):
                 continue
             visited_search.add((nx, ny))
             heapq.heappush(open_set, (dist + 1, nx, ny, dist + 1))

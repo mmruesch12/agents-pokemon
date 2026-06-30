@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from src.graph.pathfinding import direction_toward, find_path, direction_to_button
-from src.graph.phases import starter_quest
+
 
 
 def test_find_path_same_position():
@@ -67,7 +67,8 @@ def test_elms_lab_ball_tiles_blocked_in_grid():
     for bx in (6, 7, 8):
         assert grid[3][bx] == 1
     path = find_path(4, 2, 5, 3, map_key="24:5")
-    assert all(pos not in starter_quest.STARTER_BALL_TILES for pos in _positions_after(4, 2, path))
+    ball_tiles = ((6, 3), (7, 3), (8, 3))
+    assert all(pos not in ball_tiles for pos in _positions_after(4, 2, path))
 
 
 def test_elms_lab_desk_to_ball_approach_avoids_elm():

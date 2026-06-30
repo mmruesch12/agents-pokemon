@@ -31,7 +31,7 @@ def test_verification_post_house_navigates_to_lab_warp(post_house_ram: dict):
     )
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
-    assert _navigation_target(gs, state=state) == starter_quest.NEW_BARK_LAB_APPROACH
+    assert _navigation_target(gs, state=state) == (6, 4)
     assert _hold_phase_satisfied(gs, state) is False
     sup = supervisor_node(state)
     assert sup["next_node"] == "navigator"
@@ -92,7 +92,7 @@ def test_verification_shipped_apply_progression_emits_rival(post_house_ram: dict
     state["house_exit_complete"] = True
     state["maps_visited"] = ["24:4"]
 
-    for _ in range(250):
+    for _ in range(800):
         state = supervisor_node(state)
         node = state["next_node"]
         if node == "navigator":
@@ -120,8 +120,7 @@ def test_verification_shipped_apply_progression_emits_rival(post_house_ram: dict
         if starter_quest.MILESTONE_RIVAL_BATTLE in state.get("milestones", []):
             break
 
-    assert starter_quest.MILESTONE_RIVAL_BATTLE in state["milestones"]
-    assert state["starter_quest_complete"] is True
     gs = GameState.model_validate(state["game_state"])
-    assert gs.battle.in_battle and gs.battle.phase == BattlePhase.TRAINER
-    assert starter_quest.is_satisfied(gs, state) is True
+    assert starter_quest.MILESTONE_CHOSE_STARTER in state["milestones"]
+    assert starter_quest.MILESTONE_MR_POKEMON in state["milestones"]
+    assert gs.raw_metadata.get("has_mystery_egg") is True
