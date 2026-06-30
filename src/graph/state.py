@@ -47,6 +47,12 @@ class AgentState(TypedDict, total=False):
     bootstrap_action_index: int
     house_exit_complete: bool
     starter_quest_complete: bool
+    early_progression_complete: bool
+    lab_desk_dialog_done: bool
+    lab_desk_interact_count: int
+    lab_desk_script_seen: bool
+    lab_steps_without_party: int
+    lab_stall_position: str
     error: str
 
 
@@ -90,6 +96,7 @@ def initial_agent_state(game_state: GameState | dict | None = None) -> AgentStat
         bootstrap_action_index=0,
         house_exit_complete=False,
         starter_quest_complete=False,
+        early_progression_complete=False,
         error="",
     )
 

@@ -129,6 +129,7 @@ def test_resolve_retired_geography_matrix(gs_kwargs, landmarks, expected):
     gs = GameState(
         player=gs_kwargs,
         raw_metadata={"has_starter": True},
+        party_count=1,
     )
     state = _state(landmarks=landmarks)
     assert resolve_retired_geography(gs, state) == expected
@@ -146,6 +147,7 @@ def test_resolve_retired_geography_no_recursion_on_wrong_map_landmark():
     gs = GameState(
         player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
         raw_metadata={"has_starter": True},
+        party_count=1,
     )
     state = _state(
         landmarks=[

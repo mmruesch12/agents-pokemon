@@ -67,16 +67,16 @@ MAP_GRIDS: dict[str, list[list[int]]] = {
         [
             "1111111111",  # y=0 desks
             "1110111111",  # y=1
-            "0000000000",  # y=2 Elm at (5,2)
-            "0000000000",  # y=3 balls at (6,3)/(7,3)/(8,3) — interact targets
+            "0000010000",  # y=2 Elm at (5,2) — blocked for routing around desk
+            "0000001110",  # y=3 balls at (6,3)/(7,3)/(8,3) — blocked; interact from side
             "0000000000",  # y=4
             "0000000000",  # y=5
-            "0000110000",  # y=6 blocked exit (4,6)/(5,6) pre-starter
+            "0010000000",  # y=6 (3,6) ROM dead-end; (4,6)/(5,6) gated at runtime
             "0000000000",  # y=7
             "0000000000",  # y=8 aide at (4,8)/(5,8)
             "0000000000",  # y=9
             "0000000000",  # y=10
-            "0000110000",  # y=11 exit warp (4,11)/(5,11)
+            "0000000000",  # y=11 exit warp (4,11)/(5,11) — walkable
         ]
     ),
     "24:3": _grid_from_rows(

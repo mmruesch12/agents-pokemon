@@ -19,9 +19,9 @@ def test_route_29_subgoals():
         player={"map_group": 24, "map_id": 3, "x": 10, "y": 20},
         raw_metadata={"has_starter": True},
     )
-    state = {"house_exit_complete": True}
+    state = {"house_exit_complete": True, "starter_quest_complete": True}
     subgoals = _decompose_subgoals(gs, state)
-    assert any("Route 29" in s or "Cherrygrove" in s or "Mr. Pokemon" in s for s in subgoals)
+    assert any("Route 29" in s or "Cherrygrove" in s for s in subgoals)
 
 
 def test_navigation_target_route_29():
@@ -29,7 +29,7 @@ def test_navigation_target_route_29():
         player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
         raw_metadata={"has_starter": True},
     )
-    state = {"house_exit_complete": True}
+    state = {"house_exit_complete": True, "starter_quest_complete": True}
     target = _navigation_target(gs, state=state)
     assert target[1] < gs.player.y
 

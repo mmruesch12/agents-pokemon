@@ -64,12 +64,14 @@ def test_navigation_targets_route_maps_retired_from_phase():
     gs_route29 = GameState(
         player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
         raw_metadata={"has_starter": True},
+        party_count=1,
     )
     assert starter_quest.navigation_target(gs_route29) is None
 
     gs_route30 = GameState(
         player={"map_group": 26, "map_id": 1, "x": 10, "y": 8},
         raw_metadata={"has_starter": True},
+        party_count=1,
     )
     assert starter_quest.navigation_target(gs_route30) is None
 
@@ -78,6 +80,7 @@ def test_post_starter_new_bark_east_exit_retired_without_landmark():
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         raw_metadata={"has_starter": True},
+        party_count=1,
     )
     from src.graph.nodes import _navigation_target
 
@@ -95,6 +98,7 @@ def test_post_starter_new_bark_uses_east_exit_landmark():
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         raw_metadata={"has_starter": True},
+        party_count=1,
     )
     state = {
         "house_exit_complete": True,
@@ -147,7 +151,7 @@ def test_shipped_nodes_progress_post_house_to_rival_battle(post_house_ram: dict)
     assert gs_final.battle.in_battle is True
     assert gs_final.battle.phase == BattlePhase.TRAINER
     assert state["starter_quest_complete"] is True
-    assert _hold_phase_satisfied(gs_final, state) is True
+    assert _hold_phase_satisfied(gs_final, state) is False
 
 
 def test_memory_node_rival_milestone_from_constructed_lab_battle(battle_ram: dict):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Any
@@ -10,8 +11,8 @@ from src.emulator.bootstrap import needs_bootstrap, pick_bootstrap_button
 from src.graph.exploration import exploration_target, gated_phase_target
 from src.graph.quest_geography import resolve_retired_geography
 from src.graph.llm import llm_battle, llm_navigate, llm_plan
-from src.graph.pathfinding import direction_toward, find_path
-from src.graph.phases import house_exit, starter_quest
+from src.graph.pathfinding import MAP_GRIDS, _is_walkable, direction_toward, find_path
+from src.graph.phases import early_progression, house_exit, starter_quest
 from src.graph.state import AgentState, update_game_state
 from src.memory.landmarks import (
     ELMS_LAB_ENTRANCE_ID,
@@ -32,6 +33,7 @@ from src.memory.landmarks import (
 )
 from src.memory.long_term_memory import LongTermMemory
 from src.state.gold_state_reader import (
+    MAP_KEY_CHERRYGROVE_CITY,
     MAP_KEY_ELMS_LAB,
     MAP_KEY_MR_POKEMONS_HOUSE,
     MAP_KEY_NEW_BARK_TOWN,
@@ -52,7 +54,8 @@ from src.state.script_constants import (
 logger = logging.getLogger(__name__)
 
 STUCK_THRESHOLD = int(os.getenv("STUCK_THRESHOLD", "10"))
-STUCK_ARBITRATION_THRESHOLD = 3
+STUCK_ARBITRATION_THRESHOLD = int(os.getenv("STUCK_ARBITRATION_THRESHOLD", "2"))
+NAVIGATION_REPEAT_THRESHOLD = int(os.getenv("NAVIGATION_REPEAT_THRESHOLD", "3"))
 INTERACT_HOLD_FRAMES = int(os.getenv("INTERACT_HOLD_FRAMES", "30"))
 SCRIPT_WAIT_TICKS = int(os.getenv("SCRIPT_WAIT_TICKS", "45"))
 
@@ -65,7 +68,12 @@ _DIRECTION_DELTA = {
 _OPPOSITE_DIRECTIONS = frozenset({("left", "right"), ("right", "left"), ("up", "down"), ("down", "up")})
 
 _LANDMARK_GATED_INTERIOR_TARGETS = frozenset(
-    {starter_quest.STARTER_BALL_TILE, starter_quest.ELM_DESK_TILE}
+    {
+        starter_quest.STARTER_BALL_TILE,
+        starter_quest.STARTER_BALL_APPROACH,
+        starter_quest.ELM_DESK_TILE,
+        *starter_quest.STARTER_BALL_TILES,
+    }
 )
 _LAB_DOOR_TILES = frozenset({starter_quest.NEW_BARK_LAB_WARP, (5, 3)})
 
@@ -100,6 +108,77 @@ def score_visit_aware_candidate(
     return score
 
 
+def _parse_history_entry(item: str) -> tuple[str, str, str | None] | None:
+    """Return (kind, payload, position) for navigate:/interact: history entries."""
+    if "@" not in item or ":" not in item:
+        return None
+    action, pos = item.split("@", 1)
+    kind, payload = action.split(":", 1)
+    return kind, payload, pos
+
+
+def repeating_nav_direction(history: list[str], *, min_count: int | None = None) -> str | None:
+    """Direction repeated at the same tile (e.g. teacher gate blocking east)."""
+    min_count = NAVIGATION_REPEAT_THRESHOLD if min_count is None else min_count
+    if len(history) < min_count:
+        return None
+    parsed: list[tuple[str, str]] = []
+    for item in history[-min_count:]:
+        entry = _parse_history_entry(item)
+        if entry is None or entry[0] != "navigate":
+            return None
+        parsed.append((entry[1], entry[2] or ""))
+    positions = {pos for _, pos in parsed}
+    directions = [direction for direction, _ in parsed]
+    if len(positions) != 1 or len(set(directions)) != 1:
+        return None
+    return directions[0]
+
+
+def navigation_repeat_detected(
+    history: list[str],
+    *,
+    min_count: int | None = None,
+) -> bool:
+    return repeating_nav_direction(history, min_count=min_count) is not None
+
+
+def navigation_arbitration_active(stuck_count: int, state: AgentState) -> bool:
+    """True when navigator should override blind path[0] (M11)."""
+    history = state.get("short_term_history", [])
+    return stuck_count >= STUCK_ARBITRATION_THRESHOLD or navigation_repeat_detected(history)
+
+
+def walkable_cardinal_candidates(gs: GameState) -> list[str]:
+    """Adjacent walkable directions from the pathfinding grid (M4 loop expansion)."""
+    grid = MAP_GRIDS.get(gs.map_key)
+    candidates: list[str] = []
+    for direction, (dx, dy) in _DIRECTION_DELTA.items():
+        nx, ny = gs.player.x + dx, gs.player.y + dy
+        if direction == "up" and _blocked_stairs_up(gs):
+            continue
+        if _is_walkable(grid, nx, ny):
+            candidates.append(direction)
+    return candidates
+
+
+def expand_candidates_on_stuck(
+    gs: GameState,
+    candidates: list[str],
+    state: AgentState,
+    *,
+    stuck_count: int,
+) -> list[str]:
+    """Add walkable cardinals when stuck or repeating so visit-aware can break loops."""
+    if not navigation_arbitration_active(stuck_count, state):
+        return candidates
+    merged = list(candidates)
+    for direction in walkable_cardinal_candidates(gs):
+        if direction not in merged:
+            merged.append(direction)
+    return list(dict.fromkeys(merged))
+
+
 def reorder_candidates_visit_aware(
     gs: GameState,
     candidates: list[str],
@@ -126,6 +205,9 @@ def visit_aware_path_step(
     return ranked[0] if ranked else path[0]
 
 
+_FACING_TO_DIRECTION = {0: "down", 4: "up", 8: "left", 12: "right"}
+
+
 def select_navigation_action(
     *,
     door_exit: str | None,
@@ -140,24 +222,52 @@ def select_navigation_action(
     """Pick direction: door priority, stuck override, visit-aware path, LLM, fallback."""
     if door_exit:
         return door_exit
-    stuck_override = (
-        stuck_count >= STUCK_ARBITRATION_THRESHOLD
-        and llm_choice
-        and llm_choice in candidates
+    face_ball = starter_quest.starter_ball_face_direction(gs)
+    if face_ball and starter_quest.can_interact_starter_ball(gs):
+        facing_dir = starter_quest.player_facing_direction(gs)
+        if facing_dir != face_ball and not starter_quest.ball_face_turn_exhausted(
+            gs, state
+        ):
+            return face_ball
+        if "a" in candidates:
+            return "a"
+        if starter_quest.ball_face_turn_exhausted(gs, state):
+            return "a"
+        if target == (gs.player.x, gs.player.y):
+            return face_ball
+    arbitrate = navigation_arbitration_active(stuck_count, state)
+    if arbitrate and llm_choice and llm_choice in candidates:
+        return llm_choice
+    if arbitrate:
+        repeat_dir = repeating_nav_direction(state.get("short_term_history", []))
+        pool = [c for c in candidates if c not in {"a", repeat_dir}] or candidates
+        ranked = reorder_candidates_visit_aware(gs, pool, state)
+        if ranked and ranked[0] != "a":
+            return ranked[0]
+    quest_exit = (
+        target == starter_quest.ELMS_LAB_EXIT
+        and starter_quest.starter_flag_set(gs)
+        and gs.map_key == MAP_KEY_ELMS_LAB
     )
-    if stuck_override:
-        return llm_choice
     if path:
+        if quest_exit and not arbitrate:
+            return path[0]
         return visit_aware_path_step(path, gs, state) or path[0]
-    if llm_choice and llm_choice in candidates:
+    if llm_choice and llm_choice in candidates and llm_choice != "a":
         return llm_choice
-    return direction_toward(gs.player.x, gs.player.y, target[0], target[1])
+    toward = direction_toward(gs.player.x, gs.player.y, target[0], target[1])
+    if toward != "a":
+        return toward
+    for step in candidates:
+        if step != "a":
+            return step
+    return "down"
 
 
 def _capture_stuck_episode(state: AgentState, gs: GameState) -> None:
     try:
         _long_term_memory().capture_stuck_episode(state, gs)
-    except OSError as exc:
+    except (OSError, json.JSONDecodeError) as exc:
         logger.warning("Could not capture stuck episode: %s", exc)
 
 
@@ -190,6 +300,8 @@ def _gate_starter_quest_target(
             )
         return starter_quest.lab_entry_navigation_target(gs, door=door)
     if quest_target in _LANDMARK_GATED_INTERIOR_TARGETS:
+        if gs.map_key == MAP_KEY_ELMS_LAB and starter_quest.in_starter_quest(gs, state):
+            return quest_target
         if landmark_known(landmarks, ELMS_LAB_INTERIOR_ID):
             return quest_target
         return exploration_target(gs, state)
@@ -230,6 +342,7 @@ EARLY_GAME_OBJECTIVES = {
     MAP_KEY_NEW_BARK_TOWN: "Visit Professor Elm's lab and choose a starter Pokemon",
     "24:5": "Talk to Elm, choose a starter Pokemon, receive Potion",
     MAP_KEY_ROUTE_29: "Travel north through Route 29 toward Cherrygrove City",
+    MAP_KEY_CHERRYGROVE_CITY: "Explore Cherrygrove and continue toward Violet City",
     "26:10": "Talk to Mr. Pokemon and receive the Mystery Egg from Oak",
     "1:2": "Visit Pokemon Center and continue toward Violet City",
     "1:4": "Challenge Violet City gym (first badge goal)",
@@ -240,7 +353,9 @@ def _hold_phase_satisfied(gs: GameState, state: AgentState) -> bool:
     """Terminal idle only when the active early-game phase goal is complete."""
     if not state.get("house_exit_complete"):
         return house_exit.is_satisfied(gs, state)
-    return starter_quest.is_satisfied(gs, state)
+    if not state.get("starter_quest_complete"):
+        return starter_quest.is_satisfied(gs, state)
+    return early_progression.is_satisfied(gs, state)
 
 
 def supervisor_node(state: AgentState) -> AgentState:
@@ -252,17 +367,28 @@ def supervisor_node(state: AgentState) -> AgentState:
         state["phase"] = "bootstrap"
     elif _hold_phase_satisfied(gs, state):
         state["next_node"] = "idle"
-        state["phase"] = (
-            "starter_quest_done"
-            if state.get("house_exit_complete")
-            else "house_exit_done"
-        )
+        if not state.get("house_exit_complete"):
+            state["phase"] = "house_exit_done"
+        elif early_progression.is_satisfied(gs, state):
+            state["phase"] = "early_progression_done"
+        else:
+            state["phase"] = "starter_quest_done"
     elif gs.battle.in_battle:
         state["next_node"] = "battler"
         state["phase"] = "battle"
     elif needs_script_wait(gs, state):
         state["next_node"] = "waiter"
         state["phase"] = "wait"
+    elif state.get("should_replan") and (
+        not starter_quest.lab_scene_pending(gs)
+        or starter_quest.lab_party_stall_detected(gs, state)
+        or (
+            gs.map_key == MAP_KEY_ELMS_LAB
+            and not starter_quest.has_starter(gs)
+            and state.get("stuck_count", 0) >= starter_quest.INDOOR_INTERACT_STUCK
+        )
+    ):
+        state["next_node"] = "planner"
     elif needs_interaction(gs, state):
         state["next_node"] = "interactor"
         state["phase"] = "interact"
@@ -314,6 +440,18 @@ def needs_interaction(gs: GameState, state: dict | None = None) -> bool:
     state = state or {}
     if gs.battle.in_battle or needs_bootstrap(gs, state) or needs_script_wait(gs, state):
         return False
+    starter_quest.ensure_house_exit_complete(gs, state)
+    if gs.map_key == MAP_KEY_ELMS_LAB and not starter_quest.has_starter(gs):
+        if starter_quest.lab_ball_picking_active(gs, state):
+            return True
+        directive = starter_quest.resolve_lab_pre_starter(gs, state)
+        if directive:
+            if directive.phase == starter_quest.LabPhase.BALL_APPROACH:
+                return False
+            if directive.phase == starter_quest.LabPhase.BALL_INTERACT:
+                return True
+            if directive.force_interact:
+                return True
     meta = gs.raw_metadata or {}
     joypad_disable = meta.get("joypad_disable", 0)
     blocked = joypad_input_blocked(joypad_disable)
@@ -323,7 +461,7 @@ def needs_interaction(gs: GameState, state: dict | None = None) -> bool:
         return True
     if house_exit.needs_house_interaction(gs, state):
         return True
-    if state.get("house_exit_complete"):
+    if state.get("house_exit_complete") or gs.map_key == MAP_KEY_ELMS_LAB:
         return starter_quest.needs_lab_interaction(gs, state)
     return False
 
@@ -341,19 +479,41 @@ def waiter_node(state: AgentState) -> AgentState:
         "post_warp_remaining": state.get("post_warp_wait_steps", 0),
     }
     state["position_before_action"] = gs.position_key
+    state["facing_before_action"] = gs.player.facing
     state["next_node"] = "critic"
     return state
+
+
+def _lab_interact_button_only(gs: GameState, state: AgentState) -> bool:
+    """Gen 2 lab dialogs break on B — mash A through desk, ball, and nickname."""
+    if gs.map_key != MAP_KEY_ELMS_LAB:
+        return False
+    if starter_quest.lab_desk_intro_active(gs, state):
+        return True
+    if starter_quest.lab_ball_picking_active(gs, state):
+        return True
+    if starter_quest.starter_pick_dialog_active(gs):
+        return True
+    if starter_quest.starter_flag_set(gs) and (
+        gs.in_text_box or gs.player.y >= 7
+    ):
+        return True
+    return False
 
 
 def interactor_node(state: AgentState) -> AgentState:
     """Advance dialog and scripted indoor scenes with A/B."""
     gs = GameState.model_validate(state.get("game_state", {}))
     idx = state.get("interact_action_index", 0)
-    button = "a" if idx % 8 != 7 else "b"
+    if _lab_interact_button_only(gs, state):
+        button = "a"
+    else:
+        button = "a" if idx % 8 != 7 else "b"
     state["interact_action_index"] = idx + 1
     state["last_action"] = f"interact_{button}"
     state["last_action_result"] = {"button": button, "interact_index": idx}
     state["position_before_action"] = gs.position_key
+    state["facing_before_action"] = gs.player.facing
     history = list(state.get("short_term_history", []))
     history.append(f"interact:{button}@{gs.player.x},{gs.player.y}")
     state["short_term_history"] = history[-20:]
@@ -383,7 +543,10 @@ def bootstrap_node(state: AgentState) -> AgentState:
 def idle_node(state: AgentState) -> AgentState:
     """Terminal phase state: no further navigation input."""
     gs = GameState.model_validate(state.get("game_state", {}))
-    if starter_quest.is_satisfied(gs, state):
+    if early_progression.is_satisfied(gs, state):
+        action = early_progression.EARLY_PROGRESSION_DONE_ACTION
+        reason = "early_progression_satisfied"
+    elif starter_quest.is_satisfied(gs, state):
         action = starter_quest.STARTER_QUEST_DONE_ACTION
         reason = "starter_quest_satisfied"
     else:
@@ -409,6 +572,8 @@ def planner_node(state: AgentState) -> AgentState:
     allows_llm = house_exit.planner_allows_llm(gs, state)
     if state.get("house_exit_complete"):
         allows_llm = allows_llm and starter_quest.planner_allows_llm(gs, state)
+    if state.get("starter_quest_complete"):
+        allows_llm = allows_llm and early_progression.planner_allows_llm(gs, state)
     if allows_llm:
         llm_result = llm_plan(gs, state, relevant_landmarks)
     if llm_result and llm_result.get("subgoals"):
@@ -430,6 +595,29 @@ def planner_node(state: AgentState) -> AgentState:
         state["active_subgoal"] = subgoals[idx]
 
     state["should_replan"] = False
+    state["last_action"] = "plan_replan"
+    state["last_action_result"] = {"subgoals": subgoals}
+    if gs.map_key == MAP_KEY_ELMS_LAB and not starter_quest.has_starter(gs):
+        directive = starter_quest.resolve_lab_pre_starter(gs, state)
+        preserve_stuck = (
+            directive is not None
+            and directive.phase == starter_quest.LabPhase.BALL_INTERACT
+            and starter_quest.can_interact_starter_ball(gs)
+        )
+        state["lab_steps_without_party"] = 0
+        state["lab_stall_position"] = gs.position_key
+        state["short_term_history"] = []
+        if not preserve_stuck:
+            state["stuck_count"] = 0
+        if directive and directive.phase in (
+            starter_quest.LabPhase.DESK,
+            starter_quest.LabPhase.BALL_INTERACT,
+            starter_quest.LabPhase.WAIT_SCRIPT,
+        ):
+            state["phase"] = "interact"
+            state["next_node"] = "interactor"
+            starter_quest.sync_subgoals(gs, state)
+            return state
     state["phase"] = "explore"
     state["next_node"] = "navigator"
     return state
@@ -440,12 +628,14 @@ def _decompose_subgoals(gs: GameState, state: AgentState | None = None) -> list[
     house = house_exit.decompose_subgoals(gs)
     if house:
         return house
-    if state.get("house_exit_complete"):
+    if state.get("house_exit_complete") and not state.get("starter_quest_complete"):
         quest = starter_quest.decompose_subgoals(gs)
         if quest:
             return quest
-    if gs.map_key == "24:3":
-        return ["Travel north on Route 29", "Reach Cherrygrove City"]
+    if state.get("starter_quest_complete"):
+        progress = early_progression.decompose_subgoals(gs)
+        if progress:
+            return progress
     if gs.battle.in_battle:
         return ["Win battle or run if low HP"]
     return ["Explore current map", "Progress toward next town"]
@@ -476,12 +666,13 @@ def navigator_node(state: AgentState) -> AgentState:
     target = _navigation_target(gs, map_key=map_key, state=state)
     path = find_path(gs.player.x, gs.player.y, target[0], target[1], map_key=map_key)
     candidates = _navigation_candidates(gs, target, path, state)
+    stuck_count = state.get("stuck_count", 0)
+    candidates = expand_candidates_on_stuck(gs, candidates, state, stuck_count=stuck_count)
     candidates = reorder_candidates_visit_aware(gs, candidates, state)
 
     door_exit = _players_house_door_exit(gs, state)
     llm_choice = llm_navigate(gs, state, candidates, relevant_landmarks, target=target)
-    stuck_count = state.get("stuck_count", 0)
-    if stuck_count >= STUCK_ARBITRATION_THRESHOLD and candidates:
+    if navigation_arbitration_active(stuck_count, state) and candidates:
         if llm_choice not in candidates:
             llm_choice = candidates[0]
     action = select_navigation_action(
@@ -506,6 +697,7 @@ def navigator_node(state: AgentState) -> AgentState:
         "candidates": candidates,
     }
     state["position_before_action"] = gs.position_key
+    state["facing_before_action"] = gs.player.facing
     state["next_node"] = "critic"
     return state
 
@@ -537,7 +729,7 @@ def _navigation_candidates(
         candidates.append(primary)
     if (
         house_exit.prefer_interact_candidate(gs)
-        or starter_quest.prefer_interact_candidate(gs)
+        or starter_quest.prefer_interact_candidate(gs, state)
         or _lab_door_interact_candidate(gs, state)
     ):
         candidates.insert(0, "a")
@@ -567,6 +759,18 @@ def _navigation_target(
     phase_target = house_exit.navigation_target(gs, map_key=map_key, state=state)
     if phase_target is not None:
         return phase_target
+    if map_key == MAP_KEY_ELMS_LAB:
+        quest_target = starter_quest.navigation_target(
+            gs, map_key=map_key, state=state or {}
+        )
+        if quest_target is not None:
+            return _gate_starter_quest_target(gs, quest_target, state=state)
+    if state and state.get("starter_quest_complete"):
+        progress_target = early_progression.navigation_target(
+            gs, map_key=map_key, state=state
+        )
+        if progress_target is not None:
+            return progress_target
     if state and state.get("house_exit_complete"):
         quest_target = starter_quest.navigation_target(gs, map_key=map_key, state=state)
         if quest_target is not None:
@@ -596,6 +800,56 @@ def battler_node(state: AgentState) -> AgentState:
     return state
 
 
+def _history_oscillates(history: list[str], *, min_cycles: int = 3) -> bool:
+    """Detect navigate*-then-interact cycles at the same tile (stuck-meter evasion)."""
+    if len(history) < min_cycles * 2:
+        return False
+    window = min(len(history), 20)
+    entries: list[tuple[str, str]] = []
+    for item in history[-window:]:
+        if "@" not in item:
+            return False
+        action, pos = item.split("@", 1)
+        entries.append((action.split(":")[0], pos))
+    positions = {pos for _, pos in entries}
+    if len(positions) != 1:
+        return False
+    kinds = {kind for kind, _ in entries}
+    if kinds != {"navigate", "interact"}:
+        return False
+    cycles = 0
+    idx = 0
+    while idx < len(entries):
+        nav_count = 0
+        while idx < len(entries) and entries[idx][0] == "navigate":
+            nav_count += 1
+            idx += 1
+        interact_count = 0
+        while idx < len(entries) and entries[idx][0] == "interact":
+            interact_count += 1
+            idx += 1
+        if nav_count > 0 and interact_count > 0:
+            cycles += 1
+        elif nav_count > 0:
+            break
+    return cycles >= min_cycles
+
+
+def _history_interact_repeats(history: list[str], *, min_count: int = 5) -> bool:
+    """Detect same-tile interact spam with no navigation progress."""
+    if len(history) < min_count:
+        return False
+    positions: set[str] = set()
+    for item in history[-min_count:]:
+        if "@" not in item:
+            return False
+        action, pos = item.split("@", 1)
+        if action.split(":")[0] != "interact":
+            return False
+        positions.add(pos)
+    return len(positions) == 1
+
+
 def critic_node(state: AgentState) -> AgentState:
     """Post-action review: loop detection and risk veto. Always routes through memory."""
     gs = GameState.model_validate(state.get("game_state", {}))
@@ -603,9 +857,47 @@ def critic_node(state: AgentState) -> AgentState:
     stuck = state.get("stuck_count", 0)
 
     recent = history[-5:] if history else []
-    repetition = len(recent) >= 3 and len(set(recent[-3:])) == 1 and stuck >= 3
+    lab_pre_starter = (
+        gs.map_key == MAP_KEY_ELMS_LAB and not starter_quest.starter_flag_set(gs)
+    )
+    dialog_active = starter_quest.lab_scene_pending(gs)
+    desk_intro = starter_quest.lab_desk_intro_active(gs, state)
+    ball_flow = starter_quest.lab_ball_picking_active(gs, state)
+    repetition = (
+        not dialog_active
+        and not desk_intro
+        and not ball_flow
+        and len(recent) >= 3
+        and len(set(recent[-3:])) == 1
+        and stuck >= 2
+    )
+    oscillation = (
+        not dialog_active
+        and not desk_intro
+        and not ball_flow
+        and _history_oscillates(
+            history,
+            min_cycles=2 if lab_pre_starter else 3,
+        )
+    )
+    interact_spam = (
+        lab_pre_starter
+        and not ball_flow
+        and not dialog_active
+        and stuck >= starter_quest.INDOOR_INTERACT_STUCK
+        and _history_interact_repeats(history, min_count=5)
+    )
+    party_stall = (
+        starter_quest.lab_party_stall_detected(gs, state) and not ball_flow
+    )
 
-    if repetition or stuck >= STUCK_THRESHOLD:
+    if (
+        repetition
+        or oscillation
+        or interact_spam
+        or party_stall
+        or stuck >= STUCK_THRESHOLD
+    ):
         state["critic_verdict"] = "replan"
         state["critic_notes"] = "Detected loop or high stuck count"
         state["should_replan"] = True
@@ -675,6 +967,8 @@ def memory_node(state: AgentState) -> AgentState:
             house_exit.on_house_exit_complete(state, gs)
         elif milestone == starter_quest.MILESTONE_RIVAL_BATTLE:
             starter_quest.on_starter_quest_complete(state, gs)
+        elif milestone == early_progression.MILESTONE_REACHED_CHERRYGROVE:
+            early_progression.on_early_progression_complete(state, gs)
 
     if milestone == starter_quest.MILESTONE_ENTERED_LAB and not landmark_known(
         state.get("known_landmarks", []), ELMS_LAB_INTERIOR_ID
@@ -683,6 +977,13 @@ def memory_node(state: AgentState) -> AgentState:
 
     if discoveries:
         _persist_landmark_discoveries(state, discoveries)
+
+    starter_quest.ensure_house_exit_complete(gs, state)
+    starter_quest.update_lab_rom_observables(gs, state)
+    if starter_quest.in_starter_quest(gs, state) or gs.map_key == MAP_KEY_ELMS_LAB:
+        starter_quest.sync_subgoals(gs, state)
+    elif early_progression.in_early_progression(gs, state):
+        early_progression.sync_subgoals(gs, state)
 
     state["milestones"] = milestones
     state["badges_at_last_check"] = gs.total_badges
@@ -705,8 +1006,10 @@ def _check_milestone(
         return quest
     if gs.map_key == MAP_KEY_ROUTE_29 and maps_visited.count(MAP_KEY_ROUTE_29) == 1:
         return "Reached Route 29"
-    if gs.map_key == "1:2" and maps_visited.count("1:2") == 1:
-        return "Reached Cherrygrove City"
+    if gs.map_key == early_progression.MAP_KEY_CHERRYGROVE_CITY and maps_visited.count(
+        early_progression.MAP_KEY_CHERRYGROVE_CITY
+    ) == 1:
+        return early_progression.MILESTONE_REACHED_CHERRYGROVE
     if gs.map_key == "1:4" and maps_visited.count("1:4") == 1:
         return "Reached Violet City"
     if gs.battle.in_battle and gs.battle.phase.value == "wild":
@@ -743,9 +1046,12 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
     try:
         if action == "wait_script":
             emulator.tick(SCRIPT_WAIT_TICKS)
+        elif action == "plan_replan":
+            emulator.tick(1)
         elif action in (
             house_exit.HOUSE_EXIT_DONE_ACTION,
             starter_quest.STARTER_QUEST_DONE_ACTION,
+            early_progression.EARLY_PROGRESSION_DONE_ACTION,
         ):
             emulator.tick(1)
         elif (
@@ -814,12 +1120,30 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
                 state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
         elif action.startswith("interact_"):
             _update_stuck_from_interaction(state, action, pos_before, gs)
+            parsed_before = parse_position_key(pos_before)
+            desk_interact = (
+                not starter_quest.has_starter(gs)
+                and (
+                    starter_quest.is_at_elm_desk(gs)
+                    or (
+                        parsed_before is not None
+                        and parsed_before[0] == MAP_KEY_ELMS_LAB
+                        and parsed_before[2] <= starter_quest.ELM_DESK_APPROACH[1]
+                    )
+                )
+            )
+            if desk_interact:
+                count = state.get("lab_desk_interact_count", 0) + 1
+                state["lab_desk_interact_count"] = count
+                if count >= starter_quest.LAB_DESK_INTERACT_CAP:
+                    state["lab_desk_dialog_done"] = True
         else:
             _update_stuck_from_movement(
                 state,
                 action,
                 pos_before,
                 gs.position_key,
+                gs,
             )
     except Exception as exc:
         state["error"] = str(exc)
@@ -833,6 +1157,7 @@ def _update_stuck_from_movement(
     action: str,
     pos_before: str,
     pos_after: str,
+    gs: GameState | None = None,
 ) -> None:
     """Increment stuck only when a navigation action fails to change position."""
     if not action.startswith("navigate_"):
@@ -843,8 +1168,20 @@ def _update_stuck_from_movement(
     moved = pos_before != pos_after
     if moved:
         state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
-    else:
-        state["stuck_count"] = state.get("stuck_count", 0) + 1
+        return
+    if gs is not None and starter_quest.can_interact_starter_ball(gs):
+        dir_name = action.split("_", 1)[1]
+        if dir_name in ("up", "down", "left", "right"):
+            facing_before = state.get("facing_before_action")
+            actual = starter_quest.player_facing_direction(gs)
+            if facing_before is not None and facing_before != gs.player.facing:
+                state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
+                return
+            expected = starter_quest.starter_ball_face_direction(gs)
+            if expected == dir_name and actual == expected:
+                state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
+                return
+    state["stuck_count"] = state.get("stuck_count", 0) + 1
 
 
 def _update_stuck_from_interaction(
@@ -856,11 +1193,35 @@ def _update_stuck_from_interaction(
     """Dialog interactions advance story without map movement."""
     del action
     meta = gs.raw_metadata or {}
-    if meta.get("mom_scene_complete"):
+    if house_exit.mom_scene_pending(gs):
         state["stuck_count"] = 0
         state["phase"] = "explore"
         return
+    lab_pre_starter = (
+        gs.map_key == MAP_KEY_ELMS_LAB and not starter_quest.starter_flag_set(gs)
+    )
+    if lab_pre_starter:
+        if pos_before != gs.position_key:
+            state["stuck_count"] = max(0, state.get("stuck_count", 0) - 2)
+        elif starter_quest.lab_scene_pending(gs):
+            state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
+        elif starter_quest.can_interact_starter_ball(gs):
+            if gs.in_text_box or bool(meta.get("in_script")):
+                state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
+            else:
+                state["stuck_count"] = state.get("stuck_count", 0) + 1
+        else:
+            state["stuck_count"] = state.get("stuck_count", 0) + 1
+        return
+    if (
+        gs.map_key == MAP_KEY_ELMS_LAB
+        and starter_quest.starter_pick_dialog_active(gs)
+    ):
+        state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
+        return
     if pos_before != gs.position_key:
         state["stuck_count"] = max(0, state.get("stuck_count", 0) - 2)
-    else:
+    elif gs.in_text_box or bool(meta.get("in_script")):
         state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
+    else:
+        state["stuck_count"] = state.get("stuck_count", 0) + 1

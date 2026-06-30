@@ -88,6 +88,9 @@ class AutonomousRunner:
         window: str | None = None,
         start_bedroom: bool = False,
         bedroom_state_name: str | None = None,
+        start_lab: bool = False,
+        emulator_state: str | None = None,
+        lab_state_name: str | None = None,
     ):
         self.rom_path = Path(rom_path)
         self.max_steps = max_steps
@@ -100,9 +103,28 @@ class AutonomousRunner:
         self.window = window
         self.start_bedroom = start_bedroom
         self.bedroom_state_name = bedroom_state_name
+        self.start_lab = start_lab
+        self.emulator_state = emulator_state
+        self.lab_state_name = lab_state_name
         self.memory = LongTermMemory(data_dir=memory_data_dir())
 
         configure_tracing(langsmith=langsmith, headed=headed)
+
+    def _validate_fast_start(self, resume: str | None) -> None:
+        fast_flags = (
+            self.start_bedroom,
+            self.start_lab,
+            bool(self.emulator_state),
+        )
+        if sum(fast_flags) > 1:
+            raise ValueError(
+                "Use only one of --start-bedroom, --start-lab, or --emulator-state"
+            )
+        if resume and any(fast_flags):
+            raise ValueError(
+                "Fast-start flags (--start-bedroom, --start-lab, --emulator-state) "
+                "cannot be used with --resume"
+            )
 
     def _bootstrap_if_needed(self, emu: Any, state: AgentState) -> AgentState:
         from src.emulator.bootstrap import (
@@ -194,6 +216,21 @@ class AutonomousRunner:
             logger.warning("Could not load latest emulator state %s: %s", name, exc)
             return None
 
+    def _reset_checkpoint_thread(
+        self, checkpoint_db: Path, thread_id: str
+    ) -> None:
+        """Drop stale LangGraph rows so fast-start snapshots replace agent state."""
+        if not checkpoint_db.is_file():
+            return
+        try:
+            conn = sqlite3.connect(str(checkpoint_db))
+            conn.execute("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
+            conn.execute("DELETE FROM writes WHERE thread_id = ?", (thread_id,))
+            conn.commit()
+            conn.close()
+        except sqlite3.Error as exc:
+            logger.warning("Could not reset checkpoint thread %s: %s", thread_id, exc)
+
     def _resolve_thread_id(self, resume: str | None) -> str:
         if resume == "latest":
             if self.headed:
@@ -213,12 +250,15 @@ class AutonomousRunner:
         from src.emulator.pyboy_wrapper import PyBoyWrapper
         from src.tools.pokemon_tools import bind_emulator
 
-        if self.start_bedroom and resume:
-            raise ValueError("--start-bedroom cannot be used with --resume")
+        self._validate_fast_start(resume)
 
         thread_id = self._resolve_thread_id(resume)
         if self.start_bedroom and self.thread_id == "default":
             thread_id = "bedroom"
+        elif self.start_lab and self.thread_id == "default":
+            thread_id = "lab"
+        elif self.emulator_state and self.thread_id == "default":
+            thread_id = f"emu-{self.emulator_state}"
         self.save_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint_db.parent.mkdir(parents=True, exist_ok=True)
 
@@ -284,11 +324,57 @@ class AutonomousRunner:
                         state.get("game_state", {}).get("player", {}).get("map_name"),
                         state.get("bootstrap_complete"),
                     )
+                elif self.start_lab:
+                    from src.emulator.bootstrap import prepare_lab_start
+
+                    state = create_initial_state(emu)
+                    state = prepare_lab_start(
+                        emu,
+                        state,
+                        save_dir=self.save_dir,
+                        lab_state_name=self.lab_state_name,
+                    )
+                    logger.info(
+                        "Lab start ready (map=%s, subgoal=%s)",
+                        state.get("game_state", {}).get("player", {}).get("map_name"),
+                        state.get("active_subgoal"),
+                    )
+                elif self.emulator_state:
+                    from src.emulator.bootstrap import prepare_emulator_state
+
+                    state = create_initial_state(emu)
+                    state = prepare_emulator_state(
+                        emu,
+                        state,
+                        self.emulator_state,
+                        save_dir=self.save_dir,
+                    )
+                    logger.info(
+                        "Emulator state %s ready (map=%s, subgoal=%s)",
+                        self.emulator_state,
+                        state.get("game_state", {}).get("player", {}).get("map_name"),
+                        state.get("active_subgoal"),
+                    )
                 else:
                     state = create_initial_state(emu)
                     state = self._bootstrap_if_needed(emu, state)
 
                 state = self.memory.hydrate_state(state)
+
+                fast_start = not resume and (
+                    self.start_lab or self.start_bedroom or bool(self.emulator_state)
+                )
+                if fast_start:
+                    state.setdefault("metrics", {})["steps"] = 0
+                    self._reset_checkpoint_thread(self.checkpoint_db, thread_id)
+                    try:
+                        graph.update_state(checkpoint_config, state)
+                        logger.info(
+                            "Seeded checkpointer thread_id=%s from fast-start snapshot",
+                            thread_id,
+                        )
+                    except Exception as exc:
+                        logger.warning("Could not seed checkpointer: %s", exc)
 
                 start_steps = state.get("metrics", {}).get("steps", 0)
                 target_steps = start_steps + self.max_steps
@@ -392,6 +478,22 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Custom name for bedroom start save state (default via BEDROOM_START_STATE env)",
     )
+    parser.add_argument(
+        "--start-lab",
+        action="store_true",
+        help="Fast-start from saves/lab_desk_start.state at Elm's lab (see capture-lab-start)",
+    )
+    parser.add_argument(
+        "--emulator-state",
+        default=None,
+        metavar="NAME",
+        help="Load saves/NAME.state and seed agent flags for that map (not compatible with --resume)",
+    )
+    parser.add_argument(
+        "--lab-state-name",
+        default=None,
+        help="Custom lab desk snapshot name for --start-lab (default via LAB_DESK_START_STATE env)",
+    )
     return parser
 
 
@@ -420,6 +522,9 @@ def main(argv: list[str] | None = None) -> int:
             headed=getattr(args, "headed", False),
             start_bedroom=getattr(args, "start_bedroom", False),
             bedroom_state_name=getattr(args, "bedroom_state_name", None),
+            start_lab=getattr(args, "start_lab", False),
+            emulator_state=getattr(args, "emulator_state", None),
+            lab_state_name=getattr(args, "lab_state_name", None),
         )
         result = runner.run(resume=args.resume)
         print(f"Completed {result['steps']} steps")

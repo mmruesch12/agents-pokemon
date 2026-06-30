@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from src.graph.pathfinding import direction_toward, find_path, direction_to_button
+from src.graph.phases import starter_quest
 
 
 def test_find_path_same_position():
@@ -56,3 +57,38 @@ def test_find_path_players_house_1f_to_front_door():
     assert len(path) >= 5
     assert path[0] == "down"
     assert path[-1] == "down"
+
+
+def test_elms_lab_ball_tiles_blocked_in_grid():
+    """Ball object columns 6-8 on y=3 are blocked unless explicitly the path goal."""
+    from src.graph.pathfinding import MAP_GRIDS
+
+    grid = MAP_GRIDS["24:5"]
+    for bx in (6, 7, 8):
+        assert grid[3][bx] == 1
+    path = find_path(4, 2, 5, 3, map_key="24:5")
+    assert all(pos not in starter_quest.STARTER_BALL_TILES for pos in _positions_after(4, 2, path))
+
+
+def test_elms_lab_desk_to_ball_approach_avoids_elm():
+    """From Elm's desk (4,2) route to (5,3) goes down around Elm at (5,2)."""
+    path = find_path(4, 2, 5, 3, map_key="24:5")
+    assert path
+    assert path[0] == "down"
+    assert "right" in path
+
+
+def _positions_after(sx: int, sy: int, path: list[str]) -> list[tuple[int, int]]:
+    x, y = sx, sy
+    out: list[tuple[int, int]] = []
+    for step in path:
+        if step == "right":
+            x += 1
+        elif step == "left":
+            x -= 1
+        elif step == "up":
+            y -= 1
+        elif step == "down":
+            y += 1
+        out.append((x, y))
+    return out

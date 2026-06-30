@@ -53,12 +53,32 @@ def cmd_run(args: argparse.Namespace) -> int:
         headed=getattr(args, "headed", False),
         start_bedroom=getattr(args, "start_bedroom", False),
         bedroom_state_name=getattr(args, "bedroom_state_name", None),
+        start_lab=getattr(args, "start_lab", False),
+        emulator_state=getattr(args, "emulator_state", None),
+        lab_state_name=getattr(args, "lab_state_name", None),
     )
     result = runner.run(resume=args.resume)
     print(f"Run complete: {result['steps']} steps, milestones={result['milestones']}")
     print(
         f"Final: {result.get('final_map_name')} "
         f"({result.get('final_map_key')}) at {result.get('final_position')}"
+    )
+    return 0
+
+
+def cmd_capture_lab_start(args: argparse.Namespace) -> int:
+    """Install saves/lab_desk_start.state from an existing PyBoy snapshot."""
+    from src.emulator.bootstrap import LAB_DESK_START_STATE, install_lab_start_from_save
+
+    target = install_lab_start_from_save(
+        args.from_save,
+        target_name=args.lab_state_name or LAB_DESK_START_STATE,
+        save_dir=args.save_dir,
+    )
+    print(f"Installed lab fast-start snapshot: {target}")
+    print(
+        f"Run: poke-agent --start-lab --steps {args.steps or 200} "
+        f"(or --emulator-state {target.stem})"
     )
     return 0
 
@@ -222,6 +242,22 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Custom name for bedroom start save state (default: bedroom_start or $BEDROOM_START_STATE)",
     )
+    common.add_argument(
+        "--start-lab",
+        action="store_true",
+        help="Fast-start from saves/lab_desk_start.state at Elm's lab (not compatible with --resume)",
+    )
+    common.add_argument(
+        "--emulator-state",
+        default=None,
+        metavar="NAME",
+        help="Load saves/NAME.state and seed agent flags (e.g. stuck_198, final_200)",
+    )
+    common.add_argument(
+        "--lab-state-name",
+        default=None,
+        help="Custom lab snapshot name for --start-lab / capture-lab-start",
+    )
 
     parser = argparse.ArgumentParser(
         prog="pokemon-gold-agent",
@@ -236,6 +272,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     resume_p = sub.add_parser("resume", parents=[common], help="Resume latest run")
     resume_p.set_defaults(func=cmd_resume)
+
+    capture_p = sub.add_parser(
+        "capture-lab-start",
+        parents=[common],
+        help="Copy a prior saves/*.state into lab_desk_start.state for --start-lab",
+    )
+    capture_p.add_argument(
+        "--from-save",
+        required=True,
+        metavar="NAME",
+        help="Existing snapshot stem (e.g. final_200 or stuck_198 from saves/)",
+    )
+    capture_p.set_defaults(func=cmd_capture_lab_start)
 
     eval_p = sub.add_parser("eval", parents=[common], help="Run evaluators on dataset")
     eval_p.add_argument("--dataset", default="early_game")
@@ -276,11 +325,14 @@ def _parse_cli(argv: list[str] | None = None):
     raw = list(argv) if argv is not None else None
     headed_present, cleaned = pop_store_true_flag(raw, "--headed")
     start_bedroom_present, cleaned = pop_store_true_flag(cleaned, "--start-bedroom")
+    start_lab_present, cleaned = pop_store_true_flag(cleaned, "--start-lab")
     args = parser.parse_args(cleaned if raw is not None else None)
     if headed_present:
         args.headed = True
     if start_bedroom_present:
         args.start_bedroom = True
+    if start_lab_present:
+        args.start_lab = True
     return args
 
 

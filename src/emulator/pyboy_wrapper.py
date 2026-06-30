@@ -257,6 +257,8 @@ class PyBoyWrapper:
             slot["result"] = self._reader.read_at(self._frame_count)
         elif op == "read_byte":
             slot["result"] = int(self._pyboy.memory[int(args[0])])
+        elif op == "write_byte":
+            self._pyboy.memory[int(args[0])] = int(args[1]) & 0xFF
         elif op == "save_state":
             slot["result"] = self._owner_save_state(str(args[0]))
         elif op == "load_state":
@@ -350,6 +352,13 @@ class PyBoyWrapper:
         if self._is_live:
             return int(self._dispatch("read_byte", address))
         return int(self._pyboy.memory[address])
+
+    def write_byte(self, address: int, value: int) -> None:
+        """Write a WRAM/I/O byte with owner-thread protection when headed."""
+        if self._is_live:
+            self._dispatch("write_byte", address, value)
+            return
+        self._pyboy.memory[address] = value & 0xFF
 
     def set_fast_forward(self, enabled: bool) -> None:
         """Accelerate the owner-thread tick loop (headed mode only)."""

@@ -122,6 +122,13 @@ def test_watch_start_bedroom_skips_resume():
     assert "--start-bedroom" in argv
 
 
+def test_watch_start_lab_skips_resume():
+    argv = normalize_watch_argv(["--start-lab", "--steps", "120"])
+    assert "--resume" not in argv
+    assert "--start-lab" in argv
+    assert argv[0] == "--headed"
+
+
 def test_start_bedroom_rejects_resume():
     from src.run.autonomous_runner import AutonomousRunner
 
@@ -132,8 +139,20 @@ def test_start_bedroom_rejects_resume():
     )
     import pytest
 
-    with pytest.raises(ValueError, match="start-bedroom"):
+    with pytest.raises(ValueError, match="Fast-start"):
         runner.run(resume="latest")
+
+
+def test_cli_start_lab_flag():
+    parser = build_parser()
+    args = parser.parse_args(["--start-lab", "--steps", "120"])
+    assert args.start_lab is True
+
+
+def test_cli_emulator_state_flag():
+    parser = build_parser()
+    args = parser.parse_args(["--emulator-state", "stuck_198", "--steps", "50"])
+    assert args.emulator_state == "stuck_198"
 
 
 @pytest.mark.parametrize(

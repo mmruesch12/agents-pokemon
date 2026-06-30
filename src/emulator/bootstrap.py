@@ -9,16 +9,27 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from src.state.gold_state_reader import (
+    ADDR_EVENT_FLAGS,
+    ADDR_FACING,
     ADDR_MAP_GROUP,
     ADDR_MAP_NUMBER,
+    ADDR_PARTY_COUNT,
+    ADDR_PARTY_SPECIES,
     ADDR_SCRIPT_FLAGS,
     ADDR_X_COORD,
     ADDR_Y_COORD,
     EVENT_INITIALIZED_EVENTS,
+    MAP_KEY_ELMS_LAB,
     MAP_PLAYERS_HOUSE_2F,
     MAPGROUP_NEW_BARK,
     coords_playable,
     has_event_flag,
+)
+from src.state.script_constants import (
+    EVENT_GOT_A_POKEMON_FROM_ELM,
+    EVENT_GOT_CHIKORITA_FROM_ELM,
+    EVENT_GOT_CYNDAQUIL_FROM_ELM,
+    EVENT_GOT_TOTODILE_FROM_ELM,
 )
 from src.state.script_constants import SCRIPT_FLAG_SCRIPT_RUNNING
 from src.state.models import GameState
@@ -312,6 +323,7 @@ def apply_bootstrap_metadata(gs: GameState, result: BootstrapResult) -> GameStat
 
 
 BEDROOM_START_STATE = os.getenv("BEDROOM_START_STATE", "bedroom_start")
+LAB_DESK_START_STATE = os.getenv("LAB_DESK_START_STATE", "lab_desk_start")
 
 
 def seed_bedroom_agent_state(
@@ -409,3 +421,239 @@ def prepare_bedroom_start(
         logger.warning("Could not cache bedroom start: %s", exc)
 
     return seed_bedroom_agent_state(state, gs, bootstrap_actions=result.actions_taken)
+
+
+def _clear_event_flag(emu: PyBoyWrapper, flag_index: int) -> None:
+    byte_addr = ADDR_EVENT_FLAGS + (flag_index // 8)
+    bit = flag_index % 8
+    current = emu.read_byte(byte_addr)
+    emu.write_byte(byte_addr, current & ~(1 << bit))
+
+
+def repair_elms_lab_snapshot(emu: PyBoyWrapper, gs: GameState) -> GameState:
+    """Fix fast-start saves: starter flag without party, invalid facing byte."""
+    from src.graph.phases import starter_quest
+
+    if gs.map_key != MAP_KEY_ELMS_LAB:
+        return gs
+
+    meta = gs.raw_metadata or {}
+    if gs.party_count == 0 and meta.get("has_starter"):
+        for flag in (
+            EVENT_GOT_A_POKEMON_FROM_ELM,
+            EVENT_GOT_CYNDAQUIL_FROM_ELM,
+            EVENT_GOT_TOTODILE_FROM_ELM,
+            EVENT_GOT_CHIKORITA_FROM_ELM,
+        ):
+            _clear_event_flag(emu, flag)
+        emu.write_byte(ADDR_PARTY_COUNT, 0)
+        emu.write_byte(ADDR_PARTY_SPECIES, 0)
+        logger.info("Cleared desynced Elm starter flag (party empty)")
+        gs = emu.get_game_state()
+    elif not meta.get("has_starter") and starter_quest.is_at_elm_desk(gs):
+        if emu.read_byte(ADDR_PARTY_COUNT) == 0 and emu.read_byte(ADDR_PARTY_SPECIES) != 0:
+            emu.write_byte(ADDR_PARTY_SPECIES, 0)
+            logger.info("Cleared stale party species byte at Elm desk (count=0)")
+            gs = emu.get_game_state()
+
+    facing_map = {"down": 0, "up": 4, "left": 8, "right": 12}
+    if starter_quest.is_at_elm_desk(gs) and not starter_quest.has_starter(gs):
+        if gs.player.facing != 4:
+            emu.write_byte(ADDR_FACING, 4)
+            logger.info(
+                "Aligned desk facing %s -> 4 (up) at (%d,%d)",
+                gs.player.facing,
+                gs.player.x,
+                gs.player.y,
+            )
+    elif not starter_quest.facing_is_valid(gs):
+        face = starter_quest.starter_ball_face_direction(gs)
+        new_facing = facing_map.get(face or "", 0)
+        emu.write_byte(ADDR_FACING, new_facing)
+        logger.info("Normalized invalid facing %s -> %s", gs.player.facing, new_facing)
+    elif starter_quest.can_interact_starter_ball(gs):
+        face = starter_quest.starter_ball_face_direction(gs)
+        if face is not None and starter_quest.player_facing_direction(gs) != face:
+            emu.write_byte(ADDR_FACING, facing_map[face])
+            logger.info(
+                "Aligned ball-row facing %s -> %s at (%d,%d)",
+                gs.player.facing,
+                facing_map[face],
+                gs.player.x,
+                gs.player.y,
+            )
+
+    return emu.get_game_state()
+
+
+def seed_lab_agent_state(
+    state: dict,
+    gs: GameState,
+    *,
+    reset_lab_counters: bool = True,
+) -> dict:
+    """Seed agent state for starter-quest gameplay from an Elm's Lab emulator snapshot."""
+    from src.graph.state import update_game_state
+    from src.graph.phases import starter_quest
+    from src.graph.phases.house_exit import HOUSE_EXIT_MILESTONE
+    from src.state.gold_state_reader import (
+        MAP_KEY_ELMS_LAB,
+        MAP_KEY_NEW_BARK_TOWN,
+        MAP_KEY_PLAYERS_HOUSE_1F,
+        MAP_KEY_PLAYERS_HOUSE_2F,
+    )
+
+    result = BootstrapResult(
+        success=True,
+        movement_ready=True,
+        map_loaded=True,
+        actions_taken=INDOOR_BOOTSTRAP_ACTIONS,
+        frames_elapsed=0,
+    )
+    gs = apply_bootstrap_metadata(gs, result)
+    state = update_game_state(state, gs)
+    state["bootstrap_complete"] = True
+    state["phase"] = "explore"
+    state["bootstrap_action_index"] = INDOOR_BOOTSTRAP_ACTIONS
+    state["movement_observed"] = True
+    state["house_exit_complete"] = True
+    state["starter_quest_complete"] = False
+    state["should_replan"] = False
+    state["stuck_count"] = 0
+    state["maps_visited"] = [
+        MAP_KEY_PLAYERS_HOUSE_2F,
+        MAP_KEY_PLAYERS_HOUSE_1F,
+        MAP_KEY_NEW_BARK_TOWN,
+        MAP_KEY_ELMS_LAB,
+    ]
+    milestones = list(state.get("milestones", []))
+    for milestone in (
+        "Reached Player's House 1F",
+        HOUSE_EXIT_MILESTONE,
+        starter_quest.MILESTONE_ENTERED_LAB,
+    ):
+        if milestone not in milestones:
+            milestones.append(milestone)
+    state["milestones"] = milestones
+    if reset_lab_counters:
+        state["lab_desk_dialog_done"] = starter_quest.desk_dialog_done(gs, state)
+        state["lab_desk_interact_count"] = 0
+        state["lab_desk_script_seen"] = False
+        state["lab_steps_without_party"] = 0
+        state["lab_stall_position"] = None
+        state["short_term_history"] = []
+        state["should_replan"] = False
+        state["replan_count"] = 0
+    from src.memory.landmarks import discover_elms_lab_landmarks
+
+    state["known_landmarks"] = discover_elms_lab_landmarks(gs)
+    starter_quest.sync_subgoals(gs, state)
+    return state
+
+
+def seed_agent_state_for_map(state: dict, gs: GameState) -> dict:
+    """Infer graph flags from the map loaded in a PyBoy .state snapshot."""
+    from src.graph.state import update_game_state
+    from src.state.gold_state_reader import (
+        MAP_KEY_ELMS_LAB,
+        MAP_KEY_PLAYERS_HOUSE_2F,
+    )
+
+    if gs.map_key == MAP_KEY_PLAYERS_HOUSE_2F:
+        return seed_bedroom_agent_state(state, gs)
+    if gs.map_key == MAP_KEY_ELMS_LAB:
+        return seed_lab_agent_state(state, gs)
+    result = BootstrapResult(
+        success=True,
+        movement_ready=True,
+        map_loaded=True,
+        actions_taken=INDOOR_BOOTSTRAP_ACTIONS,
+        frames_elapsed=0,
+    )
+    gs = apply_bootstrap_metadata(gs, result)
+    state = update_game_state(state, gs)
+    state["bootstrap_complete"] = True
+    state["phase"] = "explore"
+    state["bootstrap_action_index"] = INDOOR_BOOTSTRAP_ACTIONS
+    state["movement_observed"] = True
+    return state
+
+
+def prepare_emulator_state(
+    emu: PyBoyWrapper,
+    state: dict,
+    state_name: str,
+    *,
+    save_dir: str | Path | None = None,
+    expected_map_key: str | None = None,
+) -> dict:
+    """Load a named PyBoy snapshot from saves/ and seed matching agent state."""
+    from src.state.gold_state_reader import MAP_KEY_ELMS_LAB
+
+    save_dir = Path(save_dir or "saves")
+    cache_path = save_dir / f"{state_name}.state"
+    if not cache_path.is_file():
+        raise FileNotFoundError(
+            f"Emulator state not found: {cache_path}. "
+            "Run a longer session first (saves/stuck_*.state and saves/final_*.state "
+            "are written automatically), then install one with "
+            "`poke-agent capture-lab-start --from-save <name>`."
+        )
+    emu.load_state(state_name)
+    gs = emu.get_game_state()
+    if expected_map_key and gs.map_key != expected_map_key:
+        raise RuntimeError(
+            f"Emulator state {state_name!r} is on map {gs.map_key}, "
+            f"expected {expected_map_key}"
+        )
+    if gs.map_key == MAP_KEY_ELMS_LAB:
+        gs = repair_elms_lab_snapshot(emu, gs)
+    logger.info(
+        "Loaded emulator state %s (map=%s pos=(%d,%d))",
+        cache_path.name,
+        gs.map_key,
+        gs.player.x,
+        gs.player.y,
+    )
+    if gs.map_key == MAP_KEY_ELMS_LAB:
+        return seed_lab_agent_state(state, gs)
+    return seed_agent_state_for_map(state, gs)
+
+
+def prepare_lab_start(
+    emu: PyBoyWrapper,
+    state: dict,
+    *,
+    save_dir: str | Path | None = None,
+    lab_state_name: str | None = None,
+) -> dict:
+    """Fast-start at Elm's Lab using saves/lab_desk_start.state (or LAB_DESK_START_STATE)."""
+    from src.state.gold_state_reader import MAP_KEY_ELMS_LAB
+
+    return prepare_emulator_state(
+        emu,
+        state,
+        lab_state_name or LAB_DESK_START_STATE,
+        save_dir=save_dir,
+        expected_map_key=MAP_KEY_ELMS_LAB,
+    )
+
+
+def install_lab_start_from_save(
+    source_name: str,
+    *,
+    target_name: str | None = None,
+    save_dir: str | Path | None = None,
+) -> Path:
+    """Copy an existing snapshot (e.g. final_200 or stuck_198) to lab_desk_start.state."""
+    import shutil
+
+    save_dir = Path(save_dir or "saves")
+    source_path = save_dir / f"{source_name}.state"
+    if not source_path.is_file():
+        raise FileNotFoundError(f"Source emulator state not found: {source_path}")
+    target_name = target_name or LAB_DESK_START_STATE
+    target_path = save_dir / f"{target_name}.state"
+    shutil.copy2(source_path, target_path)
+    logger.info("Installed %s -> %s", source_path.name, target_path.name)
+    return target_path

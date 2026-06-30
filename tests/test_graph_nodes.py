@@ -94,6 +94,53 @@ def test_critic_repetition_requires_stuck_count():
     assert result["next_node"] == "memory"
 
 
+def test_critic_replan_on_navigate_interact_oscillation():
+    gs = GameState()
+    state = _state_with_game(gs)
+    state["short_term_history"] = [
+        "navigate:down@3,5",
+        "interact:a@3,5",
+        "navigate:down@3,5",
+        "interact:a@3,5",
+        "navigate:down@3,5",
+        "interact:a@3,5",
+    ]
+    state["stuck_count"] = 1
+    result = critic_node(state)
+    assert result["critic_verdict"] == "replan"
+    assert result["should_replan"] is True
+
+
+def test_critic_replan_on_interact_only_spam_at_ball():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 5, "x": 5, "y": 3},
+        raw_metadata={"has_starter": False},
+        party_count=0,
+    )
+    state = _state_with_game(gs)
+    state["short_term_history"] = ["interact:a@5,3"] * 6
+    state["stuck_count"] = 3
+    result = critic_node(state)
+    assert result["critic_verdict"] == "replan"
+    assert result["should_replan"] is True
+
+
+def test_critic_replan_on_nav_nav_interact_lab_pattern():
+    """Match INDOOR_INTERACT_STUCK rhythm: two failed navigates then interact."""
+    gs = GameState(player={"map_group": 24, "map_id": 5, "x": 5, "y": 3})
+    state = _state_with_game(gs)
+    cycle = [
+        "navigate:right@5,3",
+        "navigate:right@5,3",
+        "interact:a@5,3",
+    ]
+    state["short_term_history"] = cycle * 3
+    state["stuck_count"] = 2
+    result = critic_node(state)
+    assert result["critic_verdict"] == "replan"
+    assert result["should_replan"] is True
+
+
 def test_memory_increments_steps(gold_reader):
     gs = gold_reader.read()
     state = _state_with_game(gs)

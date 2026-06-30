@@ -71,8 +71,8 @@ def test_verification_trainer_battle_rival_milestone_and_satisfied(battle_ram: d
     assert state["starter_quest_complete"] is True
     gs_after = GameState.model_validate(state["game_state"])
     assert starter_quest.is_satisfied(gs_after, state) is True
-    assert _hold_phase_satisfied(gs_after, state) is True
-    assert supervisor_node(state)["next_node"] == "idle"
+    assert _hold_phase_satisfied(gs_after, state) is False
+    assert supervisor_node(state)["next_node"] == "battler"
 
 
 def test_verification_supervisor_battler_before_complete_flag(battle_ram: dict):

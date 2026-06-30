@@ -42,6 +42,42 @@ def test_read_party(gold_reader: GoldStateReader):
     assert party[0].max_hp == 20
 
 
+def test_read_party_infers_count_when_species_present():
+    from src.state.gold_state_reader import (
+        ADDR_EVENT_FLAGS,
+        ADDR_PARTY_COUNT,
+        ADDR_PARTY_MON1,
+        ADDR_PARTY_SPECIES,
+        PARTYMON_HP_OFFSET,
+        PARTYMON_LEVEL_OFFSET,
+    )
+    from src.state.script_constants import EVENT_GOT_A_POKEMON_FROM_ELM
+
+    flag_addr = ADDR_EVENT_FLAGS + (EVENT_GOT_A_POKEMON_FROM_ELM // 8)
+    mem = {
+        ADDR_PARTY_COUNT: 0,
+        ADDR_PARTY_SPECIES: 158,
+        ADDR_PARTY_MON1 + PARTYMON_HP_OFFSET: 20,
+        ADDR_PARTY_MON1 + PARTYMON_HP_OFFSET + 2: 20,
+        ADDR_PARTY_MON1 + PARTYMON_LEVEL_OFFSET: 5,
+        flag_addr: 1 << (EVENT_GOT_A_POKEMON_FROM_ELM % 8),
+    }
+    reader = GoldStateReader(ByteArrayReader(mem))
+    count, party = reader.read_party()
+    assert count == 1
+    assert party[0].species_id == 158
+
+
+def test_read_party_does_not_infer_count_without_starter_flag():
+    from src.state.gold_state_reader import ADDR_PARTY_COUNT, ADDR_PARTY_SPECIES
+
+    mem = {ADDR_PARTY_COUNT: 0, ADDR_PARTY_SPECIES: 165}
+    reader = GoldStateReader(ByteArrayReader(mem))
+    count, party = reader.read_party()
+    assert count == 0
+    assert party == []
+
+
 def test_read_money_bcd(gold_reader: GoldStateReader):
     player = gold_reader.read_player()
     assert player.money == 1000

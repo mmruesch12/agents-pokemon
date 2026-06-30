@@ -51,6 +51,9 @@ MAP_KEY_ROUTE_29 = f"{MAPGROUP_NEW_BARK}:{MAP_ROUTE_29}"
 MAP_KEY_ELMS_LAB = f"{MAPGROUP_NEW_BARK}:{MAP_ELMS_LAB}"
 MAP_KEY_ROUTE_30 = f"{MAPGROUP_JOHTO_ROUTES}:{MAP_ROUTE_30}"
 MAP_KEY_MR_POKEMONS_HOUSE = f"{MAPGROUP_JOHTO_ROUTES}:{MAP_MR_POKEMONS_HOUSE}"
+MAPGROUP_JOHTO_CITIES = 1
+MAP_CHERRYGROVE_CITY = 2
+MAP_KEY_CHERRYGROVE_CITY = f"{MAPGROUP_JOHTO_CITIES}:{MAP_CHERRYGROVE_CITY}"
 # Uninitialized map before overworld load (title screen / boot), not New Bark Town.
 MAP_KEY_UNINITIALIZED = "0:0"
 
@@ -256,6 +259,14 @@ class GoldStateReader:
     def read_party(self) -> tuple[int, list[PartyMember]]:
         r = self._reader
         count = r.read_byte(ADDR_PARTY_COUNT)
+        first_species = r.read_byte(ADDR_PARTY_SPECIES)
+        if (
+            count == 0
+            and first_species != 0
+            and has_event_flag(r, EVENT_GOT_A_POKEMON_FROM_ELM)
+        ):
+            # Elm lab handoff writes species before wPartyCount increments.
+            count = 1
         members: list[PartyMember] = []
         for i in range(min(count, 6)):
             species_id = r.read_byte(ADDR_PARTY_SPECIES + i)

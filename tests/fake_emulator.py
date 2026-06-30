@@ -8,11 +8,14 @@ from src.state.gold_state_reader import (
     ADDR_ENEMY_MAX_HP,
     ADDR_ENEMY_SPECIES,
     ADDR_EVENT_FLAGS,
+    ADDR_FACING,
     ADDR_MAP_GROUP,
     ADDR_MAP_NUMBER,
     ADDR_PARTY_COUNT,
     ADDR_PARTY_MON1,
     ADDR_PARTY_SPECIES,
+    ADDR_SCRIPT_FLAGS,
+    ADDR_SCRIPT_MODE,
     ADDR_X_COORD,
     ADDR_Y_COORD,
     MAP_ELMS_LAB,
@@ -32,6 +35,8 @@ from src.state.script_constants import (
     EVENT_GAVE_MYSTERY_EGG_TO_ELM,
     EVENT_GOT_A_POKEMON_FROM_ELM,
     EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON,
+    SCRIPT_FLAG_SCRIPT_RUNNING,
+    SCRIPT_READ,
 )
 
 
@@ -96,15 +101,44 @@ class MutableRamEmulator:
         ).read()
 
 
+_BUTTON_TO_FACING = {"down": 0, "up": 4, "left": 8, "right": 12}
+_ELM_LAB_ALWAYS_BLOCKED = {(5, 2), (6, 3), (7, 3), (8, 3)}
+_ELM_LAB_PRE_STARTER_BLOCKED: set[tuple[int, int]] = set()
+
+
 class StarterQuestEmulator(MutableRamEmulator):
     """Quest-aware RAM emulator: warps and flag progression for starter-quest integration."""
 
     def __init__(self, memory: dict[int, int]):
         super().__init__(memory, route_29_at_x=99)
         self._last_button: str | None = None
+        self._elm_intro_done = False
+        self._desk_script_pending = False
+
+    def _elm_lab_blocked(self, x: int, y: int) -> bool:
+        group = self._memory.get(ADDR_MAP_GROUP, 0)
+        map_id = self._memory.get(ADDR_MAP_NUMBER, 0)
+        if group != MAPGROUP_NEW_BARK or map_id != MAP_ELMS_LAB:
+            return False
+        if (x, y) in _ELM_LAB_ALWAYS_BLOCKED:
+            return True
+        if (x, y) in _ELM_LAB_PRE_STARTER_BLOCKED:
+            return not _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM)
+        return False
+
+    def _set_script_active(self) -> None:
+        self._memory[ADDR_SCRIPT_FLAGS] = SCRIPT_FLAG_SCRIPT_RUNNING
+        self._memory[ADDR_SCRIPT_MODE] = SCRIPT_READ
+
+    def _clear_script(self) -> None:
+        self._memory[ADDR_SCRIPT_FLAGS] = 0
+        self._memory[ADDR_SCRIPT_MODE] = 0
 
     def press_button(self, button: str, *, hold_frames: int = 2) -> None:
         self._last_button = button
+        if self._desk_script_pending:
+            self._clear_script()
+            self._desk_script_pending = False
         x = self._memory.get(ADDR_X_COORD, 0)
         y = self._memory.get(ADDR_Y_COORD, 0)
 
@@ -117,8 +151,12 @@ class StarterQuestEmulator(MutableRamEmulator):
                 y += 1
             elif button == "up":
                 y -= 1
-            self._memory[ADDR_X_COORD] = max(0, x)
-            self._memory[ADDR_Y_COORD] = max(0, y)
+            if self._elm_lab_blocked(x, y):
+                self._memory[ADDR_FACING] = _BUTTON_TO_FACING[button]
+            else:
+                self._memory[ADDR_X_COORD] = max(0, x)
+                self._memory[ADDR_Y_COORD] = max(0, y)
+                self._memory[ADDR_FACING] = _BUTTON_TO_FACING[button]
             self._apply_warps()
         elif button == "a":
             self._apply_interact()
@@ -182,7 +220,19 @@ class StarterQuestEmulator(MutableRamEmulator):
         y = self._memory.get(ADDR_Y_COORD, 0)
 
         if group == MAPGROUP_NEW_BARK and map_id == MAP_ELMS_LAB:
-            if (x, y) == (7, 3) and not _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM):
+            if (x, y) in ((4, 2), (5, 2), (4, 3)):
+                self._elm_intro_done = True
+                self._set_script_active()
+                self._desk_script_pending = True
+            ball_tiles = {(6, 3), (7, 3), (8, 3)}
+            near_ball = (x, y) in ball_tiles or any(
+                abs(x - bx) + abs(y - by) == 1 for bx, by in ball_tiles
+            )
+            if (
+                near_ball
+                and self._elm_intro_done
+                and not _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM)
+            ):
                 _set_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM)
                 self._memory[ADDR_PARTY_COUNT] = 1
                 self._memory[ADDR_PARTY_SPECIES] = 158  # Totodile

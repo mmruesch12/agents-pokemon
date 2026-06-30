@@ -313,6 +313,7 @@ def test_exploration_target_resolves_east_exit_without_landmark():
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         raw_metadata={"has_starter": True},
+        party_count=1,
     )
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
@@ -324,6 +325,7 @@ def test_gated_phase_target_wrong_map_east_landmark_no_recursion():
     gs = GameState(
         player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
         raw_metadata={"has_starter": True},
+        party_count=1,
     )
     state = {
         "house_exit_complete": True,
@@ -347,6 +349,7 @@ def test_hydrate_state_enables_east_exit_navigation():
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         raw_metadata={"has_starter": True},
+        party_count=1,
     )
     with tempfile.TemporaryDirectory() as tmp:
         mem = LongTermMemory(data_dir=Path(tmp))
@@ -377,6 +380,7 @@ def test_hydrate_state_enables_east_exit_navigation():
         gs_route = GameState(
             player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
             raw_metadata={"has_starter": True},
+            party_count=1,
         )
         hydrated_route = mem.hydrate_state({**hydrated, "game_state": gs_route.model_dump()})
         assert _navigation_target(gs_route, state=hydrated_route) == (10, 5)
@@ -390,6 +394,7 @@ def test_hydrate_mr_entrance_enables_interior_navigation():
     gs = GameState(
         player={"map_group": 26, "map_id": 10, "x": 5, "y": 7},
         raw_metadata={"has_starter": True},
+        party_count=1,
     )
     with tempfile.TemporaryDirectory() as tmp:
         mem = LongTermMemory(data_dir=Path(tmp))
@@ -419,6 +424,7 @@ def test_mr_entrance_discovery_persists_and_hydrates(monkeypatch):
     gs = GameState(
         player={"map_group": 26, "map_id": 10, "x": 5, "y": 7, "map_name": "Mr. Pokemon's House"},
         raw_metadata={"has_starter": True},
+        party_count=1,
     )
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
@@ -460,6 +466,7 @@ def test_navigation_without_landmark_uses_north_bias_on_route_29():
     gs = GameState(
         player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
         raw_metadata={"has_starter": True},
+        party_count=1,
     )
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
@@ -471,6 +478,7 @@ def test_navigation_uses_route_29_landmark():
     gs = GameState(
         player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
         raw_metadata={"has_starter": True},
+        party_count=1,
     )
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True

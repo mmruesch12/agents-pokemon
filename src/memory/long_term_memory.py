@@ -24,16 +24,19 @@ class LongTermMemory:
         self._index = None
         self._load()
 
+    def _load_json(self, path: Path, default: Any) -> Any:
+        if not path.exists():
+            return default
+        try:
+            return json.loads(path.read_text())
+        except json.JSONDecodeError:
+            logger.warning("Corrupt memory file %s — resetting", path)
+            return default
+
     def _load(self) -> None:
-        facts_path = self.data_dir / "facts.json"
-        summaries_path = self.data_dir / "summaries.json"
-        landmarks_path = self.data_dir / "landmarks.json"
-        if facts_path.exists():
-            self._facts = json.loads(facts_path.read_text())
-        if summaries_path.exists():
-            self._summaries = json.loads(summaries_path.read_text())
-        if landmarks_path.exists():
-            self._landmarks = json.loads(landmarks_path.read_text())
+        self._facts = self._load_json(self.data_dir / "facts.json", [])
+        self._summaries = self._load_json(self.data_dir / "summaries.json", [])
+        self._landmarks = self._load_json(self.data_dir / "landmarks.json", [])
 
     def _save(self) -> None:
         (self.data_dir / "facts.json").write_text(json.dumps(self._facts, indent=2))

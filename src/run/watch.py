@@ -1,4 +1,4 @@
-"""poke-watch: easy headed viewer — forces --headed and --resume latest."""
+"""poke-watch: easy headed viewer — forces --headed and --resume latest by default."""
 
 from __future__ import annotations
 
@@ -9,8 +9,16 @@ from dotenv import load_dotenv
 from src.run.cli import _parse_cli, _setup_langsmith, _setup_logging, build_parser, cmd_run
 
 
+def _fast_start_skips_resume(argv: list[str]) -> bool:
+    """Fast-start snapshots are incompatible with --resume (fresh state each run)."""
+    return any(
+        flag in argv
+        for flag in ("--start-bedroom", "--start-lab", "--emulator-state")
+    ) or any(tok.startswith("--emulator-state=") for tok in argv)
+
+
 def normalize_watch_argv(argv: list[str]) -> list[str]:
-    """Inject --headed and --resume latest unless --no-resume or --start-bedroom."""
+    """Inject --headed and --resume latest unless --no-resume or a fast-start flag."""
     no_resume = False
     cleaned: list[str] = []
     for tok in argv:
@@ -18,11 +26,10 @@ def normalize_watch_argv(argv: list[str]) -> list[str]:
             no_resume = True
             continue
         cleaned.append(tok)
-    start_bedroom = "--start-bedroom" in cleaned
     if "--headed" not in cleaned:
         cleaned.insert(0, "--headed")
     has_resume = any(t == "--resume" or t.startswith("--resume=") for t in cleaned)
-    if not no_resume and not start_bedroom and not has_resume:
+    if not no_resume and not _fast_start_skips_resume(cleaned) and not has_resume:
         cleaned = ["--resume", "latest", *cleaned]
     return cleaned
 

@@ -11,7 +11,12 @@ from src.state.models import GameState
 
 def exploration_hint_text(state: dict[str, Any], gs: GameState) -> str:
     hints = [str(state.get("active_subgoal", "")), *state.get("subgoals", []), *state.get("current_plan", [])]
-    if state.get("house_exit_complete"):
+    if state.get("starter_quest_complete"):
+        from src.graph.phases import early_progression
+        progress = early_progression.decompose_subgoals(gs)
+        if progress:
+            hints.extend(progress)
+    elif state.get("house_exit_complete"):
         from src.graph.phases import starter_quest
         quest = starter_quest.decompose_subgoals(gs)
         if quest:
@@ -29,11 +34,10 @@ def exploration_hint_tile(state: dict[str, Any], gs: GameState):
         return None
     text = exploration_hint_text(state, gs).lower()
     landmarks = list(state.get("known_landmarks", []))
-    meta = gs.raw_metadata or {}
     if (
         gs.map_key == "24:4"
         and not landmark_known(landmarks, ELMS_LAB_ENTRANCE_ID)
-        and not meta.get("has_starter")
+        and not starter_quest.has_starter(gs)
     ):
         if "lab" in text or "elm" in text or "starter" in text:
             return starter_quest.NEW_BARK_LAB_WARP

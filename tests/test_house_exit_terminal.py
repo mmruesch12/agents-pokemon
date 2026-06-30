@@ -7,7 +7,7 @@ from pathlib import Path
 
 from src.graph.graph import compile_graph
 from src.graph.nodes import _hold_phase_satisfied, supervisor_node
-from src.graph.phases import house_exit, starter_quest
+from src.graph.phases import early_progression, house_exit
 from src.graph.state import initial_agent_state
 from src.state.models import BattleState, GameState
 from tests.fake_emulator import MutableRamEmulator
@@ -24,17 +24,18 @@ def _post_house_state() -> tuple[dict, GameState]:
     return state, gs
 
 
-def _starter_quest_satisfied_state() -> tuple[dict, GameState]:
+def _early_progression_satisfied_state() -> tuple[dict, GameState]:
     gs = GameState(
-        player={"map_group": 24, "map_id": 5, "x": 4, "y": 8, "map_name": "Elm's Lab"},
+        player={"map_group": 1, "map_id": 2, "x": 20, "y": 20, "map_name": "Cherrygrove City"},
         party_count=1,
-        raw_metadata={"has_starter": True, "egg_delivered": True},
+        raw_metadata={"has_starter": True},
         battle=BattleState(),
     )
     state = initial_agent_state(gs)
     state["bootstrap_complete"] = True
     state["house_exit_complete"] = True
     state["starter_quest_complete"] = True
+    state["early_progression_complete"] = True
     return state, gs
 
 
@@ -69,15 +70,15 @@ def test_ten_supervisor_cycles_emit_navigate_post_house():
     assert any(a.startswith("navigate_") for a in actions)
 
 
-def test_supervisor_routes_to_idle_when_starter_quest_satisfied():
-    state, gs = _starter_quest_satisfied_state()
+def test_supervisor_routes_to_idle_when_early_progression_satisfied():
+    state, gs = _early_progression_satisfied_state()
     result = supervisor_node(state)
     assert result["next_node"] == "idle"
-    assert result["phase"] == "starter_quest_done"
+    assert result["phase"] == "early_progression_done"
 
 
-def test_ten_supervisor_cycles_idle_after_starter_quest():
-    state, gs = _starter_quest_satisfied_state()
+def test_ten_supervisor_cycles_idle_after_early_progression():
+    state, gs = _early_progression_satisfied_state()
     pos = gs.position_key
     actions: list[str] = []
     for _ in range(10):
@@ -90,7 +91,7 @@ def test_ten_supervisor_cycles_idle_after_starter_quest():
         state = critic_node(state)
         state = memory_node(state)
         assert GameState.model_validate(state["game_state"]).position_key == pos
-    assert actions == [starter_quest.STARTER_QUEST_DONE_ACTION] * 10
+    assert actions == [early_progression.EARLY_PROGRESSION_DONE_ACTION] * 10
     assert not any(a.startswith("navigate_") for a in actions)
 
 

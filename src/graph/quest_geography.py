@@ -21,9 +21,10 @@ def retired_geography_landmark_id(gs: GameState, state: dict[str, Any]) -> str |
         ROUTE_30_NORTH_GATE_ID,
     )
 
-    meta = gs.raw_metadata or {}
-    has_starter = bool(meta.get("has_starter"))
-    has_egg = bool(meta.get("has_mystery_egg"))
+    from src.graph.phases import starter_quest
+
+    has_starter = starter_quest.has_starter(gs)
+    has_egg = bool((gs.raw_metadata or {}).get("has_mystery_egg"))
     if not state.get("house_exit_complete") or not has_starter or has_egg:
         return None
     if gs.map_key == MAP_KEY_NEW_BARK_TOWN:
