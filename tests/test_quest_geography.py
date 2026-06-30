@@ -143,6 +143,18 @@ def test_resolve_retired_geography_returns_none_outside_quest_context():
     assert resolve_retired_geography(gs, _state()) is None
 
 
+def test_resolve_retired_geography_post_rival_with_mystery_egg_flag():
+    """After rival, egg possession must not block east/north retired geography."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
+        raw_metadata={"has_starter": True, "has_mystery_egg": True, "egg_delivered": True},
+        party_count=1,
+    )
+    state = _state()
+    state["starter_quest_complete"] = True
+    assert resolve_retired_geography(gs, state) == (19, 12)
+
+
 def test_resolve_retired_geography_no_recursion_on_wrong_map_landmark():
     gs = GameState(
         player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},

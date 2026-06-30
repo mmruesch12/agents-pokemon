@@ -369,7 +369,7 @@ def supervisor_node(state: AgentState) -> AgentState:
         state["next_node"] = "idle"
         if not state.get("house_exit_complete"):
             state["phase"] = "house_exit_done"
-        elif early_progression.is_satisfied(gs, state):
+        elif state.get("starter_quest_complete"):
             state["phase"] = "early_progression_done"
         else:
             state["phase"] = "starter_quest_done"
@@ -406,6 +406,16 @@ def supervisor_node(state: AgentState) -> AgentState:
         state["next_node"] = "planner"
     else:
         state["next_node"] = "navigator"
+
+    if state["next_node"] == "navigator":
+        if state.get("starter_quest_complete") and not early_progression.is_satisfied(gs, state):
+            state["phase"] = "early_progression"
+        elif state.get("house_exit_complete") and not state.get("starter_quest_complete"):
+            state["phase"] = "starter_quest"
+    elif state["next_node"] == "planner" and state.get("starter_quest_complete"):
+        state["phase"] = "early_progression"
+    elif state["next_node"] == "battler" and state.get("starter_quest_complete"):
+        state["phase"] = "early_progression"
 
     logger.debug("Supervisor routing to %s", state["next_node"])
     return state

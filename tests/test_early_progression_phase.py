@@ -117,7 +117,9 @@ def test_supervisor_navigator_post_rival_route_29():
         raw_metadata={"has_starter": True},
     )
     state = _state(gs)
-    assert supervisor_node(state)["next_node"] == "navigator"
+    result = supervisor_node(state)
+    assert result["next_node"] == "navigator"
+    assert result["phase"] == "early_progression"
 
 
 def test_memory_milestone_sets_early_progression_complete():
@@ -134,42 +136,121 @@ def test_memory_milestone_sets_early_progression_complete():
     assert state["early_progression_complete"] is True
 
 
-def test_post_rival_emulator_reaches_route_29_east(new_bark_ram: dict):
-    """Shipped nodes navigate east on New Bark after rival without idle lock."""
+def _post_rival_mem(new_bark_ram: dict[int, int]) -> dict[int, int]:
     from src.state.gold_state_reader import ADDR_EVENT_FLAGS
     from src.state.script_constants import (
         EVENT_GAVE_MYSTERY_EGG_TO_ELM,
         EVENT_GOT_A_POKEMON_FROM_ELM,
+        EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON,
     )
-    from tests.fake_emulator import MutableRamEmulator
 
     mem = dict(new_bark_ram)
-    for flag in (EVENT_GOT_A_POKEMON_FROM_ELM, EVENT_GAVE_MYSTERY_EGG_TO_ELM):
+    for flag in (
+        EVENT_GOT_A_POKEMON_FROM_ELM,
+        EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON,
+        EVENT_GAVE_MYSTERY_EGG_TO_ELM,
+    ):
         byte = ADDR_EVENT_FLAGS + (flag // 8)
         mem[byte] = mem.get(byte, 0) | (1 << (flag % 8))
-    emu = MutableRamEmulator(mem, route_29_at_x=15)
+    return mem
+
+
+def _macro_step(state: dict, emu) -> dict:
+    from src.graph.nodes import (
+        apply_action_node,
+        battler_node,
+        critic_node,
+        interactor_node,
+        memory_node,
+        navigator_node,
+        planner_node,
+        waiter_node,
+    )
+    from src.graph.state import update_game_state
+
+    state = supervisor_node(state)
+    node = state.get("next_node", "supervisor")
+    if node == "navigator":
+        state = navigator_node(state)
+    elif node == "interactor":
+        state = interactor_node(state)
+    elif node == "planner":
+        state = planner_node(state)
+    elif node == "waiter":
+        state = waiter_node(state)
+    elif node == "battler":
+        state = battler_node(state)
+    state = apply_action_node(state, emu)
+    state = update_game_state(state, emu.get_game_state())
+    state = critic_node(state)
+    state = memory_node(state)
+    return state
+
+
+def test_navigation_target_new_bark_east_with_mystery_egg_flag(new_bark_ram: dict):
+    gs = GameState(
+        player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
+        party_count=1,
+        raw_metadata={
+            "has_starter": True,
+            "has_mystery_egg": True,
+            "egg_delivered": True,
+        },
+    )
+    state = _state(gs)
+    target = _navigation_target(gs, state=state)
+    assert target == (19, 12)
+    assert target[0] > gs.player.x
+
+
+def test_post_rival_emulator_reaches_route_29_east(new_bark_ram: dict):
+    """Shipped nodes navigate east on New Bark after rival without idle lock."""
+    from tests.fake_emulator import PostRivalEmulator
+
+    emu = PostRivalEmulator(_post_rival_mem(new_bark_ram), route_29_at_x=15)
     gs = emu.get_game_state()
     state = _state(gs)
+    phases: list[str] = []
     actions: list[str] = []
-    for _ in range(12):
+    for _ in range(40):
+        sup = supervisor_node(state)
+        phases.append(sup.get("phase", ""))
+        assert sup["next_node"] != "idle", "must not idle-lock during early progression"
+        state = _macro_step(state, emu)
+        if state.get("last_action"):
+            actions.append(state["last_action"])
+        gs = GameState.model_validate(state["game_state"])
+        if gs.map_key == MAP_KEY_ROUTE_29 and gs.player.x >= 10:
+            break
+    gs_after = GameState.model_validate(state["game_state"])
+    assert any(a.startswith("navigate_") for a in actions)
+    assert "early_progression" in phases
+    assert gs_after.map_key == MAP_KEY_ROUTE_29
+    assert gs_after.player.x >= 10
+
+
+def test_post_rival_emulator_reaches_cherrygrove_within_budget(new_bark_ram: dict):
+    """Post-rival macro steps reach Cherrygrove entry within step budget."""
+    from src.state.gold_state_reader import MAPGROUP_JOHTO_CITIES, MAP_CHERRYGROVE_CITY
+    from tests.fake_emulator import PostRivalEmulator
+
+    mem = _post_rival_mem(new_bark_ram)
+    mem[0xDA00] = 26
+    mem[0xDA01] = 1
+    mem[0xDA02] = 8
+    mem[0xDA03] = 10
+    emu = PostRivalEmulator(mem)
+    state = _state(emu.get_game_state())
+    for step in range(30):
         sup = supervisor_node(state)
         assert sup["next_node"] != "idle"
-        if sup["next_node"] == "navigator":
-            from src.graph.nodes import apply_action_node, critic_node, memory_node, navigator_node
-
-            state = navigator_node(state)
-            actions.append(state["last_action"])
-            state = apply_action_node(state, emu)
-            from src.graph.state import update_game_state
-
-            state = update_game_state(state, emu.get_game_state())
-            state = critic_node(state)
-            state = memory_node(state)
-        else:
-            break
-    gs_after = emu.get_game_state()
-    assert any(a.startswith("navigate_") for a in actions)
-    assert gs_after.player.x >= 13 or gs_after.map_key == MAP_KEY_ROUTE_29
+        state = _macro_step(state, emu)
+        gs = GameState.model_validate(state["game_state"])
+        if gs.map_key == f"{MAPGROUP_JOHTO_CITIES}:{MAP_CHERRYGROVE_CITY}":
+            assert step < 30
+            return
+    gs_final = GameState.model_validate(state["game_state"])
+    raise AssertionError(f"expected Cherrygrove within 30 steps, ended on {gs_final.map_key}")
 
 
 def test_idle_node_early_progression_done_action():

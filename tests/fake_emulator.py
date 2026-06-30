@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from src.state.gold_state_reader import (
+    MAP_CHERRYGROVE_CITY,
+    MAPGROUP_JOHTO_CITIES,
     ADDR_BATTLE_MODE,
     ADDR_ENEMY_HP,
     ADDR_ENEMY_MAX_HP,
@@ -73,16 +75,33 @@ class MutableRamEmulator:
             y -= 1
         self._memory[ADDR_X_COORD] = max(0, x)
         self._memory[ADDR_Y_COORD] = max(0, y)
-        if (
-            self._memory.get(ADDR_MAP_GROUP) == MAPGROUP_NEW_BARK
-            and self._memory.get(ADDR_MAP_NUMBER) == MAP_NEW_BARK_TOWN
-            and self._memory[ADDR_X_COORD] >= self._route_29_at_x
-        ):
+        self._apply_post_rival_warps()
+        self._frame_count += hold_frames + 1
+
+    def _apply_post_rival_warps(self) -> None:
+        group = self._memory.get(ADDR_MAP_GROUP, 0)
+        map_id = self._memory.get(ADDR_MAP_NUMBER, 0)
+        x = self._memory.get(ADDR_X_COORD, 0)
+        y = self._memory.get(ADDR_Y_COORD, 0)
+        if group == MAPGROUP_NEW_BARK and map_id == MAP_NEW_BARK_TOWN and x >= self._route_29_at_x:
             self._memory[ADDR_MAP_GROUP] = MAPGROUP_NEW_BARK
             self._memory[ADDR_MAP_NUMBER] = MAP_ROUTE_29
             self._memory[ADDR_X_COORD] = 10
             self._memory[ADDR_Y_COORD] = 20
-        self._frame_count += hold_frames + 1
+            return
+        if not _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM):
+            return
+        if group == MAPGROUP_NEW_BARK and map_id == MAP_ROUTE_29 and y <= 5:
+            self._memory[ADDR_MAP_GROUP] = MAPGROUP_JOHTO_ROUTES
+            self._memory[ADDR_MAP_NUMBER] = MAP_ROUTE_30
+            self._memory[ADDR_X_COORD] = 10
+            self._memory[ADDR_Y_COORD] = 12
+            return
+        if group == MAPGROUP_JOHTO_ROUTES and map_id == MAP_ROUTE_30 and y <= 3:
+            self._memory[ADDR_MAP_GROUP] = MAPGROUP_JOHTO_CITIES
+            self._memory[ADDR_MAP_NUMBER] = MAP_CHERRYGROVE_CITY
+            self._memory[ADDR_X_COORD] = 20
+            self._memory[ADDR_Y_COORD] = 20
 
     def advance_frames(self, n: int = 1) -> int:
         self._frame_count += n
@@ -104,6 +123,10 @@ class MutableRamEmulator:
 _BUTTON_TO_FACING = {"down": 0, "up": 4, "left": 8, "right": 12}
 _ELM_LAB_ALWAYS_BLOCKED = {(5, 2), (6, 3), (7, 3), (8, 3)}
 _ELM_LAB_PRE_STARTER_BLOCKED: set[tuple[int, int]] = set()
+
+
+class PostRivalEmulator(MutableRamEmulator):
+    """Post-rival RAM emulator: Route 29/30/Cherrygrove warps when starter flag is set."""
 
 
 class StarterQuestEmulator(MutableRamEmulator):
