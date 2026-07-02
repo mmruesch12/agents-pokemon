@@ -24,6 +24,7 @@ MILESTONE_RIVAL_BATTLE = "First rival battle"
 
 # ROM-gate coordinates only (not navigation sources).
 ELMS_LAB_EXIT = (4, 11)
+ELMS_LAB_DESK_TILES = frozenset({(4, 2), (5, 2)})
 POST_WARP_WAIT_TICKS = 90
 SCRIPT_WAIT_TICKS = 45
 
@@ -94,10 +95,36 @@ def ensure_house_exit_complete(gs: GameState, state: dict[str, Any]) -> None:
         state["house_exit_complete"] = True
 
 
+def _desk_area_visited(state: dict[str, Any]) -> bool:
+    """True once the player has stood on an Elm desk approach tile this session."""
+    visited = set(state.get("visited_positions", []))
+    desk_keys = {f"{MAP_KEY_ELMS_LAB}:{x}:{y}" for x, y in ELMS_LAB_DESK_TILES}
+    return bool(desk_keys & visited)
+
+
+def ensure_lab_desk_visits_for_snapshot(gs: GameState, state: dict[str, Any]) -> None:
+    """Fast-start on ball row (y=3) implies Elm desk intro already happened."""
+    if gs.map_key != MAP_KEY_ELMS_LAB or has_starter(gs) or gs.player.y != 3:
+        return
+    visited = list(state.get("visited_positions", []))
+    for x, y in ELMS_LAB_DESK_TILES:
+        key = f"{MAP_KEY_ELMS_LAB}:{x}:{y}"
+        if key not in visited:
+            visited.append(key)
+    state["visited_positions"] = visited
+
+
 def _subgoal_index(gs: GameState, state: dict[str, Any]) -> int:
     if not has_starter(gs):
-        if state.get("lab_desk_dialog_done"):
-            return 1
+        if gs.map_key == MAP_KEY_ELMS_LAB:
+            if lab_scene_pending(gs):
+                return 0
+            if _desk_area_visited(state) and not lab_scene_pending(gs):
+                pos = (gs.player.x, gs.player.y)
+                if gs.player.y >= 3:
+                    return 1
+                if pos in ELMS_LAB_DESK_TILES:
+                    return 1
         return 0
     if not _has_egg(gs):
         return 0
@@ -136,6 +163,19 @@ def decompose_subgoals(gs: GameState) -> list[str] | None:
     if not _egg_delivered(gs):
         return ["Return to New Bark", "Give Mystery Egg to Elm"]
     return ["Battle rival", "Heal if needed"]
+
+
+def interior_landmark_id(gs: GameState, state: dict[str, Any]) -> str | None:
+    """Landmark id for Elm lab interior targets from active milestone subgoal."""
+    from src.memory.landmarks import ELMS_LAB_BALL_APPROACH_ID, ELMS_LAB_DESK_APPROACH_ID
+
+    if gs.map_key != MAP_KEY_ELMS_LAB or has_starter(gs):
+        return None
+    sync_subgoals(gs, state)
+    subgoal = (state.get("active_subgoal") or "").lower()
+    if "poke ball" in subgoal or "potion" in subgoal:
+        return ELMS_LAB_BALL_APPROACH_ID
+    return ELMS_LAB_DESK_APPROACH_ID
 
 
 def navigation_target(

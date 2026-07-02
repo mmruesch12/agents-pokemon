@@ -80,18 +80,9 @@ def navigation_target(
     map_key: str | None = None,
     state: dict[str, Any] | None = None,
 ) -> tuple[int, int] | None:
-    """Landmark-first targets via quest geography; grid frontier as fallback."""
-    from src.graph.exploration import exploration_target
-    from src.graph.quest_geography import resolve_retired_geography
-
-    state = state or {}
-    map_key = map_key or gs.map_key
-    if map_key not in EARLY_PROGRESSION_MAPS:
-        return None
-    resolved = resolve_retired_geography(gs, state)
-    if resolved is not None:
-        return resolved
-    return exploration_target(gs, state, skip_retired=True)
+    """Milestone module: no coordinate routing (landmarks + exploration handle nav)."""
+    del gs, map_key, state
+    return None
 
 
 def sync_subgoals(gs: GameState, state: dict[str, Any]) -> None:

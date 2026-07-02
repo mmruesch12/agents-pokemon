@@ -17,6 +17,10 @@ from src.state.script_constants import MOM_SCENE_ENTRY_POS
 HOUSE_EXIT_MILESTONE = "Left house — New Bark Town"
 HOUSE_EXIT_DONE_ACTION = "house_exit_done"
 STAIRS_2F = (7, 0)
+PLAYERS_HOUSE_1F_CORRIDOR = (8, 5)
+PLAYERS_HOUSE_1F_DOOR_THRESHOLDS = frozenset(
+    {PLAYERS_HOUSE_1F_DOOR, (7, 7), (6, 6), (7, 6)}
+)
 
 INDOOR_INTERACT_STUCK = int(os.getenv("INDOOR_INTERACT_STUCK", "2"))
 POST_WARP_WAIT_TICKS = int(os.getenv("POST_WARP_WAIT_TICKS", "90"))
@@ -47,10 +51,7 @@ def needs_house_interaction(gs: GameState, state: dict[str, Any]) -> bool:
         return False
     if mom_scene_pending(gs):
         return True
-    if state.get("stuck_count", 0) >= INDOOR_INTERACT_STUCK:
-        last = state.get("last_action", "")
-        return last.startswith("navigate_") and not last.endswith("_a")
-    return False
+    return state.get("stuck_count", 0) >= INDOOR_INTERACT_STUCK
 
 
 def force_interactor(gs: GameState, state: dict[str, Any]) -> bool:
@@ -85,13 +86,24 @@ def navigation_target(
     if map_key == MAP_KEY_PLAYERS_HOUSE_1F:
         if mom_scene_pending(gs):
             return (gs.player.x, gs.player.y)
+        pos = (gs.player.x, gs.player.y)
+        if pos == PLAYERS_HOUSE_1F_DOOR:
+            return PLAYERS_HOUSE_1F_DOOR
+        if pos[1] >= 6:
+            return PLAYERS_HOUSE_1F_DOOR
+        if pos == PLAYERS_HOUSE_1F_CORRIDOR:
+            return PLAYERS_HOUSE_1F_DOOR
+        if pos[1] < 5 and pos[0] < 8:
+            return PLAYERS_HOUSE_1F_CORRIDOR
         return PLAYERS_HOUSE_1F_DOOR
     return None
 
 
 def door_exit_direction(gs: GameState) -> str | None:
+    """Cardinal to step through the front-door warp — threshold tiles only."""
     if not mom_scene_pending(gs) and gs.map_key == MAP_KEY_PLAYERS_HOUSE_1F:
-        if (gs.player.x, gs.player.y) in (PLAYERS_HOUSE_1F_DOOR, (7, 7)):
+        pos = (gs.player.x, gs.player.y)
+        if pos in PLAYERS_HOUSE_1F_DOOR_THRESHOLDS:
             return "down"
     return None
 
