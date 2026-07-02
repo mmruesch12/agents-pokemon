@@ -104,9 +104,20 @@ def describe_last_failed_action(state: AgentState) -> str:
     return ""
 
 
+def _stuck_arbitration_threshold() -> int:
+    return int(os.getenv("STUCK_ARBITRATION_THRESHOLD", "2"))
+
+
 def format_short_term_context(state: AgentState) -> str:
     """Terse short-term block for planner/navigator prompts."""
     lines: list[str] = []
+    subgoal = state.get("active_subgoal", "")
+    if subgoal:
+        lines.append(f"Active subgoal: {subgoal}")
+    result = state.get("last_action_result") or {}
+    nav_target = result.get("target")
+    if nav_target:
+        lines.append(f"Navigation target: ({nav_target[0]},{nav_target[1]})")
     history = list(state.get("short_term_history", []))[-5:]
     if history:
         lines.append("Recent actions: " + "; ".join(history))
@@ -125,7 +136,7 @@ def _is_replan_context(state: AgentState) -> bool:
     return bool(
         state.get("should_replan")
         or state.get("critic_verdict") == "replan"
-        or state.get("stuck_count", 0) >= 3
+        or state.get("stuck_count", 0) >= _stuck_arbitration_threshold()
     )
 
 
