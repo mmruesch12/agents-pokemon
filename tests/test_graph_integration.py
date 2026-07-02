@@ -13,7 +13,7 @@ from tests.fake_emulator import MutableRamEmulator
 
 def test_full_graph_progression_low_stuck(new_bark_ram: dict):
     """10-step full cycle: coords evolve, stuck stays low, visited grows."""
-    emu = MutableRamEmulator(new_bark_ram, route_29_at_x=99)
+    emu = MutableRamEmulator(new_bark_ram, route_29_west_at_x=-1)
     gs = emu.get_game_state()
     state = initial_agent_state(gs)
     state["run_max_steps"] = 10
@@ -46,11 +46,23 @@ def test_full_graph_single_step_updates_position(new_bark_ram: dict):
 
 
 def test_full_graph_milestone_on_map_transition(new_bark_ram: dict):
-    """Moving east triggers map transition and Route 29 milestone."""
-    emu = MutableRamEmulator(new_bark_ram, route_29_at_x=12)
+    """Moving west on the Route 29 row triggers map transition and milestone."""
+    from src.state.gold_state_reader import ADDR_EVENT_FLAGS, ADDR_X_COORD, ADDR_Y_COORD
+    from src.memory.landmarks import seed_static_map_landmarks
+    from src.state.script_constants import EVENT_GOT_A_POKEMON_FROM_ELM
+
+    mem = dict(new_bark_ram)
+    mem[ADDR_X_COORD] = 3
+    mem[ADDR_Y_COORD] = 8
+    flag_byte = ADDR_EVENT_FLAGS + (EVENT_GOT_A_POKEMON_FROM_ELM // 8)
+    mem[flag_byte] = mem.get(flag_byte, 0) | (1 << (EVENT_GOT_A_POKEMON_FROM_ELM % 8))
+    emu = MutableRamEmulator(mem)
     gs = emu.get_game_state()
     state = initial_agent_state(gs)
-    state["run_max_steps"] = 5
+    state["bootstrap_complete"] = True
+    state["house_exit_complete"] = True
+    seed_static_map_landmarks(state)
+    state["run_max_steps"] = 10
 
     with tempfile.TemporaryDirectory() as tmp:
         compiled = compile_graph(emu, checkpoint_path=Path(tmp) / "milestone.sqlite")

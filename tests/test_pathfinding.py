@@ -33,26 +33,26 @@ def test_session_walkable_does_not_override_static_blocked():
     assert _is_walkable(MAP_GRIDS["24:4"], 13, 11, session_walkable=session) is False
 
 
-def test_exploration_nb_east_row_without_landmark():
+def test_exploration_nb_west_row_without_landmark():
     from src.graph.exploration import exploration_target
 
-    gs = GameState(player={"map_group": 24, "map_id": 4, "x": 9, "y": 12})
-    state: dict = {}
-    record_session_blocked(state, "24:4", 10, 12)
+    gs = GameState(player={"map_group": 24, "map_id": 4, "x": 9, "y": 8})
+    state = {"house_exit_complete": True, "active_subgoal": "Enter Route 29"}
+    record_session_blocked(state, "24:4", 8, 8)
     target = exploration_target(gs, state)
-    assert target[1] == 12
-    assert target[0] > gs.player.x
+    assert target[1] == 8
+    assert target[0] < gs.player.x
 
 
-def test_find_path_new_bark_blocked_east_stays_on_row():
+def test_find_path_new_bark_blocked_west_stays_on_row():
     state: dict = {}
-    record_session_blocked(state, "24:4", 10, 12)
-    path = find_path(9, 12, 19, 12, map_key="24:4", state=state)
+    record_session_blocked(state, "24:4", 10, 8)
+    path = find_path(9, 8, 1, 8, map_key="24:4", state=state)
     assert path
     assert path[0] == "left"
-    positions = _positions_after(9, 12, path)
-    assert (10, 12) not in positions
-    assert all(y == 12 for x, y in positions[:3])
+    positions = _positions_after(9, 8, path)
+    assert (10, 8) not in positions
+    assert all(y == 8 for x, y in positions[:3])
 
 
 def test_find_path_new_bark_east_corridor():
@@ -63,7 +63,7 @@ def test_find_path_new_bark_east_corridor():
     state: dict = {}
     record_session_blocked(state, "24:4", 6, 8)
     assert session_blocked_for_map(state, "24:4") == {(6, 8)}
-    blocked_path = find_path(6, 7, 19, 12, map_key="24:4", state=state)
+    blocked_path = find_path(6, 7, 1, 8, map_key="24:4", state=state)
     assert blocked_path
     assert blocked_path[0] != "down"
     blocked = session_blocked_for_map(state, "24:4")

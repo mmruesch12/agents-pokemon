@@ -10,7 +10,7 @@ EARLY_GAME_DATASET: list[dict[str, Any]] = [
         "description": "Player in New Bark Town at start",
         "input": {"map_group": 0, "map_id": 0, "x": 5, "y": 8},
         "expected_phase": "explore",
-        "milestone_targets": ["Exit New Bark Town east"],
+        "milestone_targets": ["Enter Route 29"],
     },
     {
         "id": "route_29_entry",

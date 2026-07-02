@@ -51,10 +51,10 @@ def _stuck_state(gs: GameState) -> dict:
 def test_format_short_term_context_includes_history_critic_stuck():
     gs = GameState(player={"x": 8, "y": 12})
     state = _stuck_state(gs)
-    state["active_subgoal"] = "Exit New Bark east"
+    state["active_subgoal"] = "Enter Route 29"
     state["last_action_result"] = {"target": (12, 12)}
     text = format_short_term_context(state)
-    assert "Active subgoal: Exit New Bark east" in text
+    assert "Active subgoal: Enter Route 29" in text
     assert "Navigation target: (12,12)" in text
     assert "Recent actions:" in text
     assert "navigate:right@8,12" in text

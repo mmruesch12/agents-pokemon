@@ -102,7 +102,7 @@ def test_navigation_targets_route_maps_retired_from_phase():
     assert starter_quest.navigation_target(gs_route30) is None
 
 
-def test_post_starter_new_bark_east_exit_frontier_without_landmark():
+def test_post_starter_new_bark_west_exit_frontier_without_landmark():
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         raw_metadata={"has_starter": True},
@@ -116,9 +116,9 @@ def test_post_starter_new_bark_east_exit_frontier_without_landmark():
     assert target != (gs.player.x, gs.player.y)
 
 
-def test_post_starter_new_bark_uses_east_exit_landmark():
+def test_post_starter_new_bark_uses_west_exit_landmark():
     from src.graph.nodes import _navigation_target
-    from src.memory.landmarks import NEW_BARK_EAST_EXIT_ID, make_landmark
+    from src.memory.landmarks import NEW_BARK_WEST_EXIT_ID, make_landmark
 
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
@@ -129,16 +129,16 @@ def test_post_starter_new_bark_uses_east_exit_landmark():
         "house_exit_complete": True,
         "known_landmarks": [
             make_landmark(
-                landmark_id=NEW_BARK_EAST_EXIT_ID,
-                name="New Bark east exit",
+                landmark_id=NEW_BARK_WEST_EXIT_ID,
+                name="New Bark Route 29 exit",
                 map_key="24:4",
-                x=19,
-                y=12,
+                x=1,
+                y=8,
                 kind="map_visit",
             )
         ],
     }
-    assert _navigation_target(gs, state=state) == (19, 12)
+    assert _navigation_target(gs, state=state) == (1, 8)
 
 
 def test_shipped_nodes_progress_post_house_to_rival_battle():

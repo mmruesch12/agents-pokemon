@@ -102,7 +102,7 @@ def test_navigation_target_route_29_moves_northward():
     assert target[1] < gs.player.y
 
 
-def test_navigation_target_new_bark_eastward_post_rival():
+def test_navigation_target_new_bark_westward_post_rival():
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         party_count=1,
@@ -110,7 +110,8 @@ def test_navigation_target_new_bark_eastward_post_rival():
     )
     state = _state(gs)
     target = _navigation_target(gs, state=state)
-    assert target[0] > gs.player.x
+    assert target == (1, 8)
+    assert target[0] < gs.player.x
 
 
 def test_supervisor_navigator_post_rival_route_29():
@@ -190,7 +191,7 @@ def _macro_step(state: dict, emu) -> dict:
     return state
 
 
-def test_navigation_target_new_bark_east_with_mystery_egg_flag(new_bark_ram: dict):
+def test_navigation_target_new_bark_west_with_mystery_egg_flag(new_bark_ram: dict):
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         party_count=1,
@@ -202,15 +203,15 @@ def test_navigation_target_new_bark_east_with_mystery_egg_flag(new_bark_ram: dic
     )
     state = _state(gs)
     target = _navigation_target(gs, state=state)
-    assert target == (19, 12)
-    assert target[0] > gs.player.x
+    assert target == (1, 8)
+    assert target[0] < gs.player.x
 
 
-def test_post_rival_emulator_reaches_route_29_east(new_bark_ram: dict):
-    """Shipped nodes navigate east on New Bark after rival without idle lock."""
+def test_post_rival_emulator_reaches_route_29_west(new_bark_ram: dict):
+    """Shipped nodes navigate west on New Bark after rival without idle lock."""
     from tests.fake_emulator import PostRivalEmulator
 
-    emu = PostRivalEmulator(_post_rival_mem(new_bark_ram), route_29_at_x=15)
+    emu = PostRivalEmulator(_post_rival_mem(new_bark_ram))
     gs = emu.get_game_state()
     state = _state(gs)
     phases: list[str] = []

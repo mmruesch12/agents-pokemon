@@ -6,7 +6,7 @@ import pytest
 
 from src.graph.quest_geography import retired_geography_landmark_id
 from src.memory.landmarks import (
-    NEW_BARK_EAST_EXIT_ID,
+    NEW_BARK_WEST_EXIT_ID,
     ROUTE_29_NORTH_GATE_ID,
     ROUTE_30_NORTH_GATE_ID,
 )
@@ -30,7 +30,7 @@ def _state(**kwargs) -> dict:
             {"map_group": 24, "map_id": 4, "x": 13, "y": 6},
             {"has_starter": True},
             {},
-            NEW_BARK_EAST_EXIT_ID,
+            NEW_BARK_WEST_EXIT_ID,
         ),
         (
             {"map_group": 24, "map_id": 3, "x": 10, "y": 12},
@@ -66,7 +66,7 @@ def _state(**kwargs) -> dict:
             {"map_group": 24, "map_id": 4, "x": 13, "y": 6},
             {"has_starter": True, "has_mystery_egg": True, "egg_delivered": True},
             {"starter_quest_complete": True},
-            NEW_BARK_EAST_EXIT_ID,
+            NEW_BARK_WEST_EXIT_ID,
         ),
     ],
 )

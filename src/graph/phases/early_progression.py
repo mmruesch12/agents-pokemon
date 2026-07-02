@@ -64,7 +64,7 @@ def decompose_subgoals(gs: GameState) -> list[str] | None:
     if gs.map_key not in EARLY_PROGRESSION_MAPS:
         return None
     if gs.map_key == MAP_KEY_NEW_BARK_TOWN:
-        return ["Exit New Bark east", "Cross Route 29", "Reach Cherrygrove City"]
+        return ["Enter Route 29", "Cross Route 29", "Reach Cherrygrove City"]
     if gs.map_key == MAP_KEY_ROUTE_29:
         return ["Travel north on Route 29", "Reach Cherrygrove City"]
     if gs.map_key == MAP_KEY_ROUTE_30:

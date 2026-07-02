@@ -13,10 +13,11 @@ from src.graph.pathfinding import (
     session_blocked_for_map,
     session_walkable_for_map,
 )
+from src.state.gold_state_reader import MAP_KEY_NEW_BARK_TOWN
 from src.state.models import GameState
 
-_EAST_SUBGOAL_MARKERS = (
-    "exit new bark east",
+_ROUTE_29_EXIT_MARKERS = (
+    "enter route 29",
     "cross route 29",
     "route 29",
 )
@@ -37,22 +38,24 @@ def exploration_hint_text(state: dict[str, Any], gs: GameState) -> str:
     return " ".join(hints)
 
 
-def exploration_heading_east(
+def exploration_heading_west(
     gs: GameState,
     state: dict[str, Any],
     *,
     hint_tile: tuple[int, int] | None = None,
 ) -> bool:
-    """True when quest hints or position imply eastward progress on this map."""
-    if hint_tile is not None and hint_tile[0] > gs.player.x:
+    """True when quest hints or position imply westward progress toward Route 29."""
+    if hint_tile is not None and hint_tile[0] < gs.player.x:
         return True
     text = exploration_hint_text(state, gs).lower()
-    if any(marker in text for marker in _EAST_SUBGOAL_MARKERS):
+    if gs.map_key == MAP_KEY_NEW_BARK_TOWN and any(
+        marker in text for marker in _ROUTE_29_EXIT_MARKERS
+    ):
         return True
-    east_row = MAP_WARP_HINT_ROWS.get(gs.map_key, {}).get("east")
-    east_anchor = MAP_LANDMARK_ANCHORS.get(gs.map_key, {}).get("east_exit")
-    if east_row is not None and east_anchor and gs.player.y == east_row:
-        return gs.player.x < east_anchor[0]
+    west_row = MAP_WARP_HINT_ROWS.get(gs.map_key, {}).get("west")
+    west_anchor = MAP_LANDMARK_ANCHORS.get(gs.map_key, {}).get("west_exit")
+    if west_row is not None and west_anchor and gs.player.y == west_row:
+        return gs.player.x > west_anchor[0]
     return False
 
 
@@ -95,17 +98,17 @@ def exploration_target(
     open_set = [(0, gs.player.x, gs.player.y, 0)]
     visited_search = {start}
     best_unvisited, best_score = None, float("-inf")
-    east_row = MAP_WARP_HINT_ROWS.get(gs.map_key, {}).get("east")
-    hint_east = exploration_heading_east(gs, state, hint_tile=hint_tile)
+    west_row = MAP_WARP_HINT_ROWS.get(gs.map_key, {}).get("west")
+    hint_west = exploration_heading_west(gs, state, hint_tile=hint_tile)
     while open_set:
         _, x, y, dist = heapq.heappop(open_set)
         pos_key = f"{gs.map_key}:{x}:{y}"
         if pos_key not in visited and (x, y) != start:
             score = float(dist)
-            if hint_east and east_row is not None:
-                if y == east_row and x > gs.player.x:
-                    score += 10.0 + (x - gs.player.x)
-                elif y == east_row:
+            if hint_west and west_row is not None:
+                if y == west_row and x < gs.player.x:
+                    score += 10.0 + (gs.player.x - x)
+                elif y == west_row:
                     score += 4.0
             if score > best_score:
                 best_score, best_unvisited = score, (x, y)
@@ -125,8 +128,8 @@ def exploration_target(
             heapq.heappush(open_set, (dist + 1, nx, ny, dist + 1))
     if best_unvisited:
         return best_unvisited
-    if hint_east and east_row is not None:
-        return (gs.player.x + 1, east_row)
+    if hint_west and west_row is not None:
+        return (max(0, gs.player.x - 1), west_row)
     return (gs.player.x + 1, gs.player.y)
 
 

@@ -114,8 +114,8 @@ def test_navigator_post_house_targets_lab_with_landmark(monkeypatch):
     assert result["last_action_result"]["target"] == (6, 4)
 
 
-def test_navigator_with_starter_moves_east():
-    """With starter flag set, navigator picks eastward movement."""
+def test_navigator_with_starter_moves_west():
+    """With starter flag set, navigator targets the west Route 29 exit."""
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         raw_metadata={"has_starter": True},
@@ -128,5 +128,5 @@ def test_navigator_with_starter_moves_east():
     seed_static_map_landmarks(state)
     result = navigator_node(state)
     assert result["last_action"].startswith("navigate_")
-    assert result["last_action_result"]["target"][0] > gs.player.x
-    assert result["last_action_result"]["target"][1] >= gs.player.y
+    assert result["last_action_result"]["target"] == (1, 8)
+    assert result["last_action_result"]["target"][0] < gs.player.x

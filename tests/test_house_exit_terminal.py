@@ -115,7 +115,7 @@ def test_graph_invoke_navigate_after_house_exit_complete():
         ADDR_PARTY_COUNT: 0,
         ADDR_BATTLE_MODE: 0,
     }
-    emu = MutableRamEmulator(mem, route_29_at_x=99)
+    emu = MutableRamEmulator(mem, route_29_west_at_x=-1)
     gs = emu.get_game_state()
     state = initial_agent_state(gs)
     state["bootstrap_complete"] = True

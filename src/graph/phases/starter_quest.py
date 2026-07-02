@@ -159,7 +159,7 @@ def decompose_subgoals(gs: GameState) -> list[str] | None:
             return ["Talk to Elm", "Pick a Poke Ball", "Receive Potion from aide"]
         return None
     if not _has_egg(gs):
-        return ["Exit New Bark east", "Cross Route 29", "Visit Mr. Pokemon's house"]
+        return ["Enter Route 29", "Cross Route 29", "Visit Mr. Pokemon's house"]
     if not _egg_delivered(gs):
         return ["Return to New Bark", "Give Mystery Egg to Elm"]
     return ["Battle rival", "Heal if needed"]

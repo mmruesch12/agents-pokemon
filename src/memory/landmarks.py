@@ -16,7 +16,9 @@ ELMS_LAB_INTERIOR_ID = "elms_lab_interior"
 ELMS_LAB_DESK_APPROACH_ID = "elms_lab_desk_approach"
 ELMS_LAB_BALL_APPROACH_ID = "elms_lab_ball_approach"
 ELMS_LAB_EXIT_ID = "elms_lab_exit"
-NEW_BARK_EAST_EXIT_ID = "new_bark_east_exit"
+NEW_BARK_WEST_EXIT_ID = "new_bark_west_exit"
+# Deprecated alias — Route 29 is west of New Bark, not east.
+NEW_BARK_EAST_EXIT_ID = NEW_BARK_WEST_EXIT_ID
 ROUTE_29_NORTH_GATE_ID = "route_29_north_gate"
 ROUTE_30_NORTH_GATE_ID = "route_30_north_gate"
 MR_POKEMONS_HOUSE_ENTRANCE_ID = "mr_pokemons_house_entrance"
@@ -156,7 +158,7 @@ def discover_quest_transition_landmarks(
     to_map: str | None,
     from_pos: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
-    """Record warp tiles discovered on first east/route/Mr. Pokemon transitions."""
+    """Record warp tiles discovered on first Route 29 / route / Mr. Pokemon transitions."""
     from src.state.gold_state_reader import (
         MAP_KEY_MR_POKEMONS_HOUSE,
         MAP_KEY_NEW_BARK_TOWN,
@@ -176,8 +178,8 @@ def discover_quest_transition_landmarks(
     if from_map == MAP_KEY_NEW_BARK_TOWN and to_map == MAP_KEY_ROUTE_29:
         landmarks.append(
             make_landmark(
-                landmark_id=NEW_BARK_EAST_EXIT_ID,
-                name="New Bark east exit",
+                landmark_id=NEW_BARK_WEST_EXIT_ID,
+                name="New Bark Route 29 exit",
                 map_key=map_key,
                 x=int(x),
                 y=int(y),
@@ -243,9 +245,9 @@ def seed_static_map_landmarks(state: dict[str, Any]) -> list[dict[str, Any]]:
     route_29 = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {})
     route_30 = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_30, {})
     elms_lab = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ELMS_LAB, {})
-    east_row = MAP_WARP_HINT_ROWS.get(MAP_KEY_NEW_BARK_TOWN, {}).get("east", 12)
+    west_row = MAP_WARP_HINT_ROWS.get(MAP_KEY_NEW_BARK_TOWN, {}).get("west", 8)
     lab_door = new_bark.get("elms_lab_door", _ELMS_LAB_PRIMARY_DOOR)
-    east_exit = new_bark.get("east_exit", (19, east_row))
+    west_exit = new_bark.get("west_exit", (1, west_row))
     static = [
         make_landmark(
             landmark_id=ELMS_LAB_ENTRANCE_ID,
@@ -257,11 +259,11 @@ def seed_static_map_landmarks(state: dict[str, Any]) -> list[dict[str, Any]]:
             metadata={"building": "elms_lab", "seed": "map_anchors"},
         ),
         make_landmark(
-            landmark_id=NEW_BARK_EAST_EXIT_ID,
-            name="New Bark east exit",
+            landmark_id=NEW_BARK_WEST_EXIT_ID,
+            name="New Bark Route 29 exit",
             map_key=MAP_KEY_NEW_BARK_TOWN,
-            x=east_exit[0],
-            y=east_exit[1],
+            x=west_exit[0],
+            y=west_exit[1],
             kind=LANDMARK_KIND_MAP_VISIT,
             metadata={"transition": "new_bark_to_route_29", "seed": "map_anchors"},
         ),

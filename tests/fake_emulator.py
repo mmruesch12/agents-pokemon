@@ -59,10 +59,18 @@ def _has_flag(memory: dict[int, int], flag_index: int) -> bool:
 class MutableRamEmulator:
     """Fake PyBoy wrapper backed by mutable RAM bytes."""
 
-    def __init__(self, memory: dict[int, int], *, route_29_at_x: int = 18):
+    def __init__(
+        self,
+        memory: dict[int, int],
+        *,
+        route_29_west_at_x: int = 1,
+        route_29_west_row: int = 8,
+    ):
         self._memory = dict(memory)
         self._frame_count = 0
-        self._route_29_at_x = route_29_at_x
+        # Route 29 connects on the west edge of New Bark (pret). Use -1 to disable.
+        self._route_29_west_at_x = route_29_west_at_x
+        self._route_29_west_row = route_29_west_row
 
     def press_button(self, button: str, *, hold_frames: int = 2) -> None:
         x = self._memory.get(ADDR_X_COORD, 0)
@@ -85,7 +93,13 @@ class MutableRamEmulator:
         map_id = self._memory.get(ADDR_MAP_NUMBER, 0)
         x = self._memory.get(ADDR_X_COORD, 0)
         y = self._memory.get(ADDR_Y_COORD, 0)
-        if group == MAPGROUP_NEW_BARK and map_id == MAP_NEW_BARK_TOWN and x >= self._route_29_at_x:
+        if (
+            self._route_29_west_at_x >= 0
+            and group == MAPGROUP_NEW_BARK
+            and map_id == MAP_NEW_BARK_TOWN
+            and y == self._route_29_west_row
+            and x <= self._route_29_west_at_x
+        ):
             self._memory[ADDR_MAP_GROUP] = MAPGROUP_NEW_BARK
             self._memory[ADDR_MAP_NUMBER] = MAP_ROUTE_29
             self._memory[ADDR_X_COORD] = 10
@@ -135,7 +149,7 @@ class StarterQuestEmulator(MutableRamEmulator):
     """Quest-aware RAM emulator: warps and flag progression for starter-quest integration."""
 
     def __init__(self, memory: dict[int, int]):
-        super().__init__(memory, route_29_at_x=99)
+        super().__init__(memory)
         self._last_button: str | None = None
         self._elm_intro_done = False
         self._desk_script_pending = False
@@ -255,7 +269,11 @@ class StarterQuestEmulator(MutableRamEmulator):
         if group == MAPGROUP_NEW_BARK and map_id == MAP_NEW_BARK_TOWN:
             if y <= 3 and x >= 6:
                 self._warp(MAPGROUP_NEW_BARK, MAP_ELMS_LAB, 4, 8)
-            elif _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM) and x >= 19:
+            elif (
+                _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM)
+                and y == self._route_29_west_row
+                and x <= self._route_29_west_at_x
+            ):
                 self._warp(MAPGROUP_NEW_BARK, MAP_ROUTE_29, 10, 12)
             return
 

@@ -14,7 +14,7 @@ def _grid_from_rows(rows: list[str]) -> list[list[int]]:
 
 # Warp-hint rows derived from MAP_GRIDS layout (control plane, not phase curriculum).
 MAP_WARP_HINT_ROWS: dict[str, dict[str, int]] = {
-    "24:4": {"east": 12, "north": 3},
+    "24:4": {"west": 8, "north": 3},
     "24:5": {"north": 2},
     "24:3": {"north": 5},
     "26:1": {"north": 3},
@@ -24,7 +24,7 @@ MAP_WARP_HINT_ROWS: dict[str, dict[str, int]] = {
 MAP_LANDMARK_ANCHORS: dict[str, dict[str, tuple[int, int]]] = {
     "24:4": {
         "elms_lab_door": (6, 3),
-        "east_exit": (19, 12),
+        "west_exit": (1, 8),
     },
     "24:3": {
         "route_30_gate": (10, 5),

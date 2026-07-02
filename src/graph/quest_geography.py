@@ -15,7 +15,7 @@ from src.state.models import GameState
 def retired_geography_landmark_id(gs: GameState, state: dict[str, Any]) -> str | None:
     """Landmark id for retired phase geography on the current map, if applicable."""
     from src.memory.landmarks import (
-        NEW_BARK_EAST_EXIT_ID,
+        NEW_BARK_WEST_EXIT_ID,
         ROUTE_29_NORTH_GATE_ID,
         ROUTE_30_NORTH_GATE_ID,
     )
@@ -26,7 +26,7 @@ def retired_geography_landmark_id(gs: GameState, state: dict[str, Any]) -> str |
         return None
     if state.get("starter_quest_complete"):
         if gs.map_key == MAP_KEY_NEW_BARK_TOWN:
-            return NEW_BARK_EAST_EXIT_ID
+            return NEW_BARK_WEST_EXIT_ID
         if gs.map_key == MAP_KEY_ROUTE_29:
             return ROUTE_29_NORTH_GATE_ID
         if gs.map_key == MAP_KEY_ROUTE_30:
@@ -39,7 +39,7 @@ def retired_geography_landmark_id(gs: GameState, state: dict[str, Any]) -> str |
     if has_egg:
         return None
     if gs.map_key == MAP_KEY_NEW_BARK_TOWN:
-        return NEW_BARK_EAST_EXIT_ID
+        return NEW_BARK_WEST_EXIT_ID
     if gs.map_key == MAP_KEY_ROUTE_29:
         return ROUTE_29_NORTH_GATE_ID
     if gs.map_key == MAP_KEY_ROUTE_30:
