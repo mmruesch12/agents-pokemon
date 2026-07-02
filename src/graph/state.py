@@ -34,6 +34,8 @@ class AgentState(TypedDict, total=False):
     position_before_action: str
     metrics: dict[str, Any]
     stuck_count: int
+    pocket_stuck_count: int
+    pocket_nav_positions: list[str]
     session_id: str
     run_max_steps: int
     milestones: list[str]
@@ -48,12 +50,9 @@ class AgentState(TypedDict, total=False):
     house_exit_complete: bool
     starter_quest_complete: bool
     early_progression_complete: bool
-    lab_desk_dialog_done: bool
-    lab_desk_interact_count: int
-    lab_desk_script_seen: bool
-    lab_steps_without_party: int
-    lab_stall_position: str
     session_walkable: dict[str, list[tuple[int, int]]]
+    session_blocked: dict[str, list[tuple[int, int]]]
+    post_warp_wait_steps: int
     replan_events: list[dict[str, Any]]
     error: str
 
@@ -85,6 +84,8 @@ def initial_agent_state(game_state: GameState | dict | None = None) -> AgentStat
         position_before_action="",
         metrics={"steps": 0, "badges_earned": 0, "battles_won": 0},
         stuck_count=0,
+        pocket_stuck_count=0,
+        pocket_nav_positions=[],
         session_id="",
         run_max_steps=1,
         milestones=[],
@@ -99,6 +100,9 @@ def initial_agent_state(game_state: GameState | dict | None = None) -> AgentStat
         house_exit_complete=False,
         starter_quest_complete=False,
         early_progression_complete=False,
+        session_walkable={},
+        session_blocked={},
+        post_warp_wait_steps=0,
         error="",
     )
 

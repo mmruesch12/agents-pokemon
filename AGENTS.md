@@ -46,6 +46,20 @@ Autonomous multi-agent Pokemon Gold/Silver player:
 
 Design spec: [spec.md](spec.md) (original 2026-06 design; see README for current CLI). Graph mental model: [docs/agent-mental-model.html](docs/agent-mental-model.html).
 
+## Operating philosophy
+
+The agent should be **minimally prescriptive and strongly self-correcting**. Prefer generic policies that work across maps and quests over tile-specific scripts.
+
+| Principle | Where it lives | What it means |
+|-----------|----------------|---------------|
+| ROM-signal routing | `generic_interact.py`, supervisor | Route to interactor when WRAM/script state expects dialog input — not because a phase guessed an `(x,y)` |
+| Self-correction first | `nodes.py` (M3/M4/M11), `generic_interact.py` | Fix stuck loops with pocket-stuck tracking, pure-nav oscillation detection, at-target blocked-ahead interact, and critic replan **before** adding coordinate rules |
+| Generic over tile scripts | `generic_interact.py`, `nodes.py`, `pathfinding.py` | Recovery logic belongs in graph layers testable with `MutableRamEmulator`; avoid new `(x,y)` routing tables in `phases/` |
+| Shrink phases | `src/graph/phases/` | Phases should trend toward milestone checkers and landmark seeding, not scripted step lists — see [docs/autonomous-agent-roadmap.md](docs/autonomous-agent-roadmap.md) |
+| Prescription budget | PR review habit | Each new hard-coded coordinate or map-specific branch needs a justification: why generic self-correction could not solve it |
+
+When the agent ping-pongs in a small area, assume the stuck meter or critic failed — extend M3/M11/M4, not the phase module.
+
 ## Documentation map
 
 | Doc | When to read |

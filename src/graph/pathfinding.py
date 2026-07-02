@@ -14,9 +14,29 @@ def _grid_from_rows(rows: list[str]) -> list[list[int]]:
 
 # Warp-hint rows derived from MAP_GRIDS layout (control plane, not phase curriculum).
 MAP_WARP_HINT_ROWS: dict[str, dict[str, int]] = {
-    "24:4": {"east": 12},
+    "24:4": {"east": 12, "north": 3},
+    "24:5": {"north": 2},
     "24:3": {"north": 5},
     "26:1": {"north": 3},
+}
+
+# Building/warp anchor tiles from MAP_GRIDS layout (bootstrap landmark seeding only).
+MAP_LANDMARK_ANCHORS: dict[str, dict[str, tuple[int, int]]] = {
+    "24:4": {
+        "elms_lab_door": (6, 3),
+        "east_exit": (19, 12),
+    },
+    "24:3": {
+        "route_30_gate": (10, 5),
+    },
+    "26:1": {
+        "mr_pokemon_gate": (10, 3),
+    },
+    "24:5": {
+        "desk_approach": (4, 3),
+        "ball_approach": (6, 4),
+        "south_exit": (4, 11),
+    },
 }
 
 # Simplified walkable grids for early-game maps (0=walkable, 1=blocked)
@@ -142,17 +162,122 @@ def _is_walkable(
     *,
     goal: tuple[int, int] | None = None,
     session_walkable: set[tuple[int, int]] | None = None,
+    session_blocked: set[tuple[int, int]] | None = None,
 ) -> bool:
     """Walkable check; session overlay expands known tiles from movement outcomes."""
+    if session_blocked and (x, y) in session_blocked:
+        return False
     if goal is not None and (x, y) == goal:
         return True
     if session_walkable and (x, y) in session_walkable:
-        return True
+        if grid is None:
+            return True
+        if _in_bounds(grid, x, y) and grid[y][x] == 0:
+            return True
     if grid is None:
         return True
     if not _in_bounds(grid, x, y):
         return False
     return grid[y][x] == 0
+
+
+def _east_row_blocked_ahead(
+    session_blocked: set[tuple[int, int]] | None,
+    east_row: int,
+    x: int,
+) -> bool:
+    if not session_blocked:
+        return False
+    return any(by == east_row and bx > x for bx, by in session_blocked)
+
+
+def _east_row_blockage_between(
+    session_blocked: set[tuple[int, int]] | None,
+    east_row: int,
+    x: int,
+    end_x: int,
+) -> bool:
+    """Session-blocked tiles on the east corridor row between x and the goal."""
+    if not session_blocked:
+        return False
+    return any(by == east_row and x < bx <= end_x for bx, by in session_blocked)
+
+
+def _east_row_session_backoff_prefix(
+    start_x: int,
+    start_y: int,
+    end_x: int,
+    end_y: int,
+    *,
+    map_key: str,
+    grid: list[list[int]] | None,
+    session_blocked: set[tuple[int, int]] | None,
+    state: dict | None = None,
+    max_steps: int = 3,
+) -> list[Direction]:
+    """Retreat west along a warp-hint east row before detouring around session blocks."""
+    hints = MAP_WARP_HINT_ROWS.get(map_key, {})
+    east_row = hints.get("east")
+    if east_row is None or start_y != east_row or end_y != east_row or end_x <= start_x:
+        return []
+    if not _east_row_blockage_between(session_blocked, east_row, start_x, end_x):
+        return []
+    stuck_count = (state or {}).get("stuck_count")
+    if stuck_count is not None and stuck_count < 2:
+        return []
+
+    prefix: list[Direction] = []
+    x = start_x
+    goal = (end_x, end_y)
+    while x > 0 and len(prefix) < max_steps:
+        if not _east_row_blockage_between(session_blocked, east_row, x, end_x):
+            break
+        nx = x - 1
+        if not _is_walkable(
+            grid,
+            nx,
+            east_row,
+            goal=goal,
+            session_blocked=session_blocked,
+        ):
+            break
+        prefix.append("left")
+        x = nx
+    return prefix
+
+
+def _warp_row_step_penalty(
+    map_key: str,
+    x: int,
+    y: int,
+    nx: int,
+    ny: int,
+    *,
+    end_x: int,
+    end_y: int,
+    session_blocked: set[tuple[int, int]] | None = None,
+) -> int:
+    """Prefer warp-hint corridor rows when routing toward distant east/north goals."""
+    hints = MAP_WARP_HINT_ROWS.get(map_key, {})
+    penalty = 0
+    east_row = hints.get("east")
+    if east_row is not None and end_x > x and end_y == east_row:
+        blocked_ahead = _east_row_blocked_ahead(session_blocked, east_row, x)
+        if y == east_row and blocked_ahead:
+            if ny == east_row and nx < x:
+                penalty -= 2
+            elif ny != east_row:
+                penalty += 500
+        elif y == east_row and ny != east_row:
+            penalty += 8
+        elif y >= east_row - 1 and ny < east_row:
+            penalty += 6
+        elif ny != east_row:
+            penalty += 3
+    north_row = hints.get("north")
+    if north_row is not None and end_y < y and end_y == north_row and ny != north_row:
+        penalty += 2
+    return penalty
 
 
 def session_walkable_for_map(state: dict | None, map_key: str) -> set[tuple[int, int]]:
@@ -179,6 +304,99 @@ def record_session_walkable(
     state["session_walkable"] = session
 
 
+def session_blocked_for_map(state: dict | None, map_key: str) -> set[tuple[int, int]]:
+    """Tiles confirmed blocked this session via failed navigation."""
+    if not state:
+        return set()
+    raw = state.get("session_blocked", {}).get(map_key, [])
+    return {tuple(tile) for tile in raw}
+
+
+def record_session_blocked(
+    state: dict,
+    map_key: str,
+    x: int,
+    y: int,
+) -> None:
+    """Mark a tile blocked after a failed move into it."""
+    session = dict(state.get("session_blocked", {}))
+    tiles = list(session.get(map_key, []))
+    key = (x, y)
+    if key not in tiles:
+        tiles.append(key)
+    session[map_key] = tiles
+    state["session_blocked"] = session
+
+
+_DIRECTION_DELTA: dict[str, tuple[int, int]] = {
+    "up": (0, -1),
+    "down": (0, 1),
+    "left": (-1, 0),
+    "right": (1, 0),
+}
+
+
+def tile_blocked(
+    map_key: str,
+    x: int,
+    y: int,
+    *,
+    state: dict | None = None,
+) -> bool:
+    """True when a tile is not walkable on the static grid or session overlay."""
+    grid = MAP_GRIDS.get(map_key)
+    session_walkable = session_walkable_for_map(state, map_key)
+    session_blocked = session_blocked_for_map(state, map_key)
+    return not _is_walkable(
+        grid,
+        x,
+        y,
+        session_walkable=session_walkable,
+        session_blocked=session_blocked,
+    )
+
+
+def direction_blocked_ahead(
+    map_key: str,
+    x: int,
+    y: int,
+    direction: str,
+    *,
+    state: dict | None = None,
+) -> bool:
+    """True when the tile one step in direction is blocked."""
+    delta = _DIRECTION_DELTA.get(direction)
+    if delta is None:
+        return False
+    dx, dy = delta
+    return tile_blocked(map_key, x + dx, y + dy, state=state)
+
+
+def at_target_blocked_ahead_interact_eligible(
+    map_key: str,
+    x: int,
+    y: int,
+    target: tuple[int, int],
+    *,
+    state: dict | None = None,
+) -> bool:
+    """At nav target with a blocked adjacent tile — interact from here (indoor only)."""
+    from src.graph.generic_interact import INDOOR_NAV_STUCK_MAPS
+
+    if (x, y) != target:
+        return False
+    if map_key not in INDOOR_NAV_STUCK_MAPS:
+        return False
+    grid = MAP_GRIDS.get(map_key)
+    session_blocked = session_blocked_for_map(state, map_key)
+    for direction, (dx, dy) in _DIRECTION_DELTA.items():
+        nx, ny = x + dx, y + dy
+        static_blocked = bool(grid and _in_bounds(grid, nx, ny) and grid[ny][nx] == 1)
+        if static_blocked or (nx, ny) in session_blocked:
+            return True
+    return False
+
+
 def direction_toward(start_x: int, start_y: int, end_x: int, end_y: int) -> str:
     """Primary direction toward target; 'a' only when already at target."""
     if start_x == end_x and start_y == end_y:
@@ -203,6 +421,7 @@ def find_path(
     map_key: str = "",
     max_steps: int = 50,
     state: dict | None = None,
+    _allow_backoff: bool = True,
 ) -> list[Direction]:
     """A* pathfinding on a collision grid. Returns list of directions."""
     if start_x == end_x and start_y == end_y:
@@ -210,13 +429,44 @@ def find_path(
 
     grid = MAP_GRIDS.get(map_key)
     session_walkable = session_walkable_for_map(state, map_key)
+    session_blocked = session_blocked_for_map(state, map_key)
+    if _allow_backoff:
+        backoff = _east_row_session_backoff_prefix(
+            start_x,
+            start_y,
+            end_x,
+            end_y,
+            map_key=map_key,
+            grid=grid,
+            session_blocked=session_blocked,
+            state=state,
+        )
+        if backoff:
+            bx, by = start_x, start_y
+            for direction in backoff:
+                dx, dy = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}[
+                    direction
+                ]
+                bx, by = bx + dx, by + dy
+            remainder = find_path(
+                bx,
+                by,
+                end_x,
+                end_y,
+                map_key=map_key,
+                max_steps=max(0, max_steps - len(backoff)),
+                state=state,
+                _allow_backoff=False,
+            )
+            return backoff + remainder
+
     goal = (end_x, end_y)
-    open_set: list[tuple[int, int, int, list[Direction]]] = []
-    heapq.heappush(open_set, (0, start_x, start_y, []))
+    open_set: list[tuple[int, int, int, int, list[Direction]]] = []
+    heapq.heappush(open_set, (0, 0, start_x, start_y, []))
     visited: set[tuple[int, int]] = {(start_x, start_y)}
 
     while open_set:
-        _, x, y, path = heapq.heappop(open_set)
+        _, cost, x, y, path = heapq.heappop(open_set)
         if len(path) >= max_steps:
             return path
 
@@ -230,21 +480,53 @@ def find_path(
             if (nx, ny) in visited:
                 continue
             if not _is_walkable(
-                grid, nx, ny, goal=goal, session_walkable=session_walkable
+                grid,
+                nx,
+                ny,
+                goal=goal,
+                session_walkable=session_walkable,
+                session_blocked=session_blocked,
             ):
                 continue
             new_path = path + [direction]  # type: ignore[list-item]
             if nx == end_x and ny == end_y:
                 return new_path
             visited.add((nx, ny))
+            step_cost = 1 + _warp_row_step_penalty(
+                map_key,
+                x,
+                y,
+                nx,
+                ny,
+                end_x=end_x,
+                end_y=end_y,
+                session_blocked=session_blocked,
+            )
             h = abs(end_x - nx) + abs(end_y - ny)
-            heapq.heappush(open_set, (h + len(new_path), nx, ny, new_path))
+            heapq.heappush(
+                open_set, (cost + step_cost + h, cost + step_cost, nx, ny, new_path)
+            )
 
-    return _greedy_directions(start_x, start_y, end_x, end_y, grid)
+    return _greedy_directions(
+        start_x,
+        start_y,
+        end_x,
+        end_y,
+        grid,
+        map_key=map_key,
+        session_blocked=session_blocked,
+    )
 
 
 def _greedy_directions(
-    x: int, y: int, tx: int, ty: int, grid: list[list[int]] | None
+    x: int,
+    y: int,
+    tx: int,
+    ty: int,
+    grid: list[list[int]] | None,
+    *,
+    map_key: str = "",
+    session_blocked: set[tuple[int, int]] | None = None,
 ) -> list[Direction]:
     directions: list[Direction] = []
     cx, cy = x, y
@@ -269,14 +551,33 @@ def _greedy_directions(
                 candidates.append("left")
 
         moved = False
+        best: tuple[int, Direction] | None = None
         for d in candidates:
             ndx, ndy = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}[d]
             nx, ny = cx + ndx, cy + ndy
-            if _is_walkable(grid, nx, ny, goal=goal):
-                directions.append(d)
-                cx, cy = nx, ny
-                moved = True
-                break
+            if not _is_walkable(
+                grid, nx, ny, goal=goal, session_blocked=session_blocked
+            ):
+                continue
+            penalty = _warp_row_step_penalty(
+                map_key,
+                cx,
+                cy,
+                nx,
+                ny,
+                end_x=tx,
+                end_y=ty,
+                session_blocked=session_blocked,
+            )
+            score = penalty
+            if best is None or score < best[0]:
+                best = (score, d)
+        if best is not None:
+            d = best[1]
+            ndx, ndy = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}[d]
+            directions.append(d)
+            cx, cy = cx + ndx, cy + ndy
+            moved = True
         if not moved:
             break
     return directions

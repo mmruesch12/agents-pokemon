@@ -9,19 +9,25 @@ from typing import Any
 
 from src.emulator.bootstrap import needs_bootstrap, pick_bootstrap_button
 from src.graph.generic_interact import (
+    clear_pocket_stuck,
     generic_force_interactor,
     generic_is_interact_needed,
     generic_prefer_interact_candidate,
     generic_stuck_interact_fallback,
+    in_navigation_pocket,
+    record_pocket_nav_failure,
 )
 from src.graph.navigation_resolve import resolve_navigation_target
 from src.graph.llm import llm_battle, llm_navigate, llm_plan
 from src.graph.pathfinding import (
     MAP_GRIDS,
     _is_walkable,
+    at_target_blocked_ahead_interact_eligible,
     direction_toward,
     find_path,
+    record_session_blocked,
     record_session_walkable,
+    session_blocked_for_map,
     session_walkable_for_map,
 )
 from src.graph.phases import early_progression, house_exit, starter_quest
@@ -60,7 +66,6 @@ from src.state.script_constants import (
     SCRIPT_READ,
     SCRIPT_WAIT,
     SCRIPT_WAIT_MOVEMENT,
-    joypad_input_blocked,
 )
 
 logger = logging.getLogger(__name__)
@@ -154,12 +159,22 @@ def walkable_cardinal_candidates(gs: GameState, state: AgentState | None = None)
     """Adjacent walkable directions from the pathfinding grid (M4 loop expansion)."""
     grid = MAP_GRIDS.get(gs.map_key)
     session_walkable = session_walkable_for_map(state, gs.map_key)
+    session_blocked = session_blocked_for_map(state, gs.map_key)
     candidates: list[str] = []
     for direction, (dx, dy) in _DIRECTION_DELTA.items():
         nx, ny = gs.player.x + dx, gs.player.y + dy
-        if direction == "up" and _blocked_stairs_up(gs):
+        if direction == "up" and (
+            _blocked_stairs_up(gs)
+            or (gs.map_key == MAP_KEY_ELMS_LAB and starter_quest.blocked_lab_exit(gs))
+        ):
             continue
-        if _is_walkable(grid, nx, ny, session_walkable=session_walkable):
+        if _is_walkable(
+            grid,
+            nx,
+            ny,
+            session_walkable=session_walkable,
+            session_blocked=session_blocked,
+        ):
             candidates.append(direction)
     return candidates
 
@@ -224,6 +239,8 @@ def select_navigation_action(
     """Pick direction: door priority, stuck override, visit-aware path, LLM, fallback."""
     if door_exit:
         return door_exit
+    if (gs.player.x, gs.player.y) == target and "a" in candidates:
+        return "a"
     arbitrate = navigation_arbitration_active(stuck_count, state)
     if arbitrate and llm_choice and llm_choice in candidates:
         return llm_choice
@@ -325,14 +342,14 @@ def supervisor_node(state: AgentState) -> AgentState:
     elif gs.battle.in_battle:
         state["next_node"] = "battler"
         state["phase"] = "battle"
-    elif needs_script_wait(gs, state):
-        state["next_node"] = "waiter"
-        state["phase"] = "wait"
     elif state.get("should_replan"):
         state["next_node"] = "planner"
     elif needs_interaction(gs, state):
         state["next_node"] = "interactor"
         state["phase"] = "interact"
+    elif needs_script_wait(gs, state):
+        state["next_node"] = "waiter"
+        state["phase"] = "wait"
     elif house_exit.force_interactor(gs, state) or generic_force_interactor(gs, state):
         state["next_node"] = "interactor"
         state["phase"] = "interact"
@@ -367,17 +384,14 @@ def needs_script_wait(gs: GameState, state: dict | None = None) -> bool:
     state = state or {}
     if gs.battle.in_battle or needs_bootstrap(gs, state):
         return False
+    if state.get("post_warp_wait_steps", 0) > 0:
+        return True
     meta = gs.raw_metadata or {}
     mode = meta.get("script_mode", 0)
     script_active = bool(meta.get("script_flags", 0) & SCRIPT_FLAG_SCRIPT_RUNNING)
-    joypad_disable = meta.get("joypad_disable", 0)
-    if state.get("post_warp_wait_steps", 0) > 0:
-        return True
     if not _valid_script_mode(mode):
         return False
     if mode in (SCRIPT_WAIT_MOVEMENT, SCRIPT_WAIT) and script_active:
-        return True
-    if mode == SCRIPT_READ and joypad_input_blocked(joypad_disable) and script_active:
         return True
     return False
 
@@ -385,7 +399,9 @@ def needs_script_wait(gs: GameState, state: dict | None = None) -> bool:
 def needs_interaction(gs: GameState, state: dict | None = None) -> bool:
     """True when ROM signals expect A/B dialog input instead of movement."""
     state = state or {}
-    if gs.battle.in_battle or needs_bootstrap(gs, state) or needs_script_wait(gs, state):
+    if gs.battle.in_battle or needs_bootstrap(gs, state):
+        return False
+    if needs_script_wait(gs, state):
         return False
     starter_quest.ensure_house_exit_complete(gs, state)
     if house_exit.needs_house_interaction(gs, state):
@@ -393,12 +409,16 @@ def needs_interaction(gs: GameState, state: dict | None = None) -> bool:
     return generic_is_interact_needed(gs, state)
 
 
-def waiter_node(state: AgentState) -> AgentState:
-    """Advance scripted movement by ticking frames without joypad input."""
-    gs = GameState.model_validate(state.get("game_state", {}))
+def _tick_post_warp_wait(state: AgentState) -> None:
     remaining = state.get("post_warp_wait_steps", 0)
     if remaining > 0:
         state["post_warp_wait_steps"] = remaining - 1
+
+
+def waiter_node(state: AgentState) -> AgentState:
+    """Advance scripted movement by ticking frames without joypad input."""
+    gs = GameState.model_validate(state.get("game_state", {}))
+    _tick_post_warp_wait(state)
     state["last_action"] = "wait_script"
     state["last_action_result"] = {
         "script_mode": (gs.raw_metadata or {}).get("script_mode"),
@@ -411,18 +431,12 @@ def waiter_node(state: AgentState) -> AgentState:
     return state
 
 
-def _lab_interact_button_only(gs: GameState, state: AgentState) -> bool:
-    """Gen 2 lab dialogs break on B — prefer A in Elm's lab during scripts."""
-    if gs.map_key != MAP_KEY_ELMS_LAB:
-        return False
-    return generic_is_interact_needed(gs, state)
-
-
 def interactor_node(state: AgentState) -> AgentState:
     """Advance dialog and scripted indoor scenes with A/B."""
     gs = GameState.model_validate(state.get("game_state", {}))
+    _tick_post_warp_wait(state)
     idx = state.get("interact_action_index", 0)
-    if _lab_interact_button_only(gs, state):
+    if generic_is_interact_needed(gs, state):
         button = "a"
     else:
         button = "a" if idx % 8 != 7 else "b"
@@ -558,13 +572,48 @@ def _players_house_door_exit(gs: GameState, state: AgentState | None = None) -> 
     return house_exit.door_exit_direction(gs)
 
 
+def _east_corridor_blocked_ahead(gs: GameState, state: AgentState) -> bool:
+    """Session-learned block on the warp-hint east row ahead of the player."""
+    from src.graph.pathfinding import MAP_WARP_HINT_ROWS
+
+    east_row = MAP_WARP_HINT_ROWS.get(gs.map_key, {}).get("east")
+    if east_row is None or gs.player.y != east_row:
+        return False
+    blocked = session_blocked_for_map(state, gs.map_key)
+    return any(y == east_row and x > gs.player.x for x, y in blocked)
+
+
+def _stuck_recovery_target(gs: GameState, state: AgentState) -> tuple[int, int] | None:
+    """Exploration frontier when arbitration sees oscillation or repeat blocks."""
+    from src.graph.exploration import exploration_target
+
+    stuck_count = state.get("stuck_count", 0)
+    history = state.get("short_term_history", [])
+    if not navigation_arbitration_active(stuck_count, state):
+        return None
+    if not (
+        _history_oscillates(history, min_cycles=2, max_positions=6)
+        or navigation_repeat_detected(history)
+        or _east_corridor_blocked_ahead(gs, state)
+    ):
+        return None
+    explore = exploration_target(gs, state)
+    if explore and explore != (gs.player.x, gs.player.y):
+        return explore
+    return None
+
+
 def navigator_node(state: AgentState) -> AgentState:
     """Navigate with pathfinding and LLM direction pick among candidates."""
     gs = GameState.model_validate(state.get("game_state", {}))
+    _tick_post_warp_wait(state)
     map_key = gs.map_key
 
     relevant_landmarks = _attach_landmark_context(state, gs)
     target = _navigation_target(gs, map_key=map_key, state=state)
+    recovery = _stuck_recovery_target(gs, state)
+    if recovery is not None:
+        target = recovery
     path = find_path(
         gs.player.x,
         gs.player.y,
@@ -611,8 +660,6 @@ def navigator_node(state: AgentState) -> AgentState:
 
 
 def _blocked_stairs_up(gs: GameState) -> bool:
-    if starter_quest.blocked_lab_exit(gs):
-        return True
     return house_exit.blocked_stairs_up(gs)
 
 
@@ -630,7 +677,10 @@ def _navigation_candidates(
     candidates: list[str] = []
     if path:
         for step in path[:3]:
-            if step == "up" and _blocked_stairs_up(gs):
+            if step == "up" and (
+                _blocked_stairs_up(gs)
+                or (gs.map_key == MAP_KEY_ELMS_LAB and starter_quest.blocked_lab_exit(gs))
+            ):
                 continue
             candidates.append(step)
     if primary != "a" and primary not in candidates:
@@ -641,6 +691,14 @@ def _navigation_candidates(
         candidates.insert(0, "a")
     elif house_exit.stuck_interact_fallback(gs, state) or generic_stuck_interact_fallback(
         gs, state
+    ):
+        candidates.append("a")
+    elif at_target_blocked_ahead_interact_eligible(
+        gs.map_key,
+        gs.player.x,
+        gs.player.y,
+        target,
+        state=state,
     ):
         candidates.append("a")
     if not candidates:
@@ -683,8 +741,13 @@ def battler_node(state: AgentState) -> AgentState:
     return state
 
 
-def _history_oscillates(history: list[str], *, min_cycles: int = 3) -> bool:
-    """Detect navigate*-then-interact cycles at the same tile (stuck-meter evasion)."""
+def _history_oscillates_nav_interact(
+    history: list[str],
+    *,
+    min_cycles: int = 3,
+    max_positions: int = 4,
+) -> bool:
+    """Detect navigate-then-interact cycles in a small area (stuck-meter evasion)."""
     if len(history) < min_cycles * 2:
         return False
     window = min(len(history), 20)
@@ -695,7 +758,7 @@ def _history_oscillates(history: list[str], *, min_cycles: int = 3) -> bool:
         action, pos = item.split("@", 1)
         entries.append((action.split(":")[0], pos))
     positions = {pos for _, pos in entries}
-    if len(positions) != 1:
+    if len(positions) == 0 or len(positions) > max_positions:
         return False
     kinds = {kind for kind, _ in entries}
     if kinds != {"navigate", "interact"}:
@@ -716,6 +779,50 @@ def _history_oscillates(history: list[str], *, min_cycles: int = 3) -> bool:
         elif nav_count > 0:
             break
     return cycles >= min_cycles
+
+
+def _history_oscillates_nav_only(
+    history: list[str],
+    *,
+    min_cycles: int = 3,
+    max_positions: int = 6,
+) -> bool:
+    """Detect navigate-only ping-pong across a small tile pocket."""
+    if len(history) < min_cycles * 2:
+        return False
+    window = min(len(history), 20)
+    positions_list: list[str] = []
+    for item in history[-window:]:
+        if "@" not in item:
+            return False
+        action, pos = item.split("@", 1)
+        if action.split(":")[0] != "navigate":
+            return False
+        positions_list.append(pos)
+    unique = set(positions_list)
+    if len(unique) < 2 or len(unique) > max_positions:
+        return False
+    counts: dict[str, int] = {}
+    for pos in positions_list:
+        counts[pos] = counts.get(pos, 0) + 1
+    return min(counts.values()) >= min_cycles
+
+
+def _history_oscillates(
+    history: list[str],
+    *,
+    min_cycles: int = 3,
+    max_positions: int = 4,
+) -> bool:
+    """Detect navigation loops: nav+interact cycles or pure nav ping-pong."""
+    nav_max = max(max_positions, 6)
+    if _history_oscillates_nav_interact(
+        history, min_cycles=min_cycles, max_positions=max_positions
+    ):
+        return True
+    return _history_oscillates_nav_only(
+        history, min_cycles=min_cycles, max_positions=nav_max
+    )
 
 
 def _history_interact_repeats(history: list[str], *, min_count: int = 5) -> bool:
@@ -899,7 +1006,12 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
     pos_before = state.get("position_before_action", "")
     if emulator is None:
         if action.startswith("navigate_") and pos_before:
-            _update_stuck_from_movement(state, action, pos_before, pos_before)
+            gs_stub = None
+            if state.get("game_state"):
+                gs_stub = GameState.model_validate(state["game_state"])
+            _update_stuck_from_movement(
+                state, action, pos_before, pos_before, gs_stub
+            )
         return state
     if not pos_before:
         gs_before = GameState.model_validate(state.get("game_state", {}))
@@ -986,12 +1098,6 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
                 state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
         elif action.startswith("interact_"):
             _update_stuck_from_interaction(state, action, pos_before, gs)
-            if (
-                gs.map_key == MAP_KEY_ELMS_LAB
-                and (gs.player.x, gs.player.y) in ((4, 2), (5, 2), (4, 3))
-                and (gs.in_text_box or bool((gs.raw_metadata or {}).get("in_script")))
-            ):
-                state["lab_desk_dialog_done"] = True
         else:
             _update_stuck_from_movement(
                 state,
@@ -1022,6 +1128,15 @@ def _update_stuck_from_movement(
         return
     moved = pos_before != pos_after
     if moved:
+        if gs is not None:
+            parsed = parse_position_key(pos_after)
+            if parsed is not None:
+                _, x, y = parsed
+                if in_navigation_pocket(state, x, y):
+                    record_session_walkable(state, gs.map_key, x, y)
+                    _mark_replan_recovery(state, gs, pos_before, pos_after)
+                    return
+        clear_pocket_stuck(state)
         state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
         if gs is not None:
             parsed = parse_position_key(pos_after)
@@ -1031,6 +1146,17 @@ def _update_stuck_from_movement(
             _mark_replan_recovery(state, gs, pos_before, pos_after)
         return
     state["stuck_count"] = state.get("stuck_count", 0) + 1
+    if gs is not None:
+        parsed_before = parse_position_key(pos_before)
+        if parsed_before is not None:
+            map_key, x, y = parsed_before
+            if map_key == gs.map_key:
+                record_pocket_nav_failure(state, x, y)
+                direction = action.removeprefix("navigate_")
+                delta = _DIRECTION_DELTA.get(direction)
+                if delta is not None:
+                    dx, dy = delta
+                    record_session_blocked(state, map_key, x + dx, y + dy)
 
 
 def _mark_replan_recovery(

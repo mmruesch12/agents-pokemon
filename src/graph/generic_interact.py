@@ -5,11 +5,20 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from src.state.gold_state_reader import MAP_KEY_ELMS_LAB, MAP_KEY_MR_POKEMONS_HOUSE
+from src.state.gold_state_reader import (
+    MAP_KEY_ELMS_LAB,
+    MAP_KEY_PLAYERS_HOUSE_1F,
+    MAP_KEY_PLAYERS_HOUSE_2F,
+)
 from src.state.models import GameState
 from src.state.script_constants import SCRIPT_READ, joypad_input_blocked
 
 INDOOR_INTERACT_STUCK = int(os.getenv("INDOOR_INTERACT_STUCK", "2"))
+POCKET_STUCK_MAX_POSITIONS = 4
+
+INDOOR_NAV_STUCK_MAPS = frozenset(
+    {MAP_KEY_PLAYERS_HOUSE_1F, MAP_KEY_PLAYERS_HOUSE_2F, MAP_KEY_ELMS_LAB}
+)
 
 
 def _meta(gs: GameState) -> dict[str, Any]:
@@ -33,56 +42,8 @@ def joypad_blocked_facing_object(gs: GameState) -> bool:
     return dialog_or_script_active(gs)
 
 
-def quest_object_interact(gs: GameState, state: dict[str, Any]) -> bool:
-    """Interact at known quest object tiles when subgoals require it."""
-    from src.graph.phases import starter_quest
-
-    pos = (gs.player.x, gs.player.y)
-    if (
-        gs.map_key == MAP_KEY_MR_POKEMONS_HOUSE
-        and not starter_quest._has_egg(gs)
-        and pos == (5, 5)
-    ):
-        return True
-    if (
-        gs.map_key == MAP_KEY_ELMS_LAB
-        and starter_quest._has_egg(gs)
-        and not starter_quest._egg_delivered(gs)
-        and pos in ((4, 2), (5, 2))
-    ):
-        return True
-    return False
-
-
-def lab_interact_row(gs: GameState, state: dict[str, Any]) -> bool:
-    """Pre-starter Elm lab desk/ball row — interact when subgoal expects dialog."""
-    from src.graph.phases import starter_quest
-
-    if gs.map_key != MAP_KEY_ELMS_LAB or starter_quest.has_starter(gs):
-        return False
-    if dialog_or_script_active(gs):
-        return False
-    subgoal = str(state.get("active_subgoal", "")).lower()
-    pos = (gs.player.x, gs.player.y)
-    if "poke ball" in subgoal or "starter" in subgoal:
-        ball_tiles = {(6, 3), (7, 3), (8, 3)}
-        if pos in ball_tiles or any(abs(pos[0] - bx) + abs(pos[1] - by) == 1 for bx, by in ball_tiles):
-            return True
-    if "elm" in subgoal and pos in ((4, 2), (5, 2), (4, 3)):
-        return True
-    return False
-
-
-def navigate_stuck_at_tile(gs: GameState, state: dict[str, Any]) -> bool:
-    """Repeated failed navigation at the same tile — try interact then replan."""
-    del gs
-    stuck = state.get("stuck_count", 0) >= INDOOR_INTERACT_STUCK
-    last = state.get("last_action", "")
-    return stuck and last.startswith("navigate_") and not last.endswith("_a")
-
-
-def generic_is_interact_needed(gs: GameState, state: dict[str, Any]) -> bool:
-    """True when ROM signals expect A/B instead of movement."""
+def is_rom_interact_signal(gs: GameState) -> bool:
+    """True when ROM-derived state expects dialog/button input."""
     meta = _meta(gs)
     joypad_disable = meta.get("joypad_disable", 0)
     blocked = joypad_input_blocked(joypad_disable)
@@ -92,27 +53,98 @@ def generic_is_interact_needed(gs: GameState, state: dict[str, Any]) -> bool:
         return True
     if joypad_blocked_facing_object(gs):
         return True
-    if navigate_stuck_at_tile(gs, state):
-        return True
-    if lab_interact_row(gs, state) or quest_object_interact(gs, state):
-        return True
     return False
+
+
+def _parse_pocket_pos(pos: str) -> tuple[int, int] | None:
+    if "," not in pos:
+        return None
+    parts = pos.split(",", 1)
+    try:
+        return int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+
+
+def _pocket_positions(state: dict[str, Any]) -> list[tuple[int, int]]:
+    positions: list[tuple[int, int]] = []
+    for item in state.get("pocket_nav_positions", []):
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            positions.append((int(item[0]), int(item[1])))
+        elif isinstance(item, str):
+            parsed = _parse_pocket_pos(item)
+            if parsed is not None:
+                positions.append(parsed)
+    return positions
+
+
+def in_navigation_pocket(state: dict[str, Any], x: int, y: int) -> bool:
+    """True when (x, y) is inside the small tile pocket from recent failed nav."""
+    positions = _pocket_positions(state)
+    if not positions:
+        return False
+    for px, py in positions:
+        if (x, y) == (px, py):
+            return True
+        if abs(x - px) + abs(y - py) <= 1:
+            return True
+    return False
+
+
+def record_pocket_nav_failure(state: dict[str, Any], x: int, y: int) -> None:
+    """Accumulate pocket stuck when a navigate action fails to change position."""
+    state["pocket_stuck_count"] = state.get("pocket_stuck_count", 0) + 1
+    raw = list(state.get("pocket_nav_positions", []))
+    key = f"{x},{y}"
+    if key not in raw:
+        raw.append(key)
+    state["pocket_nav_positions"] = raw[-POCKET_STUCK_MAX_POSITIONS:]
+
+
+def clear_pocket_stuck(state: dict[str, Any]) -> None:
+    state["pocket_stuck_count"] = 0
+    state["pocket_nav_positions"] = []
+
+
+def pocket_navigate_stuck(state: dict[str, Any]) -> bool:
+    """Pocket-level navigate stuck — lateral moves within pocket do not evade this."""
+    stuck = state.get("pocket_stuck_count", 0) >= INDOOR_INTERACT_STUCK
+    last = state.get("last_action", "")
+    return stuck and last.startswith("navigate_") and not last.endswith("_a")
+
+
+def navigate_stuck_at_tile(gs: GameState, state: dict[str, Any]) -> bool:
+    """Repeated failed navigation at the same tile or within a small pocket."""
+    del gs
+    last = state.get("last_action", "")
+    if not (last.startswith("navigate_") and not last.endswith("_a")):
+        return False
+    tile = state.get("stuck_count", 0) >= INDOOR_INTERACT_STUCK
+    return tile or pocket_navigate_stuck(state)
+
+
+def generic_is_interact_needed(gs: GameState, state: dict[str, Any]) -> bool:
+    """True when ROM signals expect A/B instead of movement."""
+    del state
+    return is_rom_interact_signal(gs)
 
 
 def generic_force_interactor(gs: GameState, state: dict[str, Any]) -> bool:
     """Supervisor must route to interactor before navigator (active dialog/script)."""
-    if navigate_stuck_at_tile(gs, state):
-        return False
-    return dialog_or_script_active(gs) or joypad_blocked_facing_object(gs)
+    del state
+    return is_rom_interact_signal(gs)
 
 
 def generic_prefer_interact_candidate(gs: GameState, state: dict[str, Any]) -> bool:
-    """Navigator should offer interact when dialog is active."""
-    if lab_interact_row(gs, state) or quest_object_interact(gs, state):
-        return True
-    return dialog_or_script_active(gs) and not navigate_stuck_at_tile(gs, state)
+    """Navigator should offer interact when ROM signals expect dialog input."""
+    del state
+    return is_rom_interact_signal(gs)
 
 
 def generic_stuck_interact_fallback(gs: GameState, state: dict[str, Any]) -> bool:
-    """Append interact candidate after navigate stuck threshold."""
-    return navigate_stuck_at_tile(gs, state)
+    """Append interact candidate after navigate stuck — indoor maps only."""
+    if is_rom_interact_signal(gs):
+        return True
+    if gs.map_key in INDOOR_NAV_STUCK_MAPS:
+        return navigate_stuck_at_tile(gs, state)
+    return False
