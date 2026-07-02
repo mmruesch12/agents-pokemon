@@ -579,6 +579,77 @@ def test_select_navigation_action_at_target_blocked_ahead_picks_interact():
     assert action == "a"
 
 
+def test_house_2f_stairs_at_target_does_not_add_blocked_ahead_interact():
+    gs = GameState(player={"map_group": 24, "map_id": 7, "x": 7, "y": 0})
+    state = initial_agent_state(gs)
+    target = (7, 0)
+    candidates = _navigation_candidates(gs, target, [], state)
+    assert "a" not in candidates
+    action = select_navigation_action(
+        door_exit=None,
+        path=[],
+        llm_choice=None,
+        candidates=candidates,
+        stuck_count=0,
+        gs=gs,
+        state=state,
+        target=target,
+    )
+    assert action != "a"
+
+
+def test_house_1f_corridor_at_target_does_not_add_blocked_ahead_interact():
+    from src.graph.phases.house_exit import PLAYERS_HOUSE_1F_CORRIDOR
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 8, "y": 5},
+        raw_metadata={"mom_scene_complete": True},
+    )
+    state = initial_agent_state(gs)
+    target = PLAYERS_HOUSE_1F_CORRIDOR
+    candidates = _navigation_candidates(gs, target, [], state)
+    assert "a" not in candidates
+
+
+def test_pocket_stuck_off_target_selects_interact_under_arbitration():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 5, "x": 6, "y": 5, "facing": 0},
+        raw_metadata={"has_starter": False},
+        party_count=0,
+    )
+    state = initial_agent_state(gs)
+    state["pocket_stuck_count"] = 2
+    state["pocket_nav_positions"] = ["6,4", "7,4"]
+    state["last_action"] = "navigate_up"
+    state["stuck_count"] = 2
+    target = (6, 4)
+    candidates = _navigation_candidates(gs, target, ["up"], state)
+    assert "a" in candidates
+    action = select_navigation_action(
+        door_exit=None,
+        path=["up"],
+        llm_choice="left",
+        candidates=candidates,
+        stuck_count=2,
+        gs=gs,
+        state=state,
+        target=target,
+    )
+    assert action == "a"
+
+
+def test_pure_nav_oscillation_respects_max_positions_four():
+    history = [
+        "navigate:up@1,1",
+        "navigate:down@1,2",
+        "navigate:left@0,1",
+        "navigate:right@1,1",
+        "navigate:up@2,1",
+        "navigate:down@2,2",
+    ] * 3
+    assert _history_oscillates(history, min_cycles=2, max_positions=4) is False
+
+
 def test_outdoor_at_target_does_not_add_blocked_ahead_interact():
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 9, "y": 12},

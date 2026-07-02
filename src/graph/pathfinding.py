@@ -356,6 +356,24 @@ def tile_blocked(
     )
 
 
+def _is_perimeter_side_wall(
+    map_key: str,
+    x: int,
+    y: int,
+    direction: str,
+) -> bool:
+    """Side walls on map edge rows/cols are not interactable blocked-ahead."""
+    grid = MAP_GRIDS.get(map_key)
+    if not grid:
+        return False
+    height, width = len(grid), len(grid[0])
+    if direction in ("left", "right") and (y == 0 or y == height - 1):
+        return True
+    if direction in ("up", "down") and (x == 0 or x == width - 1):
+        return True
+    return False
+
+
 def direction_blocked_ahead(
     map_key: str,
     x: int,
@@ -363,13 +381,28 @@ def direction_blocked_ahead(
     direction: str,
     *,
     state: dict | None = None,
+    require_in_bounds: bool = True,
 ) -> bool:
     """True when the tile one step in direction is blocked."""
     delta = _DIRECTION_DELTA.get(direction)
     if delta is None:
         return False
     dx, dy = delta
-    return tile_blocked(map_key, x + dx, y + dy, state=state)
+    nx, ny = x + dx, y + dy
+    grid = MAP_GRIDS.get(map_key)
+    if require_in_bounds and grid is not None and not _in_bounds(grid, nx, ny):
+        return False
+    return tile_blocked(map_key, nx, ny, state=state)
+
+
+def approach_direction_toward_target(
+    x: int,
+    y: int,
+    target: tuple[int, int],
+) -> str | None:
+    """Cardinal toward target; None when already standing on it."""
+    toward = direction_toward(x, y, target[0], target[1])
+    return None if toward == "a" else toward
 
 
 def at_target_blocked_ahead_interact_eligible(
@@ -379,22 +412,35 @@ def at_target_blocked_ahead_interact_eligible(
     target: tuple[int, int],
     *,
     state: dict | None = None,
+    approach_from: tuple[int, int] | None = None,
 ) -> bool:
-    """At nav target with a blocked adjacent tile — interact from here (indoor only)."""
+    """At nav target when the primary approach direction hits a blocked tile (indoor only)."""
     from src.graph.generic_interact import INDOOR_NAV_STUCK_MAPS
 
     if (x, y) != target:
         return False
     if map_key not in INDOOR_NAV_STUCK_MAPS:
         return False
-    grid = MAP_GRIDS.get(map_key)
-    session_blocked = session_blocked_for_map(state, map_key)
-    for direction, (dx, dy) in _DIRECTION_DELTA.items():
-        nx, ny = x + dx, y + dy
-        static_blocked = bool(grid and _in_bounds(grid, nx, ny) and grid[ny][nx] == 1)
-        if static_blocked or (nx, ny) in session_blocked:
-            return True
-    return False
+
+    primary: str | None = None
+    if approach_from is not None:
+        primary = approach_direction_toward_target(
+            approach_from[0], approach_from[1], target
+        )
+    if primary is None:
+        for direction in _DIRECTION_DELTA:
+            if _is_perimeter_side_wall(map_key, x, y, direction):
+                continue
+            if direction_blocked_ahead(
+                map_key, x, y, direction, state=state, require_in_bounds=True
+            ):
+                primary = direction
+                break
+    if primary is None or _is_perimeter_side_wall(map_key, x, y, primary):
+        return False
+    return direction_blocked_ahead(
+        map_key, x, y, primary, state=state, require_in_bounds=True
+    )
 
 
 def direction_toward(start_x: int, start_y: int, end_x: int, end_y: int) -> str:

@@ -225,6 +225,32 @@ def visit_aware_path_step(
 _FACING_TO_DIRECTION = {0: "down", 4: "up", 8: "left", 12: "right"}
 
 
+def _interact_candidate_justified(
+    gs: GameState,
+    state: AgentState,
+    target: tuple[int, int],
+    candidates: list[str],
+) -> bool:
+    """True when 'a' is in candidates for ROM signal, stuck fallback, or blocked-ahead."""
+    if "a" not in candidates:
+        return False
+    if generic_prefer_interact_candidate(gs, state) or house_exit.prefer_interact_candidate(gs):
+        return True
+    if house_exit.stuck_interact_fallback(gs, state) or generic_stuck_interact_fallback(
+        gs, state
+    ):
+        return True
+    if (gs.player.x, gs.player.y) == target and at_target_blocked_ahead_interact_eligible(
+        gs.map_key,
+        gs.player.x,
+        gs.player.y,
+        target,
+        state=state,
+    ):
+        return True
+    return False
+
+
 def select_navigation_action(
     *,
     door_exit: str | None,
@@ -239,7 +265,7 @@ def select_navigation_action(
     """Pick direction: door priority, stuck override, visit-aware path, LLM, fallback."""
     if door_exit:
         return door_exit
-    if (gs.player.x, gs.player.y) == target and "a" in candidates:
+    if _interact_candidate_justified(gs, state, target, candidates):
         return "a"
     arbitrate = navigation_arbitration_active(stuck_count, state)
     if arbitrate and llm_choice and llm_choice in candidates:
@@ -815,13 +841,12 @@ def _history_oscillates(
     max_positions: int = 4,
 ) -> bool:
     """Detect navigation loops: nav+interact cycles or pure nav ping-pong."""
-    nav_max = max(max_positions, 6)
     if _history_oscillates_nav_interact(
         history, min_cycles=min_cycles, max_positions=max_positions
     ):
         return True
     return _history_oscillates_nav_only(
-        history, min_cycles=min_cycles, max_positions=nav_max
+        history, min_cycles=min_cycles, max_positions=max_positions
     )
 
 
