@@ -16,6 +16,11 @@ from src.graph.state import initial_agent_state, update_game_state
 from src.state.gold_state_reader import (
     ADDR_BATTLE_MODE,
     ADDR_EVENT_FLAGS,
+    ADDR_MAP_GROUP,
+    ADDR_MAP_NUMBER,
+    ADDR_PARTY_COUNT,
+    ADDR_X_COORD,
+    ADDR_Y_COORD,
     ByteArrayReader,
     GoldStateReader,
 )
@@ -24,13 +29,32 @@ from src.state.script_constants import EVENT_GAVE_MYSTERY_EGG_TO_ELM
 from tests.fake_emulator import StarterQuestEmulator
 
 
-def test_verification_post_house_navigates_to_lab_warp(post_house_ram: dict):
-    gs = GameState(
+def _post_house_gs() -> GameState:
+    return GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         raw_metadata={"has_starter": False},
+        party_count=0,
     )
+
+
+def _post_house_memory() -> dict[int, int]:
+    return {
+        ADDR_MAP_GROUP: 24,
+        ADDR_MAP_NUMBER: 4,
+        ADDR_X_COORD: 13,
+        ADDR_Y_COORD: 6,
+        ADDR_PARTY_COUNT: 0,
+        ADDR_BATTLE_MODE: 0,
+    }
+
+
+def test_verification_post_house_navigates_to_lab_warp():
+    from src.memory.landmarks import seed_static_map_landmarks
+
+    gs = _post_house_gs()
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
+    seed_static_map_landmarks(state)
     assert _navigation_target(gs, state=state) == (6, 4)
     assert _hold_phase_satisfied(gs, state) is False
     sup = supervisor_node(state)
@@ -85,12 +109,16 @@ def test_verification_supervisor_battler_before_complete_flag(battle_ram: dict):
     assert supervisor_node(state)["next_node"] == "battler"
 
 
-def test_verification_shipped_apply_progression_emits_rival(post_house_ram: dict):
-    emu = StarterQuestEmulator(post_house_ram)
-    state = initial_agent_state(emu.get_game_state())
+def test_verification_shipped_apply_progression_emits_rival():
+    gs = _post_house_gs()
+    emu = StarterQuestEmulator(_post_house_memory())
+    from src.memory.landmarks import seed_static_map_landmarks
+
+    state = initial_agent_state(gs)
     state["bootstrap_complete"] = True
     state["house_exit_complete"] = True
     state["maps_visited"] = ["24:4"]
+    seed_static_map_landmarks(state)
 
     for _ in range(800):
         state = supervisor_node(state)

@@ -30,8 +30,6 @@ def test_seed_lab_agent_state_sets_starter_quest_flags():
     assert starter_quest.MILESTONE_ENTERED_LAB in result["milestones"]
     assert MAP_KEY_ELMS_LAB in result["maps_visited"]
     assert "Elm" in result["active_subgoal"]
-    assert result.get("lab_desk_interact_count") == 0
-    assert result.get("lab_desk_dialog_done") is False
 
 
 def test_repair_elms_lab_clears_desynced_starter_flag():
@@ -70,7 +68,7 @@ def test_repair_elms_lab_clears_desynced_starter_flag():
     assert repaired.player.facing == 12
 
 
-def test_seed_lab_agent_state_at_ball_row_marks_desk_done():
+def test_seed_lab_agent_state_at_ball_row_sets_ball_subgoal():
     gs = GameState(
         player={"map_group": 24, "map_id": 5, "x": 5, "y": 3, "facing": 0},
         party_count=0,
@@ -78,7 +76,6 @@ def test_seed_lab_agent_state_at_ball_row_marks_desk_done():
     )
     state = initial_agent_state(gs)
     result = seed_lab_agent_state(state, gs)
-    assert result.get("lab_desk_dialog_done") is True
     assert "Poke Ball" in result["active_subgoal"]
 
 

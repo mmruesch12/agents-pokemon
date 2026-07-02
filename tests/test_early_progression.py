@@ -9,8 +9,24 @@ from src.graph.nodes import (
     navigator_node,
 )
 from src.graph.state import initial_agent_state
-from src.state.gold_state_reader import ByteArrayReader, GoldStateReader
+from src.memory.landmarks import ELMS_LAB_ENTRANCE_ID, make_landmark
 from src.state.models import GameState
+
+
+def _lab_landmark_state(gs: GameState, *, x: int = 6, y: int = 3) -> dict:
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["known_landmarks"] = [
+        make_landmark(
+            landmark_id=ELMS_LAB_ENTRANCE_ID,
+            name="Elm's Lab entrance",
+            map_key="24:4",
+            x=x,
+            y=y,
+            kind="building_entrance",
+        )
+    ]
+    return state
 
 
 def test_route_29_subgoals():
@@ -43,13 +59,12 @@ def test_hold_phase_false_post_house_starter_active():
     assert _hold_phase_satisfied(gs, state) is False
 
 
-def test_navigation_target_post_house_targets_lab():
+def test_navigation_target_post_house_uses_lab_landmark():
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         raw_metadata={"has_starter": False},
     )
-    state = initial_agent_state(gs)
-    state["house_exit_complete"] = True
+    state = _lab_landmark_state(gs)
     target = _navigation_target(gs, state=state)
     assert target == (6, 4)
 
@@ -60,8 +75,7 @@ def test_navigator_west_of_lab_door_moves_right_not_up(monkeypatch):
         player={"map_group": 24, "map_id": 4, "x": 5, "y": 4},
         raw_metadata={"has_starter": False},
     )
-    state = initial_agent_state(gs)
-    state["house_exit_complete"] = True
+    state = _lab_landmark_state(gs, x=6, y=3)
 
     def bad_navigate(*_args, **_kwargs):
         return "up"
@@ -77,8 +91,7 @@ def test_navigator_at_lab_approach_moves_up(monkeypatch):
         player={"map_group": 24, "map_id": 4, "x": 6, "y": 4},
         raw_metadata={"has_starter": False},
     )
-    state = initial_agent_state(gs)
-    state["house_exit_complete"] = True
+    state = _lab_landmark_state(gs)
 
     def bad_navigate(*_args, **_kwargs):
         return "right"
@@ -89,27 +102,30 @@ def test_navigator_at_lab_approach_moves_up(monkeypatch):
     assert result["last_action_result"]["target"] in ((6, 3), (6, 4))
 
 
-def test_navigator_post_house_targets_lab(post_house_ram: dict):
-    """Post house-exit: navigator moves toward lab warp, not naive east drift."""
-    gs = GoldStateReader(ByteArrayReader(post_house_ram)).read()
-    state = initial_agent_state(gs)
-    state["house_exit_complete"] = True
+def test_navigator_post_house_targets_lab_with_landmark(monkeypatch):
+    """Post house-exit: navigator moves toward discovered lab entrance."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
+        raw_metadata={"has_starter": False},
+    )
+    state = _lab_landmark_state(gs)
     result = navigator_node(state)
     assert result["last_action"].startswith("navigate_")
     assert result["last_action_result"]["target"] == (6, 4)
 
 
-def test_navigator_with_starter_moves_east(new_bark_ram: dict):
+def test_navigator_with_starter_moves_east():
     """With starter flag set, navigator picks eastward movement."""
-    from src.state.gold_state_reader import ADDR_EVENT_FLAGS
-    from src.state.script_constants import EVENT_GOT_A_POKEMON_FROM_ELM
+    gs = GameState(
+        player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
+        raw_metadata={"has_starter": True},
+        party_count=1,
+    )
+    from src.memory.landmarks import seed_static_map_landmarks
 
-    mem = dict(new_bark_ram)
-    flag_addr = ADDR_EVENT_FLAGS + (EVENT_GOT_A_POKEMON_FROM_ELM // 8)
-    mem[flag_addr] = mem.get(flag_addr, 0) | (1 << (EVENT_GOT_A_POKEMON_FROM_ELM % 8))
-    gs = GoldStateReader(ByteArrayReader(mem)).read()
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
+    seed_static_map_landmarks(state)
     result = navigator_node(state)
     assert result["last_action"].startswith("navigate_")
     assert result["last_action_result"]["target"][0] > gs.player.x

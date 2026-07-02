@@ -26,11 +26,14 @@ def _state(
     starter_complete: bool = True,
     early_complete: bool = False,
 ) -> dict:
+    from src.memory.landmarks import seed_static_map_landmarks
+
     state = initial_agent_state(gs)
     state["bootstrap_complete"] = True
     state["house_exit_complete"] = True
     state["starter_quest_complete"] = starter_complete
     state["early_progression_complete"] = early_complete
+    seed_static_map_landmarks(state)
     return state
 
 

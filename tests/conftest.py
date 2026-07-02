@@ -43,19 +43,6 @@ def _reset_emulator_binding():
 
 
 @pytest.fixture
-def post_house_ram() -> dict[int, int]:
-    """Synthetic RAM: post house-exit on New Bark, no starter yet."""
-    mem: dict[int, int] = {}
-    mem[ADDR_MAP_GROUP] = 24
-    mem[ADDR_MAP_NUMBER] = 4
-    mem[ADDR_X_COORD] = 13
-    mem[ADDR_Y_COORD] = 6
-    mem[ADDR_PARTY_COUNT] = 0
-    mem[ADDR_BATTLE_MODE] = 0
-    return mem
-
-
-@pytest.fixture
 def new_bark_ram() -> dict[int, int]:
     """Synthetic RAM snapshot: player in New Bark Town with starter."""
     mem: dict[int, int] = {}

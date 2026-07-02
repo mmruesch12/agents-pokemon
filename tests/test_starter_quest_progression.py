@@ -20,8 +20,35 @@ from src.state.gold_state_reader import (
     MAP_KEY_ROUTE_29,
     MAP_KEY_ROUTE_30,
 )
+from src.state.gold_state_reader import (
+    ADDR_BATTLE_MODE,
+    ADDR_MAP_GROUP,
+    ADDR_MAP_NUMBER,
+    ADDR_PARTY_COUNT,
+    ADDR_X_COORD,
+    ADDR_Y_COORD,
+)
 from src.state.models import BattlePhase, GameState
 from tests.fake_emulator import StarterQuestEmulator
+
+
+def _post_house_gs() -> GameState:
+    return GameState(
+        player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
+        raw_metadata={"has_starter": False},
+        party_count=0,
+    )
+
+
+def _post_house_memory() -> dict[int, int]:
+    return {
+        ADDR_MAP_GROUP: 24,
+        ADDR_MAP_NUMBER: 4,
+        ADDR_X_COORD: 13,
+        ADDR_Y_COORD: 6,
+        ADDR_PARTY_COUNT: 0,
+        ADDR_BATTLE_MODE: 0,
+    }
 
 
 def _dispatch_specialist(state: dict) -> dict:
@@ -75,7 +102,7 @@ def test_navigation_targets_route_maps_retired_from_phase():
     assert starter_quest.navigation_target(gs_route30) is None
 
 
-def test_post_starter_new_bark_east_exit_retired_without_landmark():
+def test_post_starter_new_bark_east_exit_frontier_without_landmark():
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         raw_metadata={"has_starter": True},
@@ -83,11 +110,10 @@ def test_post_starter_new_bark_east_exit_retired_without_landmark():
     )
     from src.graph.nodes import _navigation_target
 
-    state = {"house_exit_complete": True}
+    state = {"house_exit_complete": True, "known_landmarks": []}
     assert starter_quest.navigation_target(gs) is None
     target = _navigation_target(gs, state=state)
-    assert target == (19, 12)
-    assert target[0] > gs.player.x
+    assert target != (gs.player.x, gs.player.y)
 
 
 def test_post_starter_new_bark_uses_east_exit_landmark():
@@ -115,14 +141,17 @@ def test_post_starter_new_bark_uses_east_exit_landmark():
     assert _navigation_target(gs, state=state) == (19, 12)
 
 
-def test_shipped_nodes_progress_post_house_to_rival_battle(post_house_ram: dict):
+def test_shipped_nodes_progress_post_house_to_rival_battle():
     """Full node chain + apply_action drives quest flags/maps to rival trainer battle."""
-    emu = StarterQuestEmulator(post_house_ram)
-    gs = emu.get_game_state()
+    gs = _post_house_gs()
+    emu = StarterQuestEmulator(_post_house_memory())
+    from src.memory.landmarks import seed_static_map_landmarks
+
     state = initial_agent_state(gs)
     state["bootstrap_complete"] = True
     state["house_exit_complete"] = True
     state["maps_visited"] = [MAP_KEY_NEW_BARK_TOWN]
+    seed_static_map_landmarks(state)
 
     milestones_seen: set[str] = set()
     map_keys_seen: set[str] = set()

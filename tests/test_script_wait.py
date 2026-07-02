@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.graph.nodes import needs_script_wait
+from src.graph.nodes import needs_interaction, needs_script_wait
 from src.graph.state import initial_agent_state
 from src.state.models import GameState
 from src.state.script_constants import (
@@ -43,19 +43,22 @@ def test_no_wait_during_mom_dialog_when_input_allowed():
     assert needs_script_wait(gs, state) is False
 
 
-def test_wait_during_mom_cutscene_when_input_blocked():
+def test_mom_dialog_with_blocked_joypad_routes_to_interact_not_wait():
     gs = GameState(
         player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=True,
         raw_metadata={
             "script_mode": SCRIPT_READ,
             "script_flags": SCRIPT_FLAG_SCRIPT_RUNNING,
             "joypad_disable": 16,  # bit 4 — pret blocks joypad reads
             "mom_scene_complete": False,
+            "in_script": True,
         },
     )
     state = initial_agent_state(gs)
     state["bootstrap_complete"] = True
-    assert needs_script_wait(gs, state) is True
+    assert needs_script_wait(gs, state) is False
+    assert needs_interaction(gs, state) is True
 
 
 def test_wait_during_scripted_movement():
@@ -69,3 +72,15 @@ def test_wait_during_scripted_movement():
         },
     )
     assert needs_script_wait(gs, {"bootstrap_complete": True}) is True
+
+    post_warp_gs = GameState(
+        player={"map_group": 24, "map_id": 5, "x": 4, "y": 11},
+        raw_metadata={"has_starter": False},
+    )
+    assert (
+        needs_script_wait(
+            post_warp_gs,
+            {"bootstrap_complete": True, "post_warp_wait_steps": 2},
+        )
+        is True
+    )

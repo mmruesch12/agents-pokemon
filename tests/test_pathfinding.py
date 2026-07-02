@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from src.graph.pathfinding import direction_toward, find_path, direction_to_button
+from src.graph.pathfinding import (
+    MAP_GRIDS,
+    _is_walkable,
+    direction_toward,
+    direction_to_button,
+    find_path,
+    record_session_blocked,
+    session_blocked_for_map,
+)
+from src.state.models import GameState
 
 
 
@@ -16,11 +25,52 @@ def test_find_path_simple():
     assert all(d == "right" for d in path)
 
 
+def test_session_walkable_does_not_override_static_blocked():
+    from src.graph.pathfinding import session_walkable_for_map
+
+    state = {"session_walkable": {"24:4": [(13, 11)]}}
+    session = session_walkable_for_map(state, "24:4")
+    assert _is_walkable(MAP_GRIDS["24:4"], 13, 11, session_walkable=session) is False
+
+
+def test_exploration_nb_east_row_without_landmark():
+    from src.graph.exploration import exploration_target
+
+    gs = GameState(player={"map_group": 24, "map_id": 4, "x": 9, "y": 12})
+    state: dict = {}
+    record_session_blocked(state, "24:4", 10, 12)
+    target = exploration_target(gs, state)
+    assert target[1] == 12
+    assert target[0] > gs.player.x
+
+
+def test_find_path_new_bark_blocked_east_stays_on_row():
+    state: dict = {}
+    record_session_blocked(state, "24:4", 10, 12)
+    path = find_path(9, 12, 19, 12, map_key="24:4", state=state)
+    assert path
+    assert path[0] == "left"
+    positions = _positions_after(9, 12, path)
+    assert (10, 12) not in positions
+    assert all(y == 12 for x, y in positions[:3])
+
+
 def test_find_path_new_bark_east_corridor():
     """New Bark grid covers y=12; eastward path along the corridor row."""
     path = find_path(8, 12, 10, 12, map_key="24:4")
     assert len(path) >= 1
     assert path[0] == "right"
+    state: dict = {}
+    record_session_blocked(state, "24:4", 6, 8)
+    assert session_blocked_for_map(state, "24:4") == {(6, 8)}
+    blocked_path = find_path(6, 7, 19, 12, map_key="24:4", state=state)
+    assert blocked_path
+    assert blocked_path[0] != "down"
+    blocked = session_blocked_for_map(state, "24:4")
+    assert _is_walkable(None, 6, 8, session_blocked=blocked) is False
+    assert (
+        _is_walkable(None, 6, 8, goal=(6, 8), session_blocked=blocked) is False
+    )
 
 
 def test_find_path_new_bark_south_blocked_at_cliff():

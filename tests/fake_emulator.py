@@ -11,6 +11,7 @@ from src.state.gold_state_reader import (
     ADDR_ENEMY_SPECIES,
     ADDR_EVENT_FLAGS,
     ADDR_FACING,
+    ADDR_JOYPAD_DISABLE,
     ADDR_MAP_GROUP,
     ADDR_MAP_NUMBER,
     ADDR_PARTY_COUNT,
@@ -37,6 +38,7 @@ from src.state.script_constants import (
     EVENT_GAVE_MYSTERY_EGG_TO_ELM,
     EVENT_GOT_A_POKEMON_FROM_ELM,
     EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON,
+    JOYPAD_DISABLE_INPUT_MASK,
     SCRIPT_FLAG_SCRIPT_RUNNING,
     SCRIPT_READ,
 )
@@ -169,6 +171,46 @@ class StarterQuestEmulator(MutableRamEmulator):
         self._memory[ADDR_SCRIPT_FLAGS] = 0
         self._memory[ADDR_SCRIPT_MODE] = 0
 
+    def _sync_interact_signals(self) -> None:
+        """Emit ROM interact signals when facing quest objects (generic interact policy)."""
+        if self._desk_script_pending:
+            self._set_script_active()
+            return
+
+        group = self._memory.get(ADDR_MAP_GROUP, 0)
+        map_id = self._memory.get(ADDR_MAP_NUMBER, 0)
+        x = self._memory.get(ADDR_X_COORD, 0)
+        y = self._memory.get(ADDR_Y_COORD, 0)
+
+        if group == MAPGROUP_NEW_BARK and map_id == MAP_ELMS_LAB:
+            if (x, y) in ((4, 2), (5, 2), (4, 3)) and not self._elm_intro_done:
+                self._memory[ADDR_JOYPAD_DISABLE] = JOYPAD_DISABLE_INPUT_MASK
+                self._set_script_active()
+                return
+            ball_tiles = {(6, 3), (7, 3), (8, 3)}
+            near_ball = (x, y) in ball_tiles or any(
+                abs(x - bx) + abs(y - by) == 1 for bx, by in ball_tiles
+            )
+            if (
+                near_ball
+                and self._elm_intro_done
+                and not _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM)
+            ):
+                self._memory[ADDR_JOYPAD_DISABLE] = JOYPAD_DISABLE_INPUT_MASK
+                self._set_script_active()
+                return
+
+        if group == MAPGROUP_JOHTO_ROUTES and map_id == MAP_MR_POKEMONS_HOUSE:
+            if (x, y) == (5, 5) and not _has_flag(
+                self._memory, EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON
+            ):
+                self._memory[ADDR_JOYPAD_DISABLE] = JOYPAD_DISABLE_INPUT_MASK
+                self._set_script_active()
+                return
+
+        self._memory[ADDR_JOYPAD_DISABLE] = 0
+        self._clear_script()
+
     def press_button(self, button: str, *, hold_frames: int = 2) -> None:
         self._last_button = button
         if self._desk_script_pending:
@@ -197,7 +239,12 @@ class StarterQuestEmulator(MutableRamEmulator):
         elif button == "a":
             self._apply_interact()
 
+        self._sync_interact_signals()
         self._frame_count += hold_frames + 1
+
+    def get_game_state(self) -> GameState:
+        self._sync_interact_signals()
+        return super().get_game_state()
 
     def _apply_warps(self) -> None:
         group = self._memory.get(ADDR_MAP_GROUP, 0)

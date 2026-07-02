@@ -63,8 +63,10 @@ def test_navigation_target_1f_mom_hold_position():
 
 
 def test_navigation_target_1f_door_after_mom():
-    gs = _gs(24, 6, 9, 1, mom_done=True)
-    assert house_exit.navigation_target(gs) == PLAYERS_HOUSE_1F_DOOR
+    kitchen = _gs(24, 6, 7, 2, mom_done=True)
+    assert house_exit.navigation_target(kitchen) == house_exit.PLAYERS_HOUSE_1F_CORRIDOR
+    at_door_row = _gs(24, 6, 6, 6, mom_done=True)
+    assert house_exit.navigation_target(at_door_row) == PLAYERS_HOUSE_1F_DOOR
 
 
 def test_navigation_target_new_bark_deferred_to_explorer():

@@ -95,13 +95,32 @@ def test_ten_supervisor_cycles_idle_after_early_progression():
     assert not any(a.startswith("navigate_") for a in actions)
 
 
-def test_graph_invoke_navigate_after_house_exit_complete(post_house_ram: dict):
+def test_graph_invoke_navigate_after_house_exit_complete():
     """Full graph: post-house state navigates toward lab, not idle."""
-    emu = MutableRamEmulator(post_house_ram, route_29_at_x=99)
+    from src.memory.landmarks import seed_static_map_landmarks
+    from src.state.gold_state_reader import (
+        ADDR_BATTLE_MODE,
+        ADDR_MAP_GROUP,
+        ADDR_MAP_NUMBER,
+        ADDR_PARTY_COUNT,
+        ADDR_X_COORD,
+        ADDR_Y_COORD,
+    )
+
+    mem = {
+        ADDR_MAP_GROUP: 24,
+        ADDR_MAP_NUMBER: 4,
+        ADDR_X_COORD: 13,
+        ADDR_Y_COORD: 6,
+        ADDR_PARTY_COUNT: 0,
+        ADDR_BATTLE_MODE: 0,
+    }
+    emu = MutableRamEmulator(mem, route_29_at_x=99)
     gs = emu.get_game_state()
     state = initial_agent_state(gs)
     state["bootstrap_complete"] = True
     state["house_exit_complete"] = True
+    seed_static_map_landmarks(state)
     state["run_max_steps"] = 5
 
     with tempfile.TemporaryDirectory() as tmp:

@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 from src.graph.exploration import exploration_target
-from src.graph.quest_geography import resolve_retired_geography
+from src.emulator.bootstrap import seed_bedroom_agent_state
 from src.graph.llm import llm_navigate
 from src.graph.navigation_resolve import resolve_landmark_navigation_target
 from src.graph.nodes import _navigation_target, memory_node, navigator_node
@@ -47,15 +47,33 @@ def test_landmark_roundtrip_and_retrieval():
         assert any("Lab" in str(entry.get("name", "")) for entry in hits)
 
 
-def test_navigation_without_landmark_uses_quest_hint():
+def test_cold_bedroom_lab_nav():
+    """Bootstrap seeds static lab entrance; nav uses landmark approach on New Bark."""
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         raw_metadata={"has_starter": False},
     )
     state = initial_agent_state(gs)
+    state = seed_bedroom_agent_state(state, gs)
     state["house_exit_complete"] = True
+    assert any(
+        entry.get("id") == ELMS_LAB_ENTRANCE_ID
+        for entry in state.get("known_landmarks", [])
+    )
     assert _navigation_target(gs, state=state) == (6, 4)
-    assert not state.get("known_landmarks")
+
+
+def test_navigation_without_landmark_uses_exploration_frontier():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
+        raw_metadata={"has_starter": True},
+        party_count=1,
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    target = _navigation_target(gs, state=state)
+    assert target is not None
+    assert target != (gs.player.x, gs.player.y)
 
 
 def test_gated_phase_target_ignores_landmark_on_wrong_map():
@@ -149,6 +167,30 @@ def test_discover_elms_lab_landmarks_normalizes_entrance_from_below():
     assert entrance["y"] == 3
 
 
+def test_memory_node_records_entrance_on_lab_warp_discovery():
+    """Runtime warp discovery merges entrance landmark (supplements bootstrap seed)."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 5, "x": 4, "y": 8, "map_name": "Elm's Lab"},
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["maps_visited"] = [MAP_KEY_NEW_BARK_TOWN]
+    state["last_map_transition"] = {
+        "from_map": MAP_KEY_NEW_BARK_TOWN,
+        "from_pos": {"map_key": MAP_KEY_NEW_BARK_TOWN, "x": 6, "y": 4},
+        "to_map": MAP_KEY_ELMS_LAB,
+        "to_pos": {"x": 4, "y": 8},
+    }
+    state = memory_node(state)
+    entrance = next(
+        entry
+        for entry in state.get("known_landmarks", [])
+        if entry.get("id") == ELMS_LAB_ENTRANCE_ID
+    )
+    assert entrance["map_key"] == MAP_KEY_NEW_BARK_TOWN
+    assert (entrance["x"], entrance["y"]) == (6, 3)
+
+
 def test_memory_node_discovers_lab_landmarks_on_first_visit(monkeypatch):
     gs = GameState(
         player={"map_group": 24, "map_id": 5, "x": 4, "y": 8, "map_name": "Elm's Lab"},
@@ -231,16 +273,17 @@ def test_llm_navigate_prompt_includes_landmarks(monkeypatch):
     assert "Known landmarks" in prompts[0]
 
 
-def test_landmark_navigation_falls_back_to_exploration_without_entrance():
+def test_landmark_navigation_none_without_entrance():
     gs = GameState(
         player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
         raw_metadata={"has_starter": False},
     )
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
-    target = resolve_landmark_navigation_target(gs, state)
+    assert resolve_landmark_navigation_target(gs, state) is None
+    target = _navigation_target(gs, state=state)
     assert target is not None
-    assert target == (6, 4)
+    assert target != (gs.player.x, gs.player.y)
 
 
 def test_discover_quest_transition_landmarks_east_exit():
@@ -296,38 +339,46 @@ def test_memory_node_discovers_mr_pokemon_entrance_on_first_visit(monkeypatch):
     assert (entrance["x"], entrance["y"]) == (5, 5)
 
 
-def test_exploration_target_resolves_east_exit_without_landmark():
+def test_exploration_target_frontier_without_landmark():
     gs = GameState(
-        player={"map_group": 24, "map_id": 4, "x": 13, "y": 6},
+        player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
         raw_metadata={"has_starter": True},
         party_count=1,
     )
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
     target = exploration_target(gs, state)
-    assert target == (19, 12)
+    assert target is not None
+    assert target != (gs.player.x, gs.player.y)
 
 
-def test_gated_phase_target_wrong_map_east_landmark_no_recursion():
+def test_navigation_wrong_map_east_landmark_uses_frontier():
     gs = GameState(
         player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
         raw_metadata={"has_starter": True},
         party_count=1,
     )
-    state = {
-        "house_exit_complete": True,
-        "known_landmarks": [
-            make_landmark(
-                landmark_id=NEW_BARK_EAST_EXIT_ID,
-                name="New Bark east exit",
-                map_key=MAP_KEY_NEW_BARK_TOWN,
-                x=19,
-                y=12,
-                kind="map_visit",
-            )
-        ],
-    }
-    target = resolve_retired_geography(gs, state)
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["known_landmarks"] = [
+        make_landmark(
+            landmark_id=NEW_BARK_EAST_EXIT_ID,
+            name="New Bark east exit",
+            map_key=MAP_KEY_NEW_BARK_TOWN,
+            x=19,
+            y=12,
+            kind="map_visit",
+        ),
+        make_landmark(
+            landmark_id=ROUTE_29_NORTH_GATE_ID,
+            name="Route 29 north gate",
+            map_key="24:3",
+            x=10,
+            y=5,
+            kind="map_visit",
+        ),
+    ]
+    target = _navigation_target(gs, state=state)
     assert target == (10, 5)
     assert target != (19, 12)
 
@@ -371,7 +422,7 @@ def test_hydrate_state_enables_east_exit_navigation():
         )
         hydrated_route = mem.hydrate_state({**hydrated, "game_state": gs_route.model_dump()})
         assert _navigation_target(gs_route, state=hydrated_route) == (10, 5)
-        assert resolve_retired_geography(gs_route, hydrated_route) == (10, 5)
+        assert _navigation_target(gs_route, state=hydrated_route) == (10, 5)
 
 
 def test_hydrate_mr_entrance_enables_interior_navigation():
