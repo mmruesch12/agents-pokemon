@@ -13,6 +13,9 @@ LANDMARK_KIND_INTERIOR = "interior"
 
 ELMS_LAB_ENTRANCE_ID = "elms_lab_entrance"
 ELMS_LAB_INTERIOR_ID = "elms_lab_interior"
+ELMS_LAB_DESK_APPROACH_ID = "elms_lab_desk_approach"
+ELMS_LAB_BALL_APPROACH_ID = "elms_lab_ball_approach"
+ELMS_LAB_EXIT_ID = "elms_lab_exit"
 NEW_BARK_EAST_EXIT_ID = "new_bark_east_exit"
 ROUTE_29_NORTH_GATE_ID = "route_29_north_gate"
 ROUTE_30_NORTH_GATE_ID = "route_30_north_gate"
@@ -223,6 +226,95 @@ def discover_mr_pokemon_entrance_landmark(gs: GameState) -> dict[str, Any]:
         kind=LANDMARK_KIND_BUILDING_ENTRANCE,
         metadata={"building": "mr_pokemon", "discovered_on_first_visit": True},
     )
+
+
+def seed_static_map_landmarks(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Register known building entrances and warp gates from MAP_LANDMARK_ANCHORS."""
+    from src.graph.pathfinding import MAP_LANDMARK_ANCHORS, MAP_WARP_HINT_ROWS
+    from src.state.gold_state_reader import (
+        MAP_KEY_ELMS_LAB,
+        MAP_KEY_NEW_BARK_TOWN,
+        MAP_KEY_ROUTE_29,
+        MAP_KEY_ROUTE_30,
+    )
+
+    merged = list(state.get("known_landmarks", []))
+    new_bark = MAP_LANDMARK_ANCHORS.get(MAP_KEY_NEW_BARK_TOWN, {})
+    route_29 = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {})
+    route_30 = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_30, {})
+    elms_lab = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ELMS_LAB, {})
+    east_row = MAP_WARP_HINT_ROWS.get(MAP_KEY_NEW_BARK_TOWN, {}).get("east", 12)
+    lab_door = new_bark.get("elms_lab_door", _ELMS_LAB_PRIMARY_DOOR)
+    east_exit = new_bark.get("east_exit", (19, east_row))
+    static = [
+        make_landmark(
+            landmark_id=ELMS_LAB_ENTRANCE_ID,
+            name="Elm's Lab entrance",
+            map_key=MAP_KEY_NEW_BARK_TOWN,
+            x=lab_door[0],
+            y=lab_door[1],
+            kind=LANDMARK_KIND_BUILDING_ENTRANCE,
+            metadata={"building": "elms_lab", "seed": "map_anchors"},
+        ),
+        make_landmark(
+            landmark_id=NEW_BARK_EAST_EXIT_ID,
+            name="New Bark east exit",
+            map_key=MAP_KEY_NEW_BARK_TOWN,
+            x=east_exit[0],
+            y=east_exit[1],
+            kind=LANDMARK_KIND_MAP_VISIT,
+            metadata={"transition": "new_bark_to_route_29", "seed": "map_anchors"},
+        ),
+        make_landmark(
+            landmark_id=ROUTE_29_NORTH_GATE_ID,
+            name="Route 29 north gate",
+            map_key=MAP_KEY_ROUTE_29,
+            x=route_29.get("route_30_gate", (10, 5))[0],
+            y=route_29.get("route_30_gate", (10, 5))[1],
+            kind=LANDMARK_KIND_MAP_VISIT,
+            metadata={"transition": "route_29_to_route_30", "seed": "map_anchors"},
+        ),
+        make_landmark(
+            landmark_id=ROUTE_30_NORTH_GATE_ID,
+            name="Route 30 north approach",
+            map_key=MAP_KEY_ROUTE_30,
+            x=route_30.get("mr_pokemon_gate", (10, 3))[0],
+            y=route_30.get("mr_pokemon_gate", (10, 3))[1],
+            kind=LANDMARK_KIND_MAP_VISIT,
+            metadata={"transition": "route_30_to_mr_pokemon", "seed": "map_anchors"},
+        ),
+        make_landmark(
+            landmark_id=ELMS_LAB_DESK_APPROACH_ID,
+            name="Elm's Lab desk approach",
+            map_key=MAP_KEY_ELMS_LAB,
+            x=elms_lab.get("desk_approach", (4, 3))[0],
+            y=elms_lab.get("desk_approach", (4, 3))[1],
+            kind=LANDMARK_KIND_INTERIOR,
+            metadata={"building": "elms_lab", "seed": "map_anchors", "anchor": "desk"},
+        ),
+        make_landmark(
+            landmark_id=ELMS_LAB_BALL_APPROACH_ID,
+            name="Elm's Lab ball approach",
+            map_key=MAP_KEY_ELMS_LAB,
+            x=elms_lab.get("ball_approach", (6, 4))[0],
+            y=elms_lab.get("ball_approach", (6, 4))[1],
+            kind=LANDMARK_KIND_INTERIOR,
+            metadata={"building": "elms_lab", "seed": "map_anchors", "anchor": "balls"},
+        ),
+        make_landmark(
+            landmark_id=ELMS_LAB_EXIT_ID,
+            name="Elm's Lab exit",
+            map_key=MAP_KEY_ELMS_LAB,
+            x=elms_lab.get("south_exit", (4, 11))[0],
+            y=elms_lab.get("south_exit", (4, 11))[1],
+            kind=LANDMARK_KIND_INTERIOR,
+            metadata={"building": "elms_lab", "seed": "map_anchors", "anchor": "exit"},
+        ),
+    ]
+    for landmark in static:
+        merged = merge_landmark(merged, landmark)
+    state["known_landmarks"] = merged
+    return merged
 
 
 def apply_landmark_discovery(state: dict[str, Any], landmarks: list[dict[str, Any]]) -> list[dict[str, Any]]:

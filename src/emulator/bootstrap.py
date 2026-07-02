@@ -356,6 +356,9 @@ def seed_bedroom_agent_state(
     state["active_subgoal"] = "Leave player house"
     state["house_exit_complete"] = False
     state["starter_quest_complete"] = False
+    from src.memory.landmarks import seed_static_map_landmarks
+
+    seed_static_map_landmarks(state)
     return state
 
 
@@ -432,12 +435,6 @@ def _clear_event_flag(emu: PyBoyWrapper, flag_index: int) -> None:
 
 def _at_elm_desk(gs: GameState) -> bool:
     return (gs.player.x, gs.player.y) in ((4, 2), (5, 2), (4, 3))
-
-
-def _desk_dialog_done_for_seed(gs: GameState) -> bool:
-    if (gs.player.x, gs.player.y) in ((5, 3), (6, 3), (7, 3), (8, 3)):
-        return True
-    return gs.player.y >= 3 and not _at_elm_desk(gs)
 
 
 def repair_elms_lab_snapshot(emu: PyBoyWrapper, gs: GameState) -> GameState:
@@ -532,17 +529,21 @@ def seed_lab_agent_state(
             milestones.append(milestone)
     state["milestones"] = milestones
     if reset_lab_counters:
-        state["lab_desk_dialog_done"] = _desk_dialog_done_for_seed(gs)
-        state["lab_desk_interact_count"] = 0
-        state["lab_desk_script_seen"] = False
-        state["lab_steps_without_party"] = 0
-        state["lab_stall_position"] = None
         state["short_term_history"] = []
         state["should_replan"] = False
         state["replan_count"] = 0
-    from src.memory.landmarks import discover_elms_lab_landmarks
+    from src.memory.landmarks import discover_elms_lab_landmarks, seed_static_map_landmarks
+
+    seed_static_map_landmarks(state)
 
     state["known_landmarks"] = discover_elms_lab_landmarks(gs)
+    starter_quest.ensure_lab_desk_visits_for_snapshot(gs, state)
+    if gs.player.y <= 2 and not starter_quest.has_starter(gs):
+        desk_keys = {
+            f"{MAP_KEY_ELMS_LAB}:{x}:{y}" for x, y in starter_quest.ELMS_LAB_DESK_TILES
+        }
+        visited = list(state.get("visited_positions", []))
+        state["visited_positions"] = [v for v in visited if v not in desk_keys]
     starter_quest.sync_subgoals(gs, state)
     return state
 
