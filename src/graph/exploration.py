@@ -4,9 +4,22 @@ from __future__ import annotations
 import heapq
 from typing import Any
 
-from src.graph.pathfinding import MAP_GRIDS, _is_walkable, find_path
-from src.graph.quest_geography import resolve_retired_geography
+from src.graph.pathfinding import (
+    MAP_GRIDS,
+    MAP_LANDMARK_ANCHORS,
+    MAP_WARP_HINT_ROWS,
+    _is_walkable,
+    find_path,
+    session_blocked_for_map,
+    session_walkable_for_map,
+)
 from src.state.models import GameState
+
+_EAST_SUBGOAL_MARKERS = (
+    "exit new bark east",
+    "cross route 29",
+    "route 29",
+)
 
 
 def exploration_hint_text(state: dict[str, Any], gs: GameState) -> str:
@@ -24,56 +37,37 @@ def exploration_hint_text(state: dict[str, Any], gs: GameState) -> str:
     return " ".join(hints)
 
 
-def exploration_hint_tile(state: dict[str, Any], gs: GameState):
-    if not state.get("house_exit_complete"):
-        return None
-    from src.graph.phases import starter_quest
-    from src.memory.landmarks import (
-        ELMS_LAB_ENTRANCE_ID,
-        landmark_coords,
-        landmark_known,
-        retrieve_landmarks_from_state,
-    )
-
-    if not starter_quest.in_starter_quest(gs, state):
-        return None
+def exploration_heading_east(
+    gs: GameState,
+    state: dict[str, Any],
+    *,
+    hint_tile: tuple[int, int] | None = None,
+) -> bool:
+    """True when quest hints or position imply eastward progress on this map."""
+    if hint_tile is not None and hint_tile[0] > gs.player.x:
+        return True
     text = exploration_hint_text(state, gs).lower()
-    landmarks = list(state.get("known_landmarks", []))
-    if gs.map_key == "24:4" and not starter_quest.has_starter(gs):
-        if landmark_known(landmarks, ELMS_LAB_ENTRANCE_ID):
-            entry = retrieve_landmarks_from_state(
-                landmarks, "elm lab entrance", k=1
-            )[0]
-            return landmark_coords(entry)
-        if "lab" in text or "elm" in text or "starter" in text:
-            return (6, 3)
-    if starter_quest._has_egg(gs) and not starter_quest._egg_delivered(gs):
-        if gs.map_key == "24:4":
-            return (6, 3)
-        if gs.map_key == "24:5":
-            return (4, 2)
-        if gs.map_key == "26:10":
-            return (5, 8)
-        if gs.map_key == "26:1":
-            return (gs.player.x, min(gs.player.y + 2, 12))
-    if gs.map_key == "24:5" and starter_quest.starter_flag_set(gs) and not starter_quest._has_egg(gs):
-        return starter_quest.ELMS_LAB_EXIT
-    if gs.map_key == "24:5" and not starter_quest.has_starter(gs):
-        if state.get("lab_desk_dialog_done") or "poke ball" in text:
-            return (5, 3)
-        if "elm" in text:
-            if gs.player.y > 3:
-                return (4, 3)
-            if gs.player.x < 5:
-                return (5, 3)
-    return None
+    if any(marker in text for marker in _EAST_SUBGOAL_MARKERS):
+        return True
+    east_row = MAP_WARP_HINT_ROWS.get(gs.map_key, {}).get("east")
+    east_anchor = MAP_LANDMARK_ANCHORS.get(gs.map_key, {}).get("east_exit")
+    if east_row is not None and east_anchor and gs.player.y == east_row:
+        return gs.player.x < east_anchor[0]
+    return False
 
 
-def _subgoal_exploration_bias(text: str):
-    text = text.lower()
-    if "lab" in text or "elm" in text:
-        return (0, 0)
-    return None
+def exploration_hint_tile(state: dict[str, Any], gs: GameState):
+    """Return coords only when a known landmark matches the current map."""
+    from src.graph.navigation_resolve import _starter_quest_landmark_id
+    from src.memory.landmarks import find_landmark, landmark_coords
+
+    landmark_id = _starter_quest_landmark_id(gs, state)
+    if landmark_id is None:
+        return None
+    landmark = find_landmark(list(state.get("known_landmarks", [])), landmark_id=landmark_id)
+    if landmark is None or landmark.get("map_key") != gs.map_key:
+        return None
+    return landmark_coords(landmark)
 
 
 def exploration_target(
@@ -81,14 +75,9 @@ def exploration_target(
     state: dict[str, Any] | None = None,
     *,
     hint_tile=None,
-    skip_retired: bool = False,
 ):
     state = state or {}
     hint_tile = hint_tile or exploration_hint_tile(state, gs)
-    if hint_tile is None and not skip_retired:
-        resolved = resolve_retired_geography(gs, state)
-        if resolved is not None:
-            return resolved
     if hint_tile is not None:
         path = find_path(
             gs.player.x,
@@ -102,30 +91,43 @@ def exploration_target(
             return hint_tile
     visited = {k for k in state.get("visited_positions", []) if k.startswith(f"{gs.map_key}:")}
     grid = MAP_GRIDS.get(gs.map_key)
-    bias = _subgoal_exploration_bias(exploration_hint_text(state, gs))
     start = (gs.player.x, gs.player.y)
     open_set = [(0, gs.player.x, gs.player.y, 0)]
     visited_search = {start}
     best_unvisited, best_score = None, float("-inf")
+    east_row = MAP_WARP_HINT_ROWS.get(gs.map_key, {}).get("east")
+    hint_east = exploration_heading_east(gs, state, hint_tile=hint_tile)
     while open_set:
         _, x, y, dist = heapq.heappop(open_set)
         pos_key = f"{gs.map_key}:{x}:{y}"
         if pos_key not in visited and (x, y) != start:
-            score = -(abs(bias[0] - x) + abs(bias[1] - y) + dist * 0.01) if bias else dist
+            score = float(dist)
+            if hint_east and east_row is not None:
+                if y == east_row and x > gs.player.x:
+                    score += 10.0 + (x - gs.player.x)
+                elif y == east_row:
+                    score += 4.0
             if score > best_score:
                 best_score, best_unvisited = score, (x, y)
         for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
             nx, ny = x + dx, y + dy
-            from src.graph.pathfinding import session_walkable_for_map
-
             session_walkable = session_walkable_for_map(state, gs.map_key)
+            session_blocked = session_blocked_for_map(state, gs.map_key)
             if (nx, ny) in visited_search or not _is_walkable(
-                grid, nx, ny, session_walkable=session_walkable
+                grid,
+                nx,
+                ny,
+                session_walkable=session_walkable,
+                session_blocked=session_blocked,
             ):
                 continue
             visited_search.add((nx, ny))
             heapq.heappush(open_set, (dist + 1, nx, ny, dist + 1))
-    return best_unvisited if best_unvisited else (gs.player.x + 1, gs.player.y)
+    if best_unvisited:
+        return best_unvisited
+    if hint_east and east_row is not None:
+        return (gs.player.x + 1, east_row)
+    return (gs.player.x + 1, gs.player.y)
 
 
 def gated_phase_target(gs, phase_target, *, state=None, landmark_id=None):
@@ -137,5 +139,5 @@ def gated_phase_target(gs, phase_target, *, state=None, landmark_id=None):
         landmark = find_landmark(landmarks, landmark_id=landmark_id)
         if landmark is not None and landmark.get("map_key") == gs.map_key:
             return landmark_coords(landmark)
-        return exploration_target(gs, state, skip_retired=True)
+        return exploration_target(gs, state)
     return phase_target
