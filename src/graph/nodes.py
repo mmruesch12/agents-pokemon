@@ -94,20 +94,29 @@ def _route_29_south_corridor_path_step(
     target: tuple[int, int],
     path: list[str],
 ) -> str | None:
-    """ROM-valid east progress on the y=14 south corridor toward re-entry."""
+    """ROM-valid progress on the south corridor toward re-entry or the Route 30 gate."""
     from src.graph.navigation_resolve import ROUTE_29_CORRIDOR_EAST_REENTRY
 
     reentry = ROUTE_29_CORRIDOR_EAST_REENTRY
+    if gs.map_key != MAP_KEY_ROUTE_29 or not path:
+        return None
+    px, py = gs.player.x, gs.player.y
+    gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
     if (
-        gs.map_key != MAP_KEY_ROUTE_29
-        or gs.player.y != reentry[1]
-        or target[0] < reentry[0]
-        or gs.player.x >= reentry[0]
+        py == reentry[1]
+        and target[0] >= reentry[0]
+        and px < reentry[0]
+        and path[0] == "right"
     ):
-        return None
-    if path and path[0] != "right":
-        return None
-    return "right"
+        return "right"
+    if (
+        gate
+        and target == gate
+        and py >= reentry[1]
+        and px <= reentry[0] + 1
+    ):
+        return path[0]
+    return None
 
 
 def _route_29_ledge_path_step(
@@ -130,6 +139,15 @@ def _route_29_ledge_path_step(
     ):
         return "left"
     gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
+    if (
+        gate
+        and target == gate
+        and gs.map_key == MAP_KEY_ROUTE_29
+        and gs.player.y == west_approach[1]
+        and gs.player.x > west_approach[0]
+        and path
+    ):
+        return path[0]
     ledge = (27, 10)
     west_descent = (25, 11)
     if (

@@ -890,6 +890,46 @@ def test_select_navigation_forces_east_on_route_29_south_corridor():
     assert action == "right"
 
 
+def test_select_navigation_forces_gate_path_on_route_29_south_corridor():
+    from src.graph.nodes import select_navigation_action
+    from src.graph.pathfinding import MAP_LANDMARK_ANCHORS
+
+    gate = MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"]
+    gs = GameState(player={"map_group": 24, "map_id": 3, "x": 22, "y": 14})
+    state: dict = {"short_term_history": []}
+    action = select_navigation_action(
+        door_exit=None,
+        path=["down", "left", "left", "left"],
+        llm_choice="right",
+        candidates=["left", "right", "down", "up"],
+        stuck_count=0,
+        gs=gs,
+        state=state,
+        target=gate,
+    )
+    assert action == "down"
+
+
+def test_select_navigation_forces_down_on_route_29_west_corridor_row():
+    from src.graph.nodes import select_navigation_action
+    from src.graph.pathfinding import MAP_LANDMARK_ANCHORS
+
+    gate = MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"]
+    gs = GameState(player={"map_group": 24, "map_id": 3, "x": 23, "y": 12})
+    state: dict = {"short_term_history": []}
+    action = select_navigation_action(
+        door_exit=None,
+        path=["down", "left", "down", "down", "left"],
+        llm_choice="left",
+        candidates=["left", "right", "down", "up"],
+        stuck_count=0,
+        gs=gs,
+        state=state,
+        target=gate,
+    )
+    assert action == "down"
+
+
 def test_navigation_candidates_omit_blocked_primary_at_route_29_y11_trap():
     gs = GameState(player={"map_group": 24, "map_id": 3, "x": 23, "y": 11})
     path = ["right", "up", "left"]
