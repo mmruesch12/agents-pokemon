@@ -826,7 +826,7 @@ def test_navigation_skips_interact_candidate_during_outdoor_recovery():
         raw_metadata={"script_pos": 1, "script_mode": 1, "in_script": True},
     )
     state = initial_agent_state(gs)
-    state["interact_no_progress_count"] = 3
+    state["interact_no_progress_count"] = 12
     candidates = _navigation_candidates(gs, (10, 5), ["up", "right"], state)
     assert "a" not in candidates
 
@@ -841,7 +841,7 @@ def test_planner_routes_navigator_when_outdoor_interact_stuck():
     )
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
-    state["interact_no_progress_count"] = 3
+    state["interact_no_progress_count"] = 12
     assert needs_interaction(gs, state) is False
     result = planner_node(state)
     assert result["next_node"] == "navigator"
@@ -857,7 +857,7 @@ def test_critic_replans_on_interact_no_progress_even_during_dialog():
     state["house_exit_complete"] = True
     state["short_term_history"] = ["interact:a@41,14"] * 6
     state["stuck_count"] = 0
-    state["interact_no_progress_count"] = 3
+    state["interact_no_progress_count"] = 12
     result = critic_node(state)
     assert result["critic_verdict"] == "replan"
     assert result["should_replan"] is True

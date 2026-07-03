@@ -14,7 +14,7 @@ from src.state.models import GameState
 from src.state.script_constants import SCRIPT_READ, joypad_input_blocked
 
 INDOOR_INTERACT_STUCK = int(os.getenv("INDOOR_INTERACT_STUCK", "2"))
-INTERACT_NO_PROGRESS_RECOVERY = int(os.getenv("INTERACT_NO_PROGRESS_RECOVERY", "3"))
+INTERACT_NO_PROGRESS_RECOVERY = int(os.getenv("INTERACT_NO_PROGRESS_RECOVERY", "12"))
 POCKET_STUCK_MAX_POSITIONS = 4
 
 INDOOR_NAV_STUCK_MAPS = frozenset(

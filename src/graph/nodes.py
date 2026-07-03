@@ -9,6 +9,8 @@ from typing import Any
 
 from src.emulator.bootstrap import needs_bootstrap, pick_bootstrap_button
 from src.graph.generic_interact import (
+    INDOOR_NAV_STUCK_MAPS,
+    INTERACT_NO_PROGRESS_RECOVERY,
     clear_pocket_stuck,
     generic_force_interactor,
     generic_is_interact_needed,
@@ -77,6 +79,7 @@ STUCK_THRESHOLD = int(os.getenv("STUCK_THRESHOLD", "10"))
 STUCK_ARBITRATION_THRESHOLD = int(os.getenv("STUCK_ARBITRATION_THRESHOLD", "2"))
 NAVIGATION_REPEAT_THRESHOLD = int(os.getenv("NAVIGATION_REPEAT_THRESHOLD", "3"))
 INTERACT_HOLD_FRAMES = int(os.getenv("INTERACT_HOLD_FRAMES", "30"))
+OUTDOOR_INTERACT_TICKS = int(os.getenv("OUTDOOR_INTERACT_TICKS", "120"))
 SCRIPT_WAIT_TICKS = int(os.getenv("SCRIPT_WAIT_TICKS", "45"))
 
 _DIRECTION_DELTA = {
@@ -912,7 +915,8 @@ def critic_node(state: AgentState) -> AgentState:
     )
     oscillation = not dialog_active and _history_oscillates(history, min_cycles=3)
     interact_spam = _history_interact_repeats(history, min_count=5) and (
-        stuck >= 2 or state.get("interact_no_progress_count", 0) >= 3
+        stuck >= 2
+        or state.get("interact_no_progress_count", 0) >= INTERACT_NO_PROGRESS_RECOVERY
     )
 
     if repetition or oscillation or interact_spam or stuck >= STUCK_THRESHOLD:
@@ -1103,7 +1107,14 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
                 if direction in ("up", "down", "left", "right"):
                     emulator.tick(30)
                 elif action.startswith("interact_"):
-                    emulator.tick(45)
+                    gs_tick = GameState.model_validate(state.get("game_state", {}))
+                    tick = SCRIPT_WAIT_TICKS
+                    if (
+                        gs_tick.in_text_box
+                        and gs_tick.map_key not in INDOOR_NAV_STUCK_MAPS
+                    ):
+                        tick = OUTDOOR_INTERACT_TICKS
+                    emulator.tick(tick)
         elif action.startswith("battle_"):
             battle_action = action.replace("battle_", "")
             pokemon_tools.battle_decide.invoke({"action": battle_action})
