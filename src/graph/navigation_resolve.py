@@ -36,6 +36,7 @@ def _landmark_target_on_map(
 
 ROUTE_29_SOUTH_CORRIDOR: tuple[int, int] = (14, 14)
 ROUTE_29_CORRIDOR_EAST_REENTRY: tuple[int, int] = (22, 14)
+ROUTE_29_LEDGE_CONNECTOR: tuple[int, int] = (27, 10)
 
 
 def _route_29_gate_path_drifts_east(path: list[str]) -> bool:
@@ -68,8 +69,14 @@ def _route_29_gate_south_corridor_waypoint(
         return target
     px, py = gs.player.x, gs.player.y
     reentry = ROUTE_29_CORRIDOR_EAST_REENTRY
-    if py >= 14 and px >= reentry[0]:
+    ledge = ROUTE_29_LEDGE_CONNECTOR
+    if py <= ledge[1] and px >= ledge[0] - 1:
         return target
+    if (py >= 11 and px >= reentry[0]) or (py >= 14 and px >= reentry[0]):
+        if find_path(
+            px, py, ledge[0], ledge[1], map_key=gs.map_key, state=state
+        ):
+            return ledge
     if py >= 14 and px < reentry[0]:
         if find_path(
             px, py, reentry[0], reentry[1], map_key=gs.map_key, state=state

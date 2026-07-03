@@ -46,8 +46,26 @@ def test_route_29_gate_waypoint_east_reentry_from_west_corridor():
             ROUTE_29_CORRIDOR_EAST_REENTRY
         )
 
+    from src.graph.navigation_resolve import ROUTE_29_LEDGE_CONNECTOR
+
     gs = GameState(
         player={"map_group": 24, "map_id": 3, "x": 22, "y": 14},
+        party_count=1,
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == (
+        ROUTE_29_LEDGE_CONNECTOR
+    )
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 23, "y": 11},
+        party_count=1,
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == (
+        ROUTE_29_LEDGE_CONNECTOR
+    )
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 27, "y": 10},
         party_count=1,
     )
     assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == (10, 5)
