@@ -799,6 +799,20 @@ def test_select_navigation_skips_llm_when_repeating_blocked_direction():
     assert action != "left"
 
 
+def test_outdoor_sign_close_blocks_tile_for_detour():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 38, "y": 14},
+        in_text_box=False,
+        raw_metadata={"script_pos": 31533, "script_mode": 0, "in_script": False},
+    )
+    state: dict = {"stuck_count": 5, "interact_no_progress_count": 3}
+    pre_key = (31532, True, 1, False)
+    state["pre_action_script_key"] = pre_key
+    _update_stuck_from_interaction(state, "interact_a", gs.position_key, gs)
+    assert (38, 14) in state.get("session_blocked", {}).get("24:3", [])
+    assert state.get("interact_no_progress_count") == 0
+
+
 def test_interact_without_script_progress_blocks_tile_and_increments_stuck():
     gs = GameState(
         player={"map_group": 24, "map_id": 3, "x": 41, "y": 14},

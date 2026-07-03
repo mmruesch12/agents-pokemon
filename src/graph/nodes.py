@@ -1300,6 +1300,16 @@ def _update_stuck_from_interaction(
     elif script_progressed:
         state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
         state["interact_no_progress_count"] = 0
+        if (
+            pre_key is not None
+            and pre_key[1]
+            and not gs.in_text_box
+            and gs.map_key not in INDOOR_NAV_STUCK_MAPS
+        ):
+            parsed = parse_position_key(gs.position_key)
+            if parsed is not None:
+                map_key, x, y = parsed
+                record_session_blocked(state, map_key, x, y)
     elif gs.in_text_box or bool(meta.get("in_script")):
         if pre_key == post_key:
             state["interact_no_progress_count"] = (
