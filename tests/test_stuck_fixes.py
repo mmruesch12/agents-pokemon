@@ -819,6 +819,22 @@ def test_interact_without_script_progress_blocks_tile_and_increments_stuck():
     assert (41, 14) in state.get("session_blocked", {}).get("24:3", [])
 
 
+def test_planner_routes_navigator_when_outdoor_interact_stuck():
+    from src.graph.nodes import needs_interaction, planner_node
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 41, "y": 14},
+        in_text_box=True,
+        raw_metadata={"script_pos": 1, "script_mode": 1, "in_script": True},
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["interact_no_progress_count"] = 3
+    assert needs_interaction(gs, state) is False
+    result = planner_node(state)
+    assert result["next_node"] == "navigator"
+
+
 def test_critic_replans_on_interact_no_progress_even_during_dialog():
     gs = GameState(
         player={"map_group": 24, "map_id": 3, "x": 41, "y": 14},

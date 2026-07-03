@@ -14,6 +14,7 @@ from src.state.models import GameState
 from src.state.script_constants import SCRIPT_READ, joypad_input_blocked
 
 INDOOR_INTERACT_STUCK = int(os.getenv("INDOOR_INTERACT_STUCK", "2"))
+INTERACT_NO_PROGRESS_RECOVERY = int(os.getenv("INTERACT_NO_PROGRESS_RECOVERY", "3"))
 POCKET_STUCK_MAX_POSITIONS = 4
 
 INDOOR_NAV_STUCK_MAPS = frozenset(
@@ -40,6 +41,13 @@ def joypad_blocked_facing_object(gs: GameState) -> bool:
     if meta.get("script_mode") == SCRIPT_READ:
         return True
     return dialog_or_script_active(gs)
+
+
+def outdoor_interact_recovery_active(gs: GameState, state: dict[str, Any]) -> bool:
+    """Outdoor maps: ROM dialog is not advancing — prefer navigation recovery."""
+    if gs.map_key in INDOOR_NAV_STUCK_MAPS:
+        return False
+    return state.get("interact_no_progress_count", 0) >= INTERACT_NO_PROGRESS_RECOVERY
 
 
 def is_rom_interact_signal(gs: GameState) -> bool:

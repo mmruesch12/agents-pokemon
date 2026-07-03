@@ -14,6 +14,7 @@ from src.graph.generic_interact import (
     generic_is_interact_needed,
     generic_prefer_interact_candidate,
     generic_stuck_interact_fallback,
+    outdoor_interact_recovery_active,
     in_navigation_pocket,
     record_pocket_nav_failure,
 )
@@ -386,7 +387,10 @@ def supervisor_node(state: AgentState) -> AgentState:
     elif needs_script_wait(gs, state):
         state["next_node"] = "waiter"
         state["phase"] = "wait"
-    elif house_exit.force_interactor(gs, state) or generic_force_interactor(gs, state):
+    elif house_exit.force_interactor(gs, state) or (
+        generic_force_interactor(gs, state)
+        and not outdoor_interact_recovery_active(gs, state)
+    ):
         state["next_node"] = "interactor"
         state["phase"] = "interact"
     elif state.get("stuck_count", 0) >= STUCK_THRESHOLD:
@@ -438,6 +442,8 @@ def needs_interaction(gs: GameState, state: dict | None = None) -> bool:
     if gs.battle.in_battle or needs_bootstrap(gs, state):
         return False
     if needs_script_wait(gs, state):
+        return False
+    if outdoor_interact_recovery_active(gs, state):
         return False
     starter_quest.ensure_house_exit_complete(gs, state)
     if house_exit.needs_house_interaction(gs, state):
@@ -564,7 +570,9 @@ def planner_node(state: AgentState) -> AgentState:
     state["should_replan"] = False
     state["last_action"] = "plan_replan"
     state["last_action_result"] = {"subgoals": subgoals}
-    if generic_is_interact_needed(gs, state):
+    if generic_is_interact_needed(gs, state) and not outdoor_interact_recovery_active(
+        gs, state
+    ):
         state["phase"] = "interact"
         state["next_node"] = "interactor"
         starter_quest.sync_subgoals(gs, state)
@@ -1186,6 +1194,7 @@ def _update_stuck_from_movement(
                     return
         clear_pocket_stuck(state)
         state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
+        state["interact_no_progress_count"] = 0
         if gs is not None:
             parsed = parse_position_key(pos_after)
             if parsed is not None:
