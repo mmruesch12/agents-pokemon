@@ -750,6 +750,7 @@ def _navigation_candidates(
     primary = direction_toward(gs.player.x, gs.player.y, target[0], target[1])
     if primary == "up" and _blocked_stairs_up(gs):
         primary = direction_toward(gs.player.x, gs.player.y, PLAYERS_HOUSE_1F_DOOR[0], PLAYERS_HOUSE_1F_DOOR[1])
+    cardinals = walkable_cardinal_candidates(gs, state)
     candidates: list[str] = []
     if path:
         for step in path[:3]:
@@ -758,8 +759,10 @@ def _navigation_candidates(
                 or (gs.map_key == MAP_KEY_ELMS_LAB and starter_quest.blocked_lab_exit(gs))
             ):
                 continue
+            if cardinals and step not in cardinals:
+                continue
             candidates.append(step)
-    if primary != "a" and primary not in candidates:
+    if primary != "a" and primary not in candidates and primary in cardinals:
         candidates.append(primary)
     if not outdoor_interact_recovery_active(gs, state) and (
         house_exit.prefer_interact_candidate(gs)
@@ -780,7 +783,9 @@ def _navigation_candidates(
     ):
         candidates.append("a")
     if not candidates:
-        candidates = _direction_candidates(gs.player.x, gs.player.y, target[0], target[1])
+        candidates = cardinals or _direction_candidates(
+            gs.player.x, gs.player.y, target[0], target[1]
+        )
     return list(dict.fromkeys(candidates))
 
 

@@ -833,6 +833,14 @@ def test_interact_without_script_progress_blocks_tile_and_increments_stuck():
     assert (41, 14) in state.get("session_blocked", {}).get("24:3", [])
 
 
+def test_navigation_candidates_omit_blocked_primary_at_route_29_y11_trap():
+    gs = GameState(player={"map_group": 24, "map_id": 3, "x": 23, "y": 11})
+    path = ["right", "up", "left"]
+    candidates = _navigation_candidates(gs, (10, 5), path, {})
+    assert "left" not in candidates
+    assert "right" in candidates
+
+
 def test_outdoor_interact_suppressed_on_session_blocked_standing_tile():
     from src.graph.generic_interact import generic_prefer_interact_candidate
     from src.graph.pathfinding import record_session_blocked
