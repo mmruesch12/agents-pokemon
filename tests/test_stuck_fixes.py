@@ -905,6 +905,40 @@ def test_critic_replans_on_interact_no_progress_even_during_dialog():
     assert result["should_replan"] is True
 
 
+def test_select_navigation_prefers_path_over_llm_when_arbitrating():
+    gs = GameState(player={"map_group": 24, "map_id": 3, "x": 38, "y": 14})
+    state = initial_agent_state(gs)
+    state["short_term_history"] = ["navigate:up@38,14"] * 3
+    action = select_navigation_action(
+        door_exit=None,
+        path=["right", "up", "left"],
+        llm_choice="up",
+        candidates=["up", "right", "down"],
+        stuck_count=5,
+        gs=gs,
+        state=state,
+        target=(10, 5),
+    )
+    assert action == "right"
+
+
+def test_select_navigation_skips_repeat_dir_in_path_prefix():
+    gs = GameState(player={"map_group": 24, "map_id": 3, "x": 38, "y": 14})
+    state = initial_agent_state(gs)
+    state["short_term_history"] = ["navigate:up@38,14"] * 3
+    action = select_navigation_action(
+        door_exit=None,
+        path=["up", "right", "down"],
+        llm_choice="up",
+        candidates=["up", "right", "down"],
+        stuck_count=5,
+        gs=gs,
+        state=state,
+        target=(10, 5),
+    )
+    assert action == "right"
+
+
 def test_select_navigation_falls_through_when_only_repeat_dir_candidate():
     gs = GameState(player={"map_group": 24, "map_id": 3, "x": 44, "y": 8})
     state = initial_agent_state(gs)

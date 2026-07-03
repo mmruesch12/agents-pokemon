@@ -293,6 +293,10 @@ def select_navigation_action(
     repeat_dir = (
         repeating_nav_direction(state.get("short_term_history", [])) if arbitrate else None
     )
+    if arbitrate and path:
+        for path_step in path[:4]:
+            if path_step in candidates and path_step != repeat_dir:
+                return path_step
     if (
         arbitrate
         and llm_choice
