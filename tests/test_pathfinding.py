@@ -123,6 +123,70 @@ def test_route_29_gate_waypoint_prefers_south_corridor_from_gate_approach():
     assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == ROUTE_29_SOUTH_CORRIDOR
 
 
+def test_route_29_gate_waypoint_east_ledge_dead_end_uses_south_corridor():
+    from src.graph.navigation_resolve import (
+        ROUTE_29_SOUTH_CORRIDOR,
+        _route_29_gate_south_corridor_waypoint,
+    )
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 44, "y": 10},
+        party_count=1,
+        raw_metadata={"has_starter": True},
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == ROUTE_29_SOUTH_CORRIDOR
+
+
+def test_route_29_gate_waypoint_post_west_descent_uses_gate_approach_row():
+    from src.graph.navigation_resolve import (
+        ROUTE_29_WEST_GATE_APPROACH,
+        _route_29_gate_south_corridor_waypoint,
+    )
+    from src.graph.pathfinding import record_session_walkable
+
+    state: dict = {}
+    for tile in ((23, 11), (27, 10), (25, 10), (25, 11)):
+        record_session_walkable(state, "24:3", *tile)
+    gs_mid_corridor = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 23, "y": 12},
+        party_count=1,
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs_mid_corridor, (10, 5), state) == (
+        ROUTE_29_WEST_GATE_APPROACH
+    )
+
+    gs_at_descent = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 25, "y": 11},
+        party_count=1,
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs_at_descent, (10, 5), state) == (
+        ROUTE_29_WEST_GATE_APPROACH
+    )
+
+    gs_on_gate_column = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 10, "y": 11},
+        party_count=1,
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs_on_gate_column, (10, 5), state) == (
+        10,
+        5,
+    )
+
+
+def test_find_path_post_west_descent_prefers_south_then_west_corridor():
+    from src.graph.pathfinding import record_session_walkable
+
+    state: dict = {}
+    for tile in ((23, 11), (27, 10), (25, 10), (25, 11)):
+        record_session_walkable(state, "24:3", *tile)
+    path = find_path(25, 11, 10, 5, map_key="24:3", state=state)
+    assert path
+    assert path[0] == "down"
+    west_row = find_path(25, 11, 10, 12, map_key="24:3", state=state)
+    assert west_row
+    assert west_row[0] == "down"
+
+
 def test_route_29_grid_blocks_sign_tile():
     grid = MAP_GRIDS["24:3"]
     assert _is_walkable(grid, 25, 10) is True

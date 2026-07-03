@@ -305,12 +305,13 @@ def _route_29_gate_step_penalty(
     if map_key != "24:3" or end_x >= x:
         return 0
     to_gate = end_y <= 6
+    to_west_approach = 10 <= end_y <= 12 and end_x <= 12
     to_corridor = end_y >= 14
     to_west_descent = (end_x, end_y) == (25, 11)
-    if not to_gate and not to_corridor and not to_west_descent:
+    if not to_gate and not to_corridor and not to_west_descent and not to_west_approach:
         return 0
     penalty = 0
-    if to_gate:
+    if to_gate or to_west_approach:
         if y <= 11 and x >= 20:
             penalty += 6
         if ny <= 11 and nx >= 20:
@@ -337,6 +338,21 @@ def _route_29_gate_step_penalty(
             penalty += 100
         if y == 10 and x == 27 and ny > y:
             penalty -= 12
+        if y == 11 and x <= 27 and ny > y:
+            penalty += 40
+        if y == 11 and x <= 24 and ny > y and end_y >= 10:
+            penalty += 100
+        if y == 11 and x <= 24 and nx < x and end_y >= 10:
+            penalty -= 12
+        if y == 12 and x > end_x and nx < x:
+            penalty -= 15
+        if y == 12 and x > end_x and ny > y:
+            penalty += 50
+        if y == 10 and x == 44:
+            if ny > y:
+                penalty -= 20
+            elif ny < y or nx != x:
+                penalty += 80
     if to_west_descent:
         if y == 10 and x == 27 and nx < x:
             penalty += 80
@@ -356,7 +372,7 @@ def _route_29_gate_step_penalty(
             penalty += 20
         elif y >= 14:
             penalty += 10
-        elif y >= 11 and to_gate:
+        elif y >= 11 and (to_gate or to_west_approach):
             penalty += 8
     return penalty
 

@@ -82,6 +82,11 @@ INTERACT_HOLD_FRAMES = int(os.getenv("INTERACT_HOLD_FRAMES", "30"))
 OUTDOOR_INTERACT_TICKS = int(os.getenv("OUTDOOR_INTERACT_TICKS", "120"))
 SCRIPT_WAIT_TICKS = int(os.getenv("SCRIPT_WAIT_TICKS", "45"))
 ROUTE_29_Y11_DEAD_END: tuple[int, int] = (22, 11)
+ROUTE_29_FORCED_LEDGE_STEP: dict[tuple[int, int], str] = {
+    (44, 8): "down",
+    (44, 10): "down",
+    (25, 11): "down",
+}
 
 
 def _route_29_ledge_path_step(
@@ -90,6 +95,19 @@ def _route_29_ledge_path_step(
     path: list[str],
 ) -> str | None:
     """Follow A* strictly on the east ledge row toward the connector or gate."""
+    forced = ROUTE_29_FORCED_LEDGE_STEP.get((gs.player.x, gs.player.y))
+    if forced is not None:
+        return forced
+    from src.graph.navigation_resolve import ROUTE_29_WEST_GATE_APPROACH
+
+    west_approach = ROUTE_29_WEST_GATE_APPROACH
+    if (
+        target == west_approach
+        and gs.map_key == MAP_KEY_ROUTE_29
+        and gs.player.y == west_approach[1]
+        and gs.player.x > west_approach[0]
+    ):
+        return "left"
     gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
     ledge = (27, 10)
     west_descent = (25, 11)
