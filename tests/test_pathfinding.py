@@ -172,6 +172,16 @@ def test_route_29_gate_waypoint_post_west_descent_uses_gate_approach_row():
         5,
     )
 
+    for x, y in ((21, 14), (22, 14), (22, 15)):
+        gs_corridor = GameState(
+            player={"map_group": 24, "map_id": 3, "x": x, "y": y},
+            party_count=1,
+        )
+        assert _route_29_gate_south_corridor_waypoint(gs_corridor, (10, 5), state) == (
+            10,
+            5,
+        )
+
 
 def test_find_path_post_west_descent_prefers_south_then_west_corridor():
     from src.graph.pathfinding import record_session_walkable

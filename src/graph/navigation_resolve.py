@@ -168,14 +168,21 @@ def _route_29_gate_south_corridor_waypoint(
             px, py, climb[0], climb[1], map_key=gs.map_key, state=state
         ):
             return climb
-    if py >= 14 and px < reentry[0]:
+    if west_complete and py >= reentry[1] and px <= ROUTE_29_GATE_APPROACH_X:
+        gate_path = find_path(
+            px, py, gate[0], gate[1], map_key=gs.map_key, state=state
+        )
+        if gate_path and not _route_29_gate_path_drifts_east(gate_path):
+            return target
+    if not west_complete and py >= 14 and px < reentry[0]:
         if find_path(
             px, py, reentry[0], reentry[1], map_key=gs.map_key, state=state
         ):
             return reentry
         return target
     if (
-        py > reentry[1]
+        not west_complete
+        and py > reentry[1]
         and reentry[0] <= px <= ROUTE_29_GATE_APPROACH_X
     ):
         if find_path(

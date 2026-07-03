@@ -95,13 +95,17 @@ def _route_29_south_corridor_path_step(
     path: list[str],
 ) -> str | None:
     """ROM-valid progress on the south corridor toward re-entry or the Route 30 gate."""
-    from src.graph.navigation_resolve import ROUTE_29_CORRIDOR_EAST_REENTRY
+    from src.graph.navigation_resolve import (
+        ROUTE_29_CORRIDOR_EAST_REENTRY,
+        ROUTE_29_WEST_GATE_APPROACH,
+    )
 
     reentry = ROUTE_29_CORRIDOR_EAST_REENTRY
     if gs.map_key != MAP_KEY_ROUTE_29 or not path:
         return None
     px, py = gs.player.x, gs.player.y
     gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
+    west_approach = ROUTE_29_WEST_GATE_APPROACH
     if (
         py == reentry[1]
         and target[0] >= reentry[0]
@@ -111,7 +115,7 @@ def _route_29_south_corridor_path_step(
         return "right"
     if (
         gate
-        and target == gate
+        and target in (gate, west_approach)
         and py >= reentry[1]
         and px <= reentry[0] + 1
     ):
@@ -131,21 +135,16 @@ def _route_29_ledge_path_step(
     from src.graph.navigation_resolve import ROUTE_29_WEST_GATE_APPROACH
 
     west_approach = ROUTE_29_WEST_GATE_APPROACH
-    if (
-        target == west_approach
-        and gs.map_key == MAP_KEY_ROUTE_29
-        and gs.player.y == west_approach[1]
-        and gs.player.x > west_approach[0]
-    ):
-        return "left"
     gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
     if (
-        gate
-        and target == gate
-        and gs.map_key == MAP_KEY_ROUTE_29
+        gs.map_key == MAP_KEY_ROUTE_29
         and gs.player.y == west_approach[1]
         and gs.player.x > west_approach[0]
         and path
+        and (
+            target == west_approach
+            or (gate and target == gate)
+        )
     ):
         return path[0]
     ledge = (27, 10)
