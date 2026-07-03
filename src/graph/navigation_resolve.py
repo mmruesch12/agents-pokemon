@@ -67,13 +67,16 @@ def _route_29_gate_south_corridor_waypoint(
     if gate is None or target != gate or gs.map_key != MAP_KEY_ROUTE_29:
         return target
     px, py = gs.player.x, gs.player.y
+    reentry = ROUTE_29_CORRIDOR_EAST_REENTRY
+    if py >= 14 and px >= reentry[0]:
+        return target
+    if py >= 14 and px < reentry[0]:
+        if find_path(
+            px, py, reentry[0], reentry[1], map_key=gs.map_key, state=state
+        ):
+            return reentry
+        return target
     if py < 10 or px <= ROUTE_29_SOUTH_CORRIDOR[0]:
-        if (px, py) == ROUTE_29_SOUTH_CORRIDOR:
-            reentry = ROUTE_29_CORRIDOR_EAST_REENTRY
-            if find_path(
-                px, py, reentry[0], reentry[1], map_key=gs.map_key, state=state
-            ):
-                return reentry
         return target
     corridor = ROUTE_29_SOUTH_CORRIDOR
     if not find_path(

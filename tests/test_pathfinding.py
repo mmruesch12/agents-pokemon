@@ -31,6 +31,28 @@ def test_find_path_route_29_gate_approach_prefers_south_corridor():
     assert "left" in path
 
 
+def test_route_29_gate_waypoint_east_reentry_from_west_corridor():
+    from src.graph.navigation_resolve import (
+        ROUTE_29_CORRIDOR_EAST_REENTRY,
+        _route_29_gate_south_corridor_waypoint,
+    )
+
+    for x in (14, 15, 20):
+        gs = GameState(
+            player={"map_group": 24, "map_id": 3, "x": x, "y": 14},
+            party_count=1,
+        )
+        assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == (
+            ROUTE_29_CORRIDOR_EAST_REENTRY
+        )
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 22, "y": 14},
+        party_count=1,
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == (10, 5)
+
+
 def test_route_29_gate_waypoint_prefers_south_corridor_from_gate_approach():
     from src.graph.navigation_resolve import (
         ROUTE_29_SOUTH_CORRIDOR,
