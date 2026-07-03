@@ -25,10 +25,24 @@ def test_route_29_grid_covers_outdoor_coordinates():
 
 
 def test_find_path_route_29_gate_approach_prefers_south_corridor():
-    path = find_path(24, 10, 10, 5, map_key="24:3")
+    path = find_path(24, 10, 14, 14, map_key="24:3")
     assert path
     assert path[0] == "down"
     assert "left" in path
+
+
+def test_route_29_gate_waypoint_prefers_south_corridor_from_gate_approach():
+    from src.graph.navigation_resolve import (
+        ROUTE_29_SOUTH_CORRIDOR,
+        _route_29_gate_south_corridor_waypoint,
+    )
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 24, "y": 10},
+        party_count=1,
+        raw_metadata={"has_starter": True},
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == ROUTE_29_SOUTH_CORRIDOR
 
 
 def test_find_path_route_29_ledge_detours_south():

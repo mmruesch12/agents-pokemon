@@ -5,10 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from src.graph.exploration import exploration_target
+from src.graph.pathfinding import MAP_LANDMARK_ANCHORS, find_path
 from src.state.gold_state_reader import (
     MAP_KEY_ELMS_LAB,
     MAP_KEY_MR_POKEMONS_HOUSE,
     MAP_KEY_NEW_BARK_TOWN,
+    MAP_KEY_ROUTE_29,
 )
 from src.state.models import GameState
 from src.memory.landmarks import (
@@ -30,6 +32,55 @@ def _landmark_target_on_map(
     if landmark is None or landmark.get("map_key") != map_key:
         return None
     return landmark_coords(landmark)
+
+
+ROUTE_29_SOUTH_CORRIDOR: tuple[int, int] = (14, 14)
+ROUTE_29_CORRIDOR_EAST_REENTRY: tuple[int, int] = (22, 14)
+
+
+def _route_29_gate_path_drifts_east(path: list[str]) -> bool:
+    """True when a gate path moves east before the first west step."""
+    if not path:
+        return True
+    if path[0] == "right":
+        return True
+    for step in path[:16]:
+        if step == "left":
+            return False
+        if step == "right":
+            return True
+    return False
+
+
+def _route_29_gate_south_corridor_waypoint(
+    gs: GameState,
+    target: tuple[int, int],
+    state: dict[str, Any] | None = None,
+) -> tuple[int, int]:
+    """Interim ROM-valid target before the north gate when east of the west corridor."""
+    gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
+    if gate is None or target != gate or gs.map_key != MAP_KEY_ROUTE_29:
+        return target
+    px, py = gs.player.x, gs.player.y
+    if py < 10 or px <= ROUTE_29_SOUTH_CORRIDOR[0]:
+        if (px, py) == ROUTE_29_SOUTH_CORRIDOR:
+            reentry = ROUTE_29_CORRIDOR_EAST_REENTRY
+            if find_path(
+                px, py, reentry[0], reentry[1], map_key=gs.map_key, state=state
+            ):
+                return reentry
+        return target
+    corridor = ROUTE_29_SOUTH_CORRIDOR
+    if not find_path(
+        px, py, corridor[0], corridor[1], map_key=gs.map_key, state=state
+    ):
+        return target
+    gate_path = find_path(
+        px, py, gate[0], gate[1], map_key=gs.map_key, state=state
+    )
+    if gate_path and not _route_29_gate_path_drifts_east(gate_path):
+        return target
+    return corridor
 
 
 def _lab_entrance_approach(
@@ -98,7 +149,7 @@ def resolve_landmark_navigation_target(
         if coords is not None:
             if landmark_id == ELMS_LAB_ENTRANCE_ID:
                 return _lab_entrance_approach(gs, coords, state)
-            return coords
+            return _route_29_gate_south_corridor_waypoint(gs, coords, state)
 
     return None
 
