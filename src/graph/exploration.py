@@ -90,7 +90,9 @@ def exploration_target(
             map_key=gs.map_key,
             state=state,
         )
-        if path or (gs.player.x, gs.player.y) != hint_tile:
+        if path:
+            return hint_tile
+        if (gs.player.x, gs.player.y) == hint_tile:
             return hint_tile
     visited = {k for k in state.get("visited_positions", []) if k.startswith(f"{gs.map_key}:")}
     grid = MAP_GRIDS.get(gs.map_key)

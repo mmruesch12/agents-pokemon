@@ -21,6 +21,8 @@ from src.graph.navigation_resolve import resolve_navigation_target
 from src.graph.llm import llm_battle, llm_navigate, llm_plan
 from src.graph.pathfinding import (
     MAP_GRIDS,
+    MAP_LANDMARK_ANCHORS,
+    MAP_WARP_HINT_ROWS,
     _is_walkable,
     at_target_blocked_ahead_interact_eligible,
     direction_toward,
@@ -268,14 +270,22 @@ def select_navigation_action(
     if _interact_candidate_justified(gs, state, target, candidates):
         return "a"
     arbitrate = navigation_arbitration_active(stuck_count, state)
-    if arbitrate and llm_choice and llm_choice in candidates:
+    repeat_dir = (
+        repeating_nav_direction(state.get("short_term_history", [])) if arbitrate else None
+    )
+    if (
+        arbitrate
+        and llm_choice
+        and llm_choice in candidates
+        and llm_choice != repeat_dir
+    ):
         return llm_choice
     if arbitrate:
-        repeat_dir = repeating_nav_direction(state.get("short_term_history", []))
-        pool = [c for c in candidates if c not in {"a", repeat_dir}] or candidates
-        ranked = reorder_candidates_visit_aware(gs, pool, state)
-        if ranked and ranked[0] != "a":
-            return ranked[0]
+        pool = [c for c in candidates if c not in {"a", repeat_dir}]
+        if pool:
+            ranked = reorder_candidates_visit_aware(gs, pool, state)
+            if ranked and ranked[0] != "a":
+                return ranked[0]
     if path:
         return visit_aware_path_step(path, gs, state) or path[0]
     if llm_choice and llm_choice in candidates and llm_choice != "a":
@@ -595,7 +605,16 @@ def _players_house_door_exit(gs: GameState, state: AgentState | None = None) -> 
     lab_exit = starter_quest.door_exit_direction(gs, door=door)
     if lab_exit:
         return lab_exit
-    return house_exit.door_exit_direction(gs)
+    house_door = house_exit.door_exit_direction(gs)
+    if house_door:
+        return house_door
+    from src.graph.exploration import exploration_heading_west
+    from src.graph.pathfinding import map_edge_exit_direction
+
+    return map_edge_exit_direction(
+        gs,
+        heading_west=exploration_heading_west(gs, state),
+    )
 
 
 def _east_corridor_blocked_ahead(gs: GameState, state: AgentState) -> bool:
@@ -1093,6 +1112,9 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
                     "to_map": gs.map_key,
                     "to_pos": {"x": gs.player.x, "y": gs.player.y},
                 }
+            if action.startswith("navigate_"):
+                state["stuck_count"] = 0
+                clear_pocket_stuck(state)
         house_exit.on_map_change(map_before, gs, state, action=action)
         starter_quest.on_map_change(map_before, gs, state, action=action)
         if action.startswith("bootstrap_"):
@@ -1181,7 +1203,18 @@ def _update_stuck_from_movement(
                 delta = _DIRECTION_DELTA.get(direction)
                 if delta is not None:
                     dx, dy = delta
-                    record_session_blocked(state, map_key, x + dx, y + dy)
+                    nx, ny = x + dx, y + dy
+                    west_row = MAP_WARP_HINT_ROWS.get(map_key, {}).get("west")
+                    west_edge = MAP_LANDMARK_ANCHORS.get(map_key, {}).get("west_exit")
+                    skip_oob_edge = (
+                        west_row is not None
+                        and west_edge is not None
+                        and y == west_row
+                        and direction == "left"
+                        and nx <= west_edge[0]
+                    )
+                    if not skip_oob_edge:
+                        record_session_blocked(state, map_key, nx, ny)
 
 
 def _mark_replan_recovery(

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import heapq
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from src.state.models import GameState
 
 Direction = Literal["up", "down", "left", "right"]
 
@@ -16,7 +19,7 @@ def _grid_from_rows(rows: list[str]) -> list[list[int]]:
 MAP_WARP_HINT_ROWS: dict[str, dict[str, int]] = {
     "24:4": {"west": 8, "north": 3},
     "24:5": {"north": 2},
-    "24:3": {"north": 5},
+    "24:3": {"north": 5, "east": 8},
     "26:1": {"north": 3},
 }
 
@@ -24,7 +27,7 @@ MAP_WARP_HINT_ROWS: dict[str, dict[str, int]] = {
 MAP_LANDMARK_ANCHORS: dict[str, dict[str, tuple[int, int]]] = {
     "24:4": {
         "elms_lab_door": (6, 3),
-        "west_exit": (1, 8),
+        "west_exit": (0, 8),
     },
     "24:3": {
         "route_30_gate": (10, 5),
@@ -75,7 +78,7 @@ MAP_GRIDS: dict[str, list[list[int]]] = {
             "00000000000000000000",  # y=5 house exit warp ~(13,5)
             "00000000000000000000",  # y=6 east corridor row
             "00000000000000000000",  # y=7
-            "00000000000000000000",  # y=8 teacher gate west edge (1,8)/(1,9)
+            "00000000000000000000",  # y=8 teacher gate west edge (0,8)/(1,9)
             "00000000000000000000",  # y=9 south corridor at x=17
             "00000000000001111100",  # y=10 south edge / cliff
             "00000000000001111100",  # y=11
@@ -101,20 +104,25 @@ MAP_GRIDS: dict[str, list[list[int]]] = {
     ),
     "24:3": _grid_from_rows(
         [
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
+            # 60x18 — pret ROUTE_29 30x9 blocks; collision from ROM BFS (x=21..59) + west connectors
+            "111111111111111111111111111111111111111111111111111111111111",  # y=0
+            "111111111111111111111111111011111111111111111111111111111111",  # y=1
+            "111111111111111111111111000000111111111111111111111111111111",  # y=2
+            "111111111111111111111111010100111111111111111111111111111111",  # y=3
+            "111111111111111111111001000000111100000010111111111111111111",  # y=4
+            "000000000000000000000000000000011100000001011111111111111111",  # y=5 gate row
+            "111111111111111111111001101000000000001110111111100000111111",  # y=6
+            "111111111111111111111110100101000000001100111110011100111111",  # y=7
+            "111111111111111111111110000001001111001100110000000000000000",  # y=8 ledge at x<=43
+            "111111111111111111111111111011111111001100010000000000000000",  # y=9
+            "111111111111111111111111000000000000000001010000000001111111",  # y=10
+            "111111111111111111111100000010000000000000100000000000111111",  # y=11
+            "000000000000000000000110100011000001110000010001001000111111",  # y=12
+            "000000000000000000000100000011111111110100110000100000111111",  # y=13
+            "000000000000000000000100100000000011110000000000111111111111",  # y=14
+            "000000000000000000000000000000000011110000000000111111111111",  # y=15
+            "000000000000000000000111000000000000000000001111111111111111",  # y=16
+            "000000000000000000000111111100000000000000001111111111111111",  # y=17
         ]
     ),
     "26:1": _grid_from_rows(
@@ -372,6 +380,28 @@ def _is_perimeter_side_wall(
     if direction in ("up", "down") and (x == 0 or x == width - 1):
         return True
     return False
+
+
+def map_edge_exit_direction(
+    gs: GameState,
+    *,
+    heading_west: bool = False,
+) -> str | None:
+    """Cardinal to cross an outdoor map-edge warp on a warp-hint row."""
+    hints = MAP_WARP_HINT_ROWS.get(gs.map_key, {})
+    west_row = hints.get("west")
+    if west_row is None or not heading_west or gs.player.y != west_row:
+        return None
+    edge = MAP_LANDMARK_ANCHORS.get(gs.map_key, {}).get("west_exit")
+    if edge is None:
+        return None
+    edge_x, edge_y = edge
+    pos = (gs.player.x, gs.player.y)
+    if pos == (edge_x, edge_y):
+        return "left"
+    if pos == (edge_x + 1, edge_y):
+        return "left"
+    return None
 
 
 def direction_blocked_ahead(
