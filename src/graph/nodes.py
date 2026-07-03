@@ -84,6 +84,25 @@ SCRIPT_WAIT_TICKS = int(os.getenv("SCRIPT_WAIT_TICKS", "45"))
 ROUTE_29_Y11_DEAD_END: tuple[int, int] = (22, 11)
 
 
+def _route_29_ledge_path_step(
+    gs: GameState,
+    target: tuple[int, int],
+    path: list[str],
+) -> str | None:
+    """Follow A* strictly on the east ledge row when heading to the Route 30 gate."""
+    gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
+    if (
+        gate
+        and target == gate
+        and gs.map_key == MAP_KEY_ROUTE_29
+        and gs.player.y <= 11
+        and gs.player.x >= 25
+        and path
+    ):
+        return path[0]
+    return None
+
+
 def _interact_tick_frames(gs: GameState) -> int:
     """Outdoor multi-page signs need long ticks even between text-box pages."""
     if gs.map_key in INDOOR_NAV_STUCK_MAPS:
@@ -312,6 +331,9 @@ def select_navigation_action(
             if ranked and ranked[0] != "a":
                 return ranked[0]
     if path:
+        ledge_step = _route_29_ledge_path_step(gs, target, path)
+        if ledge_step is not None:
+            return ledge_step
         return visit_aware_path_step(path, gs, state) or path[0]
     if llm_choice and llm_choice in candidates and llm_choice != "a":
         return llm_choice

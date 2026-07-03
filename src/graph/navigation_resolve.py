@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from src.graph.exploration import exploration_target
-from src.graph.pathfinding import MAP_LANDMARK_ANCHORS, find_path
+from src.graph.pathfinding import (
+    MAP_LANDMARK_ANCHORS,
+    find_path,
+    session_walkable_for_map,
+)
 from src.state.gold_state_reader import (
     MAP_KEY_ELMS_LAB,
     MAP_KEY_MR_POKEMONS_HOUSE,
@@ -36,7 +40,9 @@ def _landmark_target_on_map(
 
 ROUTE_29_SOUTH_CORRIDOR: tuple[int, int] = (14, 14)
 ROUTE_29_CORRIDOR_EAST_REENTRY: tuple[int, int] = (22, 14)
+ROUTE_29_LEDGE_CLIMB: tuple[int, int] = (23, 11)
 ROUTE_29_LEDGE_CONNECTOR: tuple[int, int] = (27, 10)
+ROUTE_29_GATE_APPROACH_X = 24
 
 
 def _route_29_gate_path_drifts_east(path: list[str]) -> bool:
@@ -70,19 +76,51 @@ def _route_29_gate_south_corridor_waypoint(
     px, py = gs.player.x, gs.player.y
     reentry = ROUTE_29_CORRIDOR_EAST_REENTRY
     ledge = ROUTE_29_LEDGE_CONNECTOR
+    climb = ROUTE_29_LEDGE_CLIMB
     if py <= ledge[1] and px >= ledge[0] - 1:
         return target
-    if (py >= 11 and px >= reentry[0]) or (py >= 14 and px >= reentry[0]):
+    walked = session_walkable_for_map(state, gs.map_key)
+    if (
+        climb in walked
+        and climb[1] - 1 <= py <= climb[1]
+        and reentry[0] <= px < ledge[0]
+    ):
         if find_path(
             px, py, ledge[0], ledge[1], map_key=gs.map_key, state=state
         ):
             return ledge
+    on_gate_approach_column = (
+        (px == ROUTE_29_GATE_APPROACH_X and py <= 14)
+        or (py == reentry[1] and px > reentry[0])
+    )
+    if not on_gate_approach_column and py == 11 and px >= reentry[0]:
+        if find_path(
+            px, py, ledge[0], ledge[1], map_key=gs.map_key, state=state
+        ):
+            return ledge
+    on_ledge_climb = (py, px) == (reentry[1], reentry[0]) or (
+        reentry[1] - 2 <= py < reentry[1]
+        and reentry[0] <= px < ROUTE_29_GATE_APPROACH_X
+    )
+    if not on_gate_approach_column and on_ledge_climb:
+        if find_path(
+            px, py, climb[0], climb[1], map_key=gs.map_key, state=state
+        ):
+            return climb
     if py >= 14 and px < reentry[0]:
         if find_path(
             px, py, reentry[0], reentry[1], map_key=gs.map_key, state=state
         ):
             return reentry
         return target
+    if (
+        py > reentry[1]
+        and reentry[0] <= px <= ROUTE_29_GATE_APPROACH_X
+    ):
+        if find_path(
+            px, py, reentry[0], reentry[1], map_key=gs.map_key, state=state
+        ):
+            return reentry
     if py < 10 or px <= ROUTE_29_SOUTH_CORRIDOR[0]:
         return target
     corridor = ROUTE_29_SOUTH_CORRIDOR

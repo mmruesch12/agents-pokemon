@@ -782,6 +782,26 @@ def test_route_29_ledge_path_detours_instead_of_west_on_row_8():
     assert path[0] != "left"
 
 
+def test_select_navigation_follows_path_on_route_29_ledge_row():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 27, "y": 10},
+        party_count=1,
+    )
+    state = initial_agent_state(gs)
+    state["visited_positions"] = ["24:3:26:10", "24:3:27:9"]
+    action = select_navigation_action(
+        door_exit=None,
+        path=["up", "up", "left"],
+        llm_choice="left",
+        candidates=["up", "left", "right", "down"],
+        stuck_count=0,
+        gs=gs,
+        state=state,
+        target=(10, 5),
+    )
+    assert action == "up"
+
+
 def test_select_navigation_skips_llm_when_repeating_blocked_direction():
     gs = GameState(player={"map_group": 24, "map_id": 3, "x": 44, "y": 8})
     state = initial_agent_state(gs)

@@ -46,14 +46,25 @@ def test_route_29_gate_waypoint_east_reentry_from_west_corridor():
             ROUTE_29_CORRIDOR_EAST_REENTRY
         )
 
-    from src.graph.navigation_resolve import ROUTE_29_LEDGE_CONNECTOR
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 22, "y": 15},
+        party_count=1,
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == (
+        ROUTE_29_CORRIDOR_EAST_REENTRY
+    )
+
+    from src.graph.navigation_resolve import (
+        ROUTE_29_LEDGE_CLIMB,
+        ROUTE_29_LEDGE_CONNECTOR,
+    )
 
     gs = GameState(
         player={"map_group": 24, "map_id": 3, "x": 22, "y": 14},
         party_count=1,
     )
     assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == (
-        ROUTE_29_LEDGE_CONNECTOR
+        ROUTE_29_LEDGE_CLIMB
     )
 
     gs = GameState(
@@ -69,6 +80,22 @@ def test_route_29_gate_waypoint_east_reentry_from_west_corridor():
         party_count=1,
     )
     assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == (10, 5)
+
+
+def test_route_29_gate_waypoint_keeps_south_corridor_on_approach_column():
+    from src.graph.navigation_resolve import (
+        ROUTE_29_SOUTH_CORRIDOR,
+        _route_29_gate_south_corridor_waypoint,
+    )
+
+    for y in (10, 11, 12, 13, 14):
+        gs = GameState(
+            player={"map_group": 24, "map_id": 3, "x": 24, "y": y},
+            party_count=1,
+        )
+        assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == (
+            ROUTE_29_SOUTH_CORRIDOR
+        )
 
 
 def test_route_29_gate_waypoint_prefers_south_corridor_from_gate_approach():

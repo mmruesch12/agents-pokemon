@@ -301,29 +301,53 @@ def _route_29_gate_step_penalty(
     end_x: int,
     end_y: int,
 ) -> int:
-    """ROM: gate approach from x>=20 uses the south corridor before heading north."""
-    if map_key != "24:3" or end_y > 6 or end_x >= x:
+    """ROM penalties for south-corridor and north-gate routing on Route 29."""
+    if map_key != "24:3" or end_x >= x:
+        return 0
+    to_gate = end_y <= 6
+    to_corridor = end_y >= 14
+    if not to_gate and not to_corridor:
         return 0
     penalty = 0
-    if y <= 11 and x >= 20:
-        penalty += 6
-    if ny <= 11 and nx >= 20:
-        penalty += 6
-    if ny > y and y <= 11 and x >= 20:
-        penalty -= 3
+    if to_gate:
+        if y <= 11 and x >= 20:
+            penalty += 6
+        if ny <= 11 and nx >= 20:
+            penalty += 6
+        if ny > y and y <= 11 and x >= 20:
+            penalty -= 3
+        if ny > y and y == 10 and x <= 26:
+            penalty -= 8
+        if ny < y and y <= 11 and x >= 25:
+            penalty += 15
+        if nx < x and y == 11 and 22 < x <= 27:
+            penalty += 25
+        if y == 10 and x >= 24:
+            if nx > x:
+                penalty += 80
+            elif nx < x:
+                penalty -= 20
+        if y == 11 and x >= 24:
+            if nx > x:
+                penalty += 40
+            elif nx < x:
+                penalty -= 8
+    if to_corridor:
+        if nx > x and y >= 11:
+            penalty += 8
+        if x == 24 and y == 11 and nx == 23:
+            penalty += 50
+        if x == 24 and y in (12, 13) and nx == 23:
+            penalty += 50
+        if ny > y and x == 24 and y in (11, 12, 13):
+            penalty -= 6
     if nx > x:
         if y >= 15:
             penalty += 20
         elif y >= 14:
             penalty += 10
-        elif y >= 11:
+        elif y >= 11 and to_gate:
             penalty += 8
-    if ny > y and y == 10 and x <= 26:
-        penalty -= 8
-    if ny < y and y <= 11 and x >= 25:
-        penalty += 15
-    if nx < x and y == 11 and 22 < x <= 27 and end_x < x:
-        penalty += 25
     return penalty
 
 
