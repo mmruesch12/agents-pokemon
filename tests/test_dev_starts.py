@@ -9,12 +9,58 @@ import pytest
 from src.emulator.bootstrap import (
     LAB_DESK_START_STATE,
     install_lab_start_from_save,
+    seed_agent_state_for_map,
     seed_lab_agent_state,
+    seed_route_29_agent_state,
 )
 from src.graph.phases import starter_quest
 from src.graph.state import initial_agent_state
-from src.state.gold_state_reader import MAP_KEY_ELMS_LAB
+from src.state.gold_state_reader import (
+    MAP_KEY_ELMS_LAB,
+    MAP_KEY_NEW_BARK_TOWN,
+    MAP_KEY_ROUTE_29,
+)
 from src.state.models import GameState
+
+
+def test_seed_route_29_west_entrance_sets_cross_subgoal():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 59, "y": 8},
+        party_count=1,
+        raw_metadata={"has_starter": True},
+    )
+    state = initial_agent_state(gs)
+    result = seed_route_29_agent_state(state, gs)
+    assert result["house_exit_complete"] is True
+    assert result["active_subgoal"] == "Cross Route 29"
+    assert starter_quest.MILESTONE_CHOSE_STARTER in result["milestones"]
+    assert "Reached Route 29" in result["milestones"]
+    assert MAP_KEY_ROUTE_29 in result["maps_visited"]
+    assert MAP_KEY_NEW_BARK_TOWN in result["maps_visited"]
+
+
+def test_seed_agent_state_for_map_route_29_post_starter():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 59, "y": 8},
+        party_count=1,
+        raw_metadata={"has_starter": True},
+    )
+    state = initial_agent_state(gs)
+    result = seed_agent_state_for_map(state, gs)
+    assert result["active_subgoal"] == "Cross Route 29"
+
+
+def test_seed_new_bark_post_starter_sets_route_subgoal():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 4, "x": 0, "y": 8},
+        party_count=1,
+        raw_metadata={"has_starter": True},
+    )
+    state = initial_agent_state(gs)
+    result = seed_agent_state_for_map(state, gs)
+    assert result["house_exit_complete"] is True
+    assert result["active_subgoal"] == "Enter Route 29"
+    assert MAP_KEY_NEW_BARK_TOWN in result["maps_visited"]
 
 
 def test_seed_lab_agent_state_sets_starter_quest_flags():

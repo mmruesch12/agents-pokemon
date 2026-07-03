@@ -165,6 +165,16 @@ def test_sync_subgoals_updates_active_subgoal_in_lab():
     assert fresh.get("session_walkable") == {}
 
 
+def test_subgoal_index_on_route_29_after_starter():
+    from src.graph.phases.starter_quest import _subgoal_index
+
+    gs = _gs(24, 3, 59, 8, meta={"has_starter": True}, party_count=1)
+    state = {"house_exit_complete": True}
+    assert _subgoal_index(gs, state) == 1
+    starter_quest.sync_subgoals(gs, state)
+    assert state["active_subgoal"] == "Cross Route 29"
+
+
 def test_ensure_house_exit_complete_on_lab_entry_from_bedroom():
     gs = _gs(24, 5, 4, 8, meta={"has_starter": False})
     state = {

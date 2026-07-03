@@ -127,6 +127,10 @@ def _subgoal_index(gs: GameState, state: dict[str, Any]) -> int:
                     return 1
         return 0
     if not _has_egg(gs):
+        if gs.map_key == MAP_KEY_ROUTE_30:
+            return 2
+        if gs.map_key == MAP_KEY_ROUTE_29:
+            return 1
         return 0
     if not _egg_delivered(gs):
         return 1

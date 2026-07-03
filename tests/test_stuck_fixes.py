@@ -7,6 +7,7 @@ from src.graph.generic_interact import (
     generic_stuck_interact_fallback,
     pocket_navigate_stuck,
 )
+from src.graph.pathfinding import record_session_blocked
 from src.graph.nodes import (
     _history_interact_repeats,
     _history_oscillates,
@@ -659,6 +660,160 @@ def test_outdoor_at_target_does_not_add_blocked_ahead_interact():
     target = (9, 12)
     candidates = _navigation_candidates(gs, target, [], state)
     assert "a" not in candidates
+
+
+def test_west_edge_left_failure_does_not_block_oob_tile(new_bark_ram: dict):
+    from src.state.gold_state_reader import (
+        ADDR_EVENT_FLAGS,
+        ByteArrayReader,
+        GoldStateReader,
+    )
+    from src.state.script_constants import EVENT_GOT_A_POKEMON_FROM_ELM
+
+    mem = dict(new_bark_ram)
+    mem[ADDR_X_COORD] = 0
+    mem[ADDR_Y_COORD] = 8
+    mem[ADDR_EVENT_FLAGS + (EVENT_GOT_A_POKEMON_FROM_ELM // 8)] = 1 << (
+        EVENT_GOT_A_POKEMON_FROM_ELM % 8
+    )
+    gs = GoldStateReader(ByteArrayReader(mem)).read()
+    state = initial_agent_state(gs)
+    state["position_before_action"] = gs.position_key
+    state["last_action"] = "navigate_left"
+    state["stuck_count"] = 5
+    _update_stuck_from_movement(
+        state,
+        "navigate_left",
+        gs.position_key,
+        gs.position_key,
+        gs,
+    )
+    assert state["stuck_count"] == 6
+    assert state.get("session_blocked", {}).get("24:4") is None
+
+
+def test_west_edge_left_failure_from_approach_does_not_block_warp_tile(new_bark_ram: dict):
+    from src.state.gold_state_reader import (
+        ADDR_EVENT_FLAGS,
+        ADDR_X_COORD,
+        ADDR_Y_COORD,
+        ByteArrayReader,
+        GoldStateReader,
+    )
+    from src.state.script_constants import EVENT_GOT_A_POKEMON_FROM_ELM
+
+    mem = dict(new_bark_ram)
+    mem[ADDR_X_COORD] = 1
+    mem[ADDR_Y_COORD] = 8
+    mem[ADDR_EVENT_FLAGS + (EVENT_GOT_A_POKEMON_FROM_ELM // 8)] = 1 << (
+        EVENT_GOT_A_POKEMON_FROM_ELM % 8
+    )
+    gs = GoldStateReader(ByteArrayReader(mem)).read()
+    state = initial_agent_state(gs)
+    state["position_before_action"] = gs.position_key
+    state["last_action"] = "navigate_left"
+    state["stuck_count"] = 5
+    _update_stuck_from_movement(
+        state,
+        "navigate_left",
+        gs.position_key,
+        gs.position_key,
+        gs,
+    )
+    assert state["stuck_count"] == 6
+    assert state.get("session_blocked", {}).get("24:4") is None
+
+
+def test_apply_action_clears_stuck_on_map_transition(new_bark_ram: dict):
+    from src.state.gold_state_reader import (
+        ADDR_EVENT_FLAGS,
+        ByteArrayReader,
+        GoldStateReader,
+    )
+    from src.state.script_constants import EVENT_GOT_A_POKEMON_FROM_ELM
+    from tests.fake_emulator import MutableRamEmulator
+
+    mem = dict(new_bark_ram)
+    mem[ADDR_X_COORD] = 0
+    mem[ADDR_Y_COORD] = 8
+    mem[ADDR_EVENT_FLAGS + (EVENT_GOT_A_POKEMON_FROM_ELM // 8)] = 1 << (
+        EVENT_GOT_A_POKEMON_FROM_ELM % 8
+    )
+    gs = GoldStateReader(ByteArrayReader(mem)).read()
+    emu = MutableRamEmulator(mem, route_29_west_at_x=0)
+    state = initial_agent_state(gs)
+    state["game_state"] = gs.model_dump()
+    state["position_before_action"] = gs.position_key
+    state["last_action"] = "navigate_left"
+    state["stuck_count"] = 12
+    state["pocket_stuck_count"] = 4
+    state["pocket_nav_positions"] = ["0,8"]
+    result = apply_action_node(state, emulator=emu)
+    gs_after = GameState.model_validate(result["game_state"])
+    assert gs_after.map_key == "24:3"
+    assert result["stuck_count"] == 0
+    assert result.get("pocket_stuck_count") == 0
+
+
+def test_route_29_ledge_path_detours_instead_of_west_on_row_8():
+    from src.graph.pathfinding import find_path
+    from src.memory.landmarks import ROUTE_29_NORTH_GATE_ID, make_landmark
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 44, "y": 8},
+        party_count=1,
+        raw_metadata={"has_starter": True},
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["known_landmarks"] = [
+        make_landmark(
+            landmark_id=ROUTE_29_NORTH_GATE_ID,
+            name="Route 29 north gate",
+            map_key="24:3",
+            x=10,
+            y=5,
+            kind="map_visit",
+        )
+    ]
+    record_session_blocked(state, "24:3", 43, 8)
+    path = find_path(44, 8, 10, 5, map_key="24:3", state=state)
+    assert path
+    assert path[0] != "left"
+
+
+def test_select_navigation_skips_llm_when_repeating_blocked_direction():
+    gs = GameState(player={"map_group": 24, "map_id": 3, "x": 44, "y": 8})
+    state = initial_agent_state(gs)
+    state["short_term_history"] = ["navigate:left@44,8"] * 3
+    action = select_navigation_action(
+        door_exit=None,
+        path=["down", "left"],
+        llm_choice="left",
+        candidates=["left", "down", "right"],
+        stuck_count=5,
+        gs=gs,
+        state=state,
+        target=(10, 5),
+    )
+    assert action != "left"
+
+
+def test_select_navigation_falls_through_when_only_repeat_dir_candidate():
+    gs = GameState(player={"map_group": 24, "map_id": 3, "x": 44, "y": 8})
+    state = initial_agent_state(gs)
+    state["short_term_history"] = ["navigate:left@44,8"] * 3
+    action = select_navigation_action(
+        door_exit=None,
+        path=["down"],
+        llm_choice="left",
+        candidates=["left"],
+        stuck_count=5,
+        gs=gs,
+        state=state,
+        target=(10, 5),
+    )
+    assert action == "down"
 
 
 def test_lab_interactor_uses_only_a_during_ball_pick():

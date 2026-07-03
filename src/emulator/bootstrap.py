@@ -324,6 +324,9 @@ def apply_bootstrap_metadata(gs: GameState, result: BootstrapResult) -> GameStat
 
 BEDROOM_START_STATE = os.getenv("BEDROOM_START_STATE", "bedroom_start")
 LAB_DESK_START_STATE = os.getenv("LAB_DESK_START_STATE", "lab_desk_start")
+ROUTE_29_WEST_ENTRANCE_STATE = os.getenv(
+    "ROUTE_29_WEST_ENTRANCE_STATE", "route29_west_entrance"
+)
 
 
 def seed_bedroom_agent_state(
@@ -548,18 +551,25 @@ def seed_lab_agent_state(
     return state
 
 
-def seed_agent_state_for_map(state: dict, gs: GameState) -> dict:
-    """Infer graph flags from the map loaded in a PyBoy .state snapshot."""
+def seed_route_29_agent_state(
+    state: dict,
+    gs: GameState,
+    *,
+    reset_counters: bool = True,
+) -> dict:
+    """Seed agent state for post-starter Route 29 (first exit west from New Bark)."""
     from src.graph.state import update_game_state
+    from src.graph.phases import starter_quest
+    from src.graph.phases.house_exit import HOUSE_EXIT_MILESTONE
+    from src.memory.landmarks import seed_static_map_landmarks
     from src.state.gold_state_reader import (
         MAP_KEY_ELMS_LAB,
+        MAP_KEY_NEW_BARK_TOWN,
+        MAP_KEY_PLAYERS_HOUSE_1F,
         MAP_KEY_PLAYERS_HOUSE_2F,
+        MAP_KEY_ROUTE_29,
     )
 
-    if gs.map_key == MAP_KEY_PLAYERS_HOUSE_2F:
-        return seed_bedroom_agent_state(state, gs)
-    if gs.map_key == MAP_KEY_ELMS_LAB:
-        return seed_lab_agent_state(state, gs)
     result = BootstrapResult(
         success=True,
         movement_ready=True,
@@ -573,6 +583,82 @@ def seed_agent_state_for_map(state: dict, gs: GameState) -> dict:
     state["phase"] = "explore"
     state["bootstrap_action_index"] = INDOOR_BOOTSTRAP_ACTIONS
     state["movement_observed"] = True
+    state["house_exit_complete"] = True
+    state["starter_quest_complete"] = False
+    state["should_replan"] = False
+    state["stuck_count"] = 0
+    state["maps_visited"] = [
+        MAP_KEY_PLAYERS_HOUSE_2F,
+        MAP_KEY_PLAYERS_HOUSE_1F,
+        MAP_KEY_NEW_BARK_TOWN,
+        MAP_KEY_ELMS_LAB,
+        MAP_KEY_ROUTE_29,
+    ]
+    milestones = list(state.get("milestones", []))
+    for milestone in (
+        "Reached Player's House 1F",
+        HOUSE_EXIT_MILESTONE,
+        starter_quest.MILESTONE_ENTERED_LAB,
+        starter_quest.MILESTONE_CHOSE_STARTER,
+        "Reached Route 29",
+    ):
+        if milestone not in milestones:
+            milestones.append(milestone)
+    state["milestones"] = milestones
+    if reset_counters:
+        state["short_term_history"] = []
+        state["should_replan"] = False
+        state["replan_count"] = 0
+        state["pocket_stuck_count"] = 0
+        state["pocket_nav_positions"] = []
+    seed_static_map_landmarks(state)
+    starter_quest.sync_subgoals(gs, state)
+    return state
+
+
+def seed_agent_state_for_map(state: dict, gs: GameState) -> dict:
+    """Infer graph flags from the map loaded in a PyBoy .state snapshot."""
+    from src.graph.phases import starter_quest
+    from src.graph.state import update_game_state
+    from src.memory.landmarks import seed_static_map_landmarks
+    from src.state.gold_state_reader import (
+        MAP_KEY_ELMS_LAB,
+        MAP_KEY_NEW_BARK_TOWN,
+        MAP_KEY_PLAYERS_HOUSE_2F,
+        MAP_KEY_ROUTE_29,
+    )
+
+    if gs.map_key == MAP_KEY_PLAYERS_HOUSE_2F:
+        return seed_bedroom_agent_state(state, gs)
+    if gs.map_key == MAP_KEY_ELMS_LAB:
+        return seed_lab_agent_state(state, gs)
+    if gs.map_key == MAP_KEY_ROUTE_29 and (
+        starter_quest.has_starter(gs) or gs.party_count > 0
+    ):
+        return seed_route_29_agent_state(state, gs)
+    result = BootstrapResult(
+        success=True,
+        movement_ready=True,
+        map_loaded=True,
+        actions_taken=INDOOR_BOOTSTRAP_ACTIONS,
+        frames_elapsed=0,
+    )
+    gs = apply_bootstrap_metadata(gs, result)
+    state = update_game_state(state, gs)
+    state["bootstrap_complete"] = True
+    state["phase"] = "explore"
+    state["bootstrap_action_index"] = INDOOR_BOOTSTRAP_ACTIONS
+    state["movement_observed"] = True
+    if gs.map_key == MAP_KEY_NEW_BARK_TOWN and (
+        starter_quest.has_starter(gs) or gs.party_count > 0
+    ):
+        state["house_exit_complete"] = True
+        maps = list(state.get("maps_visited", []))
+        if MAP_KEY_NEW_BARK_TOWN not in maps:
+            maps.append(MAP_KEY_NEW_BARK_TOWN)
+        state["maps_visited"] = maps
+        seed_static_map_landmarks(state)
+        starter_quest.sync_subgoals(gs, state)
     return state
 
 

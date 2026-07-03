@@ -8,11 +8,44 @@ from src.graph.pathfinding import (
     direction_toward,
     direction_to_button,
     find_path,
+    map_edge_exit_direction,
     record_session_blocked,
     session_blocked_for_map,
 )
 from src.state.models import GameState
 
+
+
+def test_route_29_grid_covers_outdoor_coordinates():
+    grid = MAP_GRIDS["24:3"]
+    assert len(grid[0]) == 60
+    assert len(grid) == 18
+    assert _is_walkable(grid, 59, 8) is True
+    assert _is_walkable(grid, 43, 8) is False
+
+
+def test_find_path_route_29_ledge_detours_south():
+    state: dict = {}
+    record_session_blocked(state, "24:3", 43, 8)
+    path = find_path(44, 8, 10, 5, map_key="24:3", state=state)
+    assert path
+    assert path[0] in {"down", "right", "up"}
+
+
+def test_exploration_target_skips_unreachable_landmark(monkeypatch):
+    from src.graph import exploration as exploration_mod
+    from src.graph.exploration import exploration_target
+
+    monkeypatch.setattr(exploration_mod, "find_path", lambda *a, **k: [])
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 44, "y": 8},
+        party_count=1,
+        raw_metadata={"has_starter": True},
+    )
+    state: dict = {}
+    target = exploration_target(gs, state, hint_tile=(10, 5))
+    assert target != (10, 5)
 
 
 def test_find_path_same_position():
@@ -47,7 +80,7 @@ def test_exploration_nb_west_row_without_landmark():
 def test_find_path_new_bark_blocked_west_stays_on_row():
     state: dict = {}
     record_session_blocked(state, "24:4", 10, 8)
-    path = find_path(9, 8, 1, 8, map_key="24:4", state=state)
+    path = find_path(9, 8, 0, 8, map_key="24:4", state=state)
     assert path
     assert path[0] == "left"
     positions = _positions_after(9, 8, path)
@@ -63,7 +96,7 @@ def test_find_path_new_bark_east_corridor():
     state: dict = {}
     record_session_blocked(state, "24:4", 6, 8)
     assert session_blocked_for_map(state, "24:4") == {(6, 8)}
-    blocked_path = find_path(6, 7, 1, 8, map_key="24:4", state=state)
+    blocked_path = find_path(6, 7, 0, 8, map_key="24:4", state=state)
     assert blocked_path
     assert blocked_path[0] != "down"
     blocked = session_blocked_for_map(state, "24:4")
@@ -127,6 +160,41 @@ def test_elms_lab_desk_to_ball_approach_avoids_elm():
     assert path
     assert path[0] == "down"
     assert "right" in path
+
+
+def test_map_edge_exit_direction_at_west_edge_and_approach():
+    gs_edge = GameState(
+        player={"map_group": 24, "map_id": 4, "x": 0, "y": 8},
+        raw_metadata={"has_starter": True},
+        party_count=1,
+    )
+    gs_approach = GameState(
+        player={"map_group": 24, "map_id": 4, "x": 1, "y": 8},
+        raw_metadata={"has_starter": True},
+        party_count=1,
+    )
+    assert map_edge_exit_direction(gs_edge, heading_west=True) == "left"
+    assert map_edge_exit_direction(gs_approach, heading_west=True) == "left"
+    assert map_edge_exit_direction(gs_edge, heading_west=False) is None
+
+
+def test_navigator_at_west_edge_forces_left():
+    from src.graph.nodes import navigator_node
+    from src.graph.state import initial_agent_state
+    from src.memory.landmarks import seed_static_map_landmarks
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 4, "x": 0, "y": 8},
+        raw_metadata={"has_starter": True},
+        party_count=1,
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["active_subgoal"] = "Enter Route 29"
+    state["subgoals"] = ["Enter Route 29", "Cross Route 29"]
+    seed_static_map_landmarks(state)
+    result = navigator_node(state)
+    assert result["last_action"] == "navigate_left"
 
 
 def _positions_after(sx: int, sy: int, path: list[str]) -> list[tuple[int, int]]:

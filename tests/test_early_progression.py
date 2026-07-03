@@ -128,5 +128,5 @@ def test_navigator_with_starter_moves_west():
     seed_static_map_landmarks(state)
     result = navigator_node(state)
     assert result["last_action"].startswith("navigate_")
-    assert result["last_action_result"]["target"] == (1, 8)
+    assert result["last_action_result"]["target"] == (0, 8)
     assert result["last_action_result"]["target"][0] < gs.player.x

@@ -132,13 +132,13 @@ def test_post_starter_new_bark_uses_west_exit_landmark():
                 landmark_id=NEW_BARK_WEST_EXIT_ID,
                 name="New Bark Route 29 exit",
                 map_key="24:4",
-                x=1,
+                x=0,
                 y=8,
                 kind="map_visit",
             )
         ],
     }
-    assert _navigation_target(gs, state=state) == (1, 8)
+    assert _navigation_target(gs, state=state) == (0, 8)
 
 
 def test_shipped_nodes_progress_post_house_to_rival_battle():

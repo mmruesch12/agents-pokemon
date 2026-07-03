@@ -63,7 +63,7 @@ class MutableRamEmulator:
         self,
         memory: dict[int, int],
         *,
-        route_29_west_at_x: int = 1,
+        route_29_west_at_x: int = 0,
         route_29_west_row: int = 8,
     ):
         self._memory = dict(memory)

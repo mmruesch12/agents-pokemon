@@ -290,7 +290,7 @@ def test_discover_quest_transition_landmarks_west_exit():
     landmarks = discover_quest_transition_landmarks(
         from_map="24:4",
         to_map="24:3",
-        from_pos={"map_key": "24:4", "x": 1, "y": 8},
+        from_pos={"map_key": "24:4", "x": 0, "y": 8},
     )
     assert any(entry.get("id") == NEW_BARK_WEST_EXIT_ID for entry in landmarks)
 
@@ -365,7 +365,7 @@ def test_navigation_wrong_map_west_landmark_uses_frontier():
             landmark_id=NEW_BARK_WEST_EXIT_ID,
             name="New Bark Route 29 exit",
             map_key=MAP_KEY_NEW_BARK_TOWN,
-            x=1,
+            x=0,
             y=8,
             kind="map_visit",
         ),
@@ -380,7 +380,7 @@ def test_navigation_wrong_map_west_landmark_uses_frontier():
     ]
     target = _navigation_target(gs, state=state)
     assert target == (10, 5)
-    assert target != (1, 8)
+    assert target != (0, 8)
 
 
 def test_hydrate_state_enables_west_exit_navigation():
@@ -396,7 +396,7 @@ def test_hydrate_state_enables_west_exit_navigation():
                 landmark_id=NEW_BARK_WEST_EXIT_ID,
                 name="New Bark Route 29 exit",
                 map_key="24:4",
-                x=1,
+                x=0,
                 y=8,
                 kind="map_visit",
             )
@@ -414,7 +414,7 @@ def test_hydrate_state_enables_west_exit_navigation():
         state = initial_agent_state(gs)
         state["house_exit_complete"] = True
         hydrated = mem.hydrate_state(state)
-        assert _navigation_target(gs, state=hydrated) == (1, 8)
+        assert _navigation_target(gs, state=hydrated) == (0, 8)
         gs_route = GameState(
             player={"map_group": 24, "map_id": 3, "x": 10, "y": 12},
             raw_metadata={"has_starter": True},

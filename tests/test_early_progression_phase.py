@@ -110,7 +110,7 @@ def test_navigation_target_new_bark_westward_post_rival():
     )
     state = _state(gs)
     target = _navigation_target(gs, state=state)
-    assert target == (1, 8)
+    assert target == (0, 8)
     assert target[0] < gs.player.x
 
 
@@ -203,7 +203,7 @@ def test_navigation_target_new_bark_west_with_mystery_egg_flag(new_bark_ram: dic
     )
     state = _state(gs)
     target = _navigation_target(gs, state=state)
-    assert target == (1, 8)
+    assert target == (0, 8)
     assert target[0] < gs.player.x
 
 
