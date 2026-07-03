@@ -42,6 +42,7 @@ ROUTE_29_SOUTH_CORRIDOR: tuple[int, int] = (14, 14)
 ROUTE_29_CORRIDOR_EAST_REENTRY: tuple[int, int] = (22, 14)
 ROUTE_29_LEDGE_CLIMB: tuple[int, int] = (23, 11)
 ROUTE_29_LEDGE_CONNECTOR: tuple[int, int] = (27, 10)
+ROUTE_29_LEDGE_WEST_DESCENT: tuple[int, int] = (25, 11)
 ROUTE_29_GATE_APPROACH_X = 24
 
 
@@ -77,13 +78,19 @@ def _route_29_gate_south_corridor_waypoint(
     reentry = ROUTE_29_CORRIDOR_EAST_REENTRY
     ledge = ROUTE_29_LEDGE_CONNECTOR
     climb = ROUTE_29_LEDGE_CLIMB
-    if py <= ledge[1] and px >= ledge[0] - 1:
+    if (py, px) == ledge:
+        west = ROUTE_29_LEDGE_WEST_DESCENT
+        if find_path(
+            px, py, west[0], west[1], map_key=gs.map_key, state=state
+        ):
+            return west
+    if py <= ledge[1] and px >= ledge[0] - 2:
         return target
     walked = session_walkable_for_map(state, gs.map_key)
     if (
         climb in walked
         and climb[1] - 1 <= py <= climb[1]
-        and reentry[0] <= px < ledge[0]
+        and reentry[0] <= px < ledge[0] - 2
     ):
         if find_path(
             px, py, ledge[0], ledge[1], map_key=gs.map_key, state=state
@@ -128,6 +135,8 @@ def _route_29_gate_south_corridor_waypoint(
         px, py, corridor[0], corridor[1], map_key=gs.map_key, state=state
     ):
         return target
+    if on_gate_approach_column:
+        return corridor
     gate_path = find_path(
         px, py, gate[0], gate[1], map_key=gs.map_key, state=state
     )

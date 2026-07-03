@@ -89,14 +89,16 @@ def _route_29_ledge_path_step(
     target: tuple[int, int],
     path: list[str],
 ) -> str | None:
-    """Follow A* strictly on the east ledge row when heading to the Route 30 gate."""
+    """Follow A* strictly on the east ledge row toward the connector or gate."""
     gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
+    ledge = (27, 10)
+    west_descent = (25, 11)
     if (
         gate
-        and target == gate
+        and target in (gate, ledge, west_descent)
         and gs.map_key == MAP_KEY_ROUTE_29
         and gs.player.y <= 11
-        and gs.player.x >= 25
+        and gs.player.x >= 24
         and path
     ):
         return path[0]
