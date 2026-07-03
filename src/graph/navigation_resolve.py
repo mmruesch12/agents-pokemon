@@ -39,17 +39,22 @@ ROUTE_29_CORRIDOR_EAST_REENTRY: tuple[int, int] = (22, 14)
 
 
 def _route_29_gate_path_drifts_east(path: list[str]) -> bool:
-    """True when a gate path moves east before the first west step."""
+    """True when routing would hug east instead of the south corridor or ledge-up approach."""
     if not path:
         return True
-    if path[0] == "right":
-        return True
-    for step in path[:16]:
+    if path[0] == "down" or (
+        len(path) >= 2 and path[0] == "right" and path[1] == "down"
+    ):
+        return False
+    east_without_west = 0
+    for step in path[:12]:
         if step == "left":
             return False
         if step == "right":
-            return True
-    return False
+            east_without_west += 1
+            if east_without_west >= 3:
+                return True
+    return east_without_west >= 2
 
 
 def _route_29_gate_south_corridor_waypoint(

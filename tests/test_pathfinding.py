@@ -45,6 +45,13 @@ def test_route_29_gate_waypoint_prefers_south_corridor_from_gate_approach():
     assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == ROUTE_29_SOUTH_CORRIDOR
 
 
+def test_route_29_grid_blocks_sign_tile():
+    grid = MAP_GRIDS["24:3"]
+    assert _is_walkable(grid, 25, 10) is True
+    assert _is_walkable(grid, 38, 14) is False
+    assert _is_walkable(grid, 42, 14) is False
+
+
 def test_find_path_route_29_ledge_detours_south():
     state: dict = {}
     record_session_blocked(state, "24:3", 43, 8)

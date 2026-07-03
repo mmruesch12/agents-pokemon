@@ -833,6 +833,20 @@ def test_interact_without_script_progress_blocks_tile_and_increments_stuck():
     assert (41, 14) in state.get("session_blocked", {}).get("24:3", [])
 
 
+def test_outdoor_interact_suppressed_on_session_blocked_standing_tile():
+    from src.graph.generic_interact import generic_prefer_interact_candidate
+    from src.graph.pathfinding import record_session_blocked
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 38, "y": 14},
+        in_text_box=True,
+        raw_metadata={"script_pos": 1, "script_mode": 1, "in_script": True},
+    )
+    state: dict = {}
+    record_session_blocked(state, "24:3", 38, 14)
+    assert generic_prefer_interact_candidate(gs, state) is False
+
+
 def test_navigation_skips_interact_candidate_during_outdoor_recovery():
     gs = GameState(
         player={"map_group": 24, "map_id": 3, "x": 41, "y": 14},

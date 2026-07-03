@@ -147,15 +147,25 @@ def generic_force_interactor(gs: GameState, state: dict[str, Any]) -> bool:
     return is_rom_interact_signal(gs)
 
 
+def _standing_on_session_blocked_tile(gs: GameState, state: dict[str, Any]) -> bool:
+    if gs.map_key in INDOOR_NAV_STUCK_MAPS:
+        return False
+    from src.graph.pathfinding import session_blocked_for_map
+
+    blocked = session_blocked_for_map(state, gs.map_key)
+    return (gs.player.x, gs.player.y) in blocked
+
+
 def generic_prefer_interact_candidate(gs: GameState, state: dict[str, Any]) -> bool:
     """Navigator should offer interact when ROM signals expect dialog input."""
-    del state
+    if _standing_on_session_blocked_tile(gs, state):
+        return False
     return is_rom_interact_signal(gs)
 
 
 def generic_stuck_interact_fallback(gs: GameState, state: dict[str, Any]) -> bool:
     """Append interact candidate after navigate stuck — indoor maps only."""
-    if is_rom_interact_signal(gs):
+    if is_rom_interact_signal(gs) and not _standing_on_session_blocked_tile(gs, state):
         return True
     if gs.map_key in INDOOR_NAV_STUCK_MAPS:
         return navigate_stuck_at_tile(gs, state)
