@@ -78,19 +78,48 @@ def _route_29_gate_south_corridor_waypoint(
     reentry = ROUTE_29_CORRIDOR_EAST_REENTRY
     ledge = ROUTE_29_LEDGE_CONNECTOR
     climb = ROUTE_29_LEDGE_CLIMB
-    if (py, px) == ledge:
-        west = ROUTE_29_LEDGE_WEST_DESCENT
+    walked = session_walkable_for_map(state, gs.map_key)
+    west = ROUTE_29_LEDGE_WEST_DESCENT
+    if (px, py) == west:
+        return target
+    if (px, py) == ledge:
         if find_path(
             px, py, west[0], west[1], map_key=gs.map_key, state=state
         ):
             return west
-    if py <= ledge[1] and px >= ledge[0] - 2:
+    if climb in walked and ledge in walked and (px, py) == (26, 10):
+        if find_path(
+            px, py, west[0], west[1], map_key=gs.map_key, state=state
+        ):
+            return west
+    if py <= ledge[1] and px >= ledge[0]:
         return target
-    walked = session_walkable_for_map(state, gs.map_key)
+    if climb in walked and (px, py) == (ROUTE_29_GATE_APPROACH_X, climb[1]):
+        if (25, 10) in walked:
+            return (25, 10)
+        if find_path(
+            px, py, ledge[0], ledge[1], map_key=gs.map_key, state=state
+        ):
+            return ledge
     if (
         climb in walked
-        and climb[1] - 1 <= py <= climb[1]
-        and reentry[0] <= px < ledge[0] - 2
+        and ledge not in walked
+        and py == climb[1] - 1
+        and ROUTE_29_GATE_APPROACH_X <= px < ledge[0]
+    ):
+        if find_path(
+            px, py, ledge[0], ledge[1], map_key=gs.map_key, state=state
+        ):
+            return ledge
+    if climb in walked and ledge in walked and (px, py) == (25, 10):
+        if find_path(
+            px, py, west[0], west[1], map_key=gs.map_key, state=state
+        ):
+            return west
+    if (
+        climb in walked
+        and py == climb[1]
+        and reentry[0] <= px < ROUTE_29_GATE_APPROACH_X
     ):
         if find_path(
             px, py, ledge[0], ledge[1], map_key=gs.map_key, state=state
@@ -100,7 +129,12 @@ def _route_29_gate_south_corridor_waypoint(
         (px == ROUTE_29_GATE_APPROACH_X and py <= 14)
         or (py == reentry[1] and px > reentry[0])
     )
-    if not on_gate_approach_column and py == 11 and px >= reentry[0]:
+    if ledge in walked and py == 11 and px >= ledge[0] - 1:
+        if find_path(
+            px, py, west[0], west[1], map_key=gs.map_key, state=state
+        ):
+            return west
+    if not on_gate_approach_column and py == 11 and reentry[0] <= px < ledge[0]:
         if find_path(
             px, py, ledge[0], ledge[1], map_key=gs.map_key, state=state
         ):
@@ -129,6 +163,8 @@ def _route_29_gate_south_corridor_waypoint(
         ):
             return reentry
     if py < 10 or px <= ROUTE_29_SOUTH_CORRIDOR[0]:
+        return target
+    if ledge in walked and py >= reentry[1] and px >= reentry[0]:
         return target
     corridor = ROUTE_29_SOUTH_CORRIDOR
     if not find_path(

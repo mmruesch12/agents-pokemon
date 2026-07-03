@@ -306,7 +306,8 @@ def _route_29_gate_step_penalty(
         return 0
     to_gate = end_y <= 6
     to_corridor = end_y >= 14
-    if not to_gate and not to_corridor:
+    to_west_descent = (end_x, end_y) == (25, 11)
+    if not to_gate and not to_corridor and not to_west_descent:
         return 0
     penalty = 0
     if to_gate:
@@ -336,6 +337,11 @@ def _route_29_gate_step_penalty(
             penalty += 100
         if y == 10 and x == 27 and ny > y:
             penalty -= 12
+    if to_west_descent:
+        if y == 10 and x == 27 and nx < x:
+            penalty += 80
+        if y == 10 and x == 27 and ny > y:
+            penalty -= 15
     if to_corridor:
         if nx > x and y >= 11:
             penalty += 8
