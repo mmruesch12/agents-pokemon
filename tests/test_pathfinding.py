@@ -31,6 +31,13 @@ def test_find_path_route_29_gate_approach_prefers_south_corridor():
     assert "left" in path
 
 
+def test_find_path_route_29_west_entrance_goes_north_to_gate():
+    path = find_path(10, 12, 10, 5, map_key="24:3")
+    assert path
+    assert path[0] == "up"
+    assert "right" not in path[:4]
+
+
 def test_route_29_gate_waypoint_east_reentry_from_west_corridor():
     from src.graph.navigation_resolve import (
         ROUTE_29_CORRIDOR_EAST_REENTRY,
