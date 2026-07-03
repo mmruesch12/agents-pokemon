@@ -833,6 +833,21 @@ def test_interact_without_script_progress_blocks_tile_and_increments_stuck():
     assert (41, 14) in state.get("session_blocked", {}).get("24:3", [])
 
 
+def test_route_29_y11_dead_end_session_blocked_after_entry():
+    from src.graph.nodes import ROUTE_29_Y11_DEAD_END, _update_stuck_from_movement
+
+    gs = GameState(player={"map_group": 24, "map_id": 3, "x": 22, "y": 11})
+    state: dict = {}
+    _update_stuck_from_movement(
+        state,
+        "navigate_right",
+        "24:3:23:11",
+        gs.position_key,
+        gs,
+    )
+    assert ROUTE_29_Y11_DEAD_END in state.get("session_blocked", {}).get("24:3", [])
+
+
 def test_navigation_candidates_omit_blocked_primary_at_route_29_y11_trap():
     gs = GameState(player={"map_group": 24, "map_id": 3, "x": 23, "y": 11})
     path = ["right", "up", "left"]

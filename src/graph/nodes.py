@@ -81,6 +81,7 @@ NAVIGATION_REPEAT_THRESHOLD = int(os.getenv("NAVIGATION_REPEAT_THRESHOLD", "3"))
 INTERACT_HOLD_FRAMES = int(os.getenv("INTERACT_HOLD_FRAMES", "30"))
 OUTDOOR_INTERACT_TICKS = int(os.getenv("OUTDOOR_INTERACT_TICKS", "120"))
 SCRIPT_WAIT_TICKS = int(os.getenv("SCRIPT_WAIT_TICKS", "45"))
+ROUTE_29_Y11_DEAD_END: tuple[int, int] = (22, 11)
 
 
 def _interact_tick_frames(gs: GameState) -> int:
@@ -1230,8 +1231,10 @@ def _update_stuck_from_movement(
         if gs is not None:
             parsed = parse_position_key(pos_after)
             if parsed is not None:
-                _, x, y = parsed
-                record_session_walkable(state, gs.map_key, x, y)
+                map_key, x, y = parsed
+                record_session_walkable(state, map_key, x, y)
+                if map_key == MAP_KEY_ROUTE_29 and (x, y) == ROUTE_29_Y11_DEAD_END:
+                    record_session_blocked(state, map_key, x, y)
             _mark_replan_recovery(state, gs, pos_before, pos_after)
         return
     state["stuck_count"] = state.get("stuck_count", 0) + 1
