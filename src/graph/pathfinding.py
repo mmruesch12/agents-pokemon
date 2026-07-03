@@ -115,8 +115,8 @@ MAP_GRIDS: dict[str, list[list[int]]] = {
             "111111111111111111111110100101000000001100111110011100111111",  # y=7
             "111111111111111111111110000001001111001100110000000000000000",  # y=8 ledge at x<=43
             "111111111111111111111111111011111111001100010000000000000000",  # y=9
-            "111111111111111111111111000000000000000001010000000001111111",  # y=10
-            "111111111111111111111100000010000000000000100000000000111111",  # y=11
+            "111111111111111111111111010000000000000001010000000001111111",  # y=10 block x=25 east of (24,10)
+            "111111111111111111111111000010000000000000100000000000111111",  # y=11 block x=22-23 ROM trap
             "000000000000000000000110100011000001110000010001001000111111",  # y=12
             "000000000000000000000100000011111111110100110000100000111111",  # y=13
             "000000000000000000000100100000000011110000000000111111111111",  # y=14
@@ -285,6 +285,32 @@ def _warp_row_step_penalty(
     north_row = hints.get("north")
     if north_row is not None and end_y < y and end_y == north_row and ny != north_row:
         penalty += 2
+    penalty += _route_29_gate_step_penalty(
+        map_key, x, y, nx, ny, end_x=end_x, end_y=end_y
+    )
+    return penalty
+
+
+def _route_29_gate_step_penalty(
+    map_key: str,
+    x: int,
+    y: int,
+    nx: int,
+    ny: int,
+    *,
+    end_x: int,
+    end_y: int,
+) -> int:
+    """ROM: Route 29 gate approach west of x=20 uses the y>=13 corridor."""
+    if map_key != "24:3" or end_y > 6 or end_x >= x:
+        return 0
+    penalty = 0
+    if y <= 11 and x >= 20:
+        penalty += 6
+    if ny <= 11 and nx >= 20:
+        penalty += 6
+    if ny > y and y <= 11 and x >= 20:
+        penalty -= 3
     return penalty
 
 

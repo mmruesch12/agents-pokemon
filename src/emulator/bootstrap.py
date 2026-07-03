@@ -706,6 +706,45 @@ def prepare_emulator_state(
     return seed_agent_state_for_map(state, gs)
 
 
+def install_route_29_gate_from_save(
+    source_name: str,
+    *,
+    target_name: str | None = None,
+    save_dir: str | Path | None = None,
+) -> Path:
+    """Copy a snapshot (e.g. stuck_113 at (24,10)) to route29_gate_approach.state."""
+    import shutil
+
+    save_dir = Path(save_dir or "saves")
+    source_path = save_dir / f"{source_name}.state"
+    if not source_path.is_file():
+        raise FileNotFoundError(f"Source emulator state not found: {source_path}")
+    target_name = target_name or ROUTE_29_GATE_APPROACH_STATE
+    target_path = save_dir / f"{target_name}.state"
+    shutil.copy2(source_path, target_path)
+    logger.info("Installed %s -> %s", source_path.name, target_path.name)
+    return target_path
+
+
+def prepare_route_29_gate_start(
+    emu: PyBoyWrapper,
+    state: dict,
+    *,
+    save_dir: str | Path | None = None,
+    gate_state_name: str | None = None,
+) -> dict:
+    """Fast-start near Route 30 gate row using saves/route29_gate_approach.state."""
+    from src.state.gold_state_reader import MAP_KEY_ROUTE_29
+
+    return prepare_emulator_state(
+        emu,
+        state,
+        gate_state_name or ROUTE_29_GATE_APPROACH_STATE,
+        save_dir=save_dir,
+        expected_map_key=MAP_KEY_ROUTE_29,
+    )
+
+
 def prepare_lab_start(
     emu: PyBoyWrapper,
     state: dict,

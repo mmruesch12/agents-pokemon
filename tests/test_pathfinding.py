@@ -24,6 +24,13 @@ def test_route_29_grid_covers_outdoor_coordinates():
     assert _is_walkable(grid, 43, 8) is False
 
 
+def test_find_path_route_29_gate_approach_prefers_south_corridor():
+    path = find_path(24, 10, 10, 5, map_key="24:3")
+    assert path
+    assert path[0] == "down"
+    assert "left" in path
+
+
 def test_find_path_route_29_ledge_detours_south():
     state: dict = {}
     record_session_blocked(state, "24:3", 43, 8)

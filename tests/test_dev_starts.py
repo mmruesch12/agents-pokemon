@@ -8,7 +8,9 @@ import pytest
 
 from src.emulator.bootstrap import (
     LAB_DESK_START_STATE,
+    ROUTE_29_GATE_APPROACH_STATE,
     install_lab_start_from_save,
+    install_route_29_gate_from_save,
     seed_agent_state_for_map,
     seed_lab_agent_state,
     seed_route_29_agent_state,
@@ -123,6 +125,18 @@ def test_seed_lab_agent_state_at_ball_row_sets_ball_subgoal():
     state = initial_agent_state(gs)
     result = seed_lab_agent_state(state, gs)
     assert "Poke Ball" in result["active_subgoal"]
+
+
+def test_install_route_29_gate_from_save(tmp_path: Path):
+    source = tmp_path / "stuck_113.state"
+    source.write_bytes(b"gate-approach")
+    target = install_route_29_gate_from_save(
+        "stuck_113",
+        save_dir=tmp_path,
+        target_name=ROUTE_29_GATE_APPROACH_STATE,
+    )
+    assert target == tmp_path / f"{ROUTE_29_GATE_APPROACH_STATE}.state"
+    assert target.read_bytes() == b"gate-approach"
 
 
 def test_install_lab_start_from_save(tmp_path: Path):
