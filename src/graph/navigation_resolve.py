@@ -44,8 +44,10 @@ ROUTE_29_LEDGE_CLIMB: tuple[int, int] = (23, 11)
 ROUTE_29_LEDGE_CONNECTOR: tuple[int, int] = (27, 10)
 ROUTE_29_LEDGE_WEST_DESCENT: tuple[int, int] = (25, 11)
 ROUTE_29_WEST_GATE_APPROACH: tuple[int, int] = (10, 12)
+ROUTE_29_Y16_EAST_ANCHOR: tuple[int, int] = (24, 16)
 ROUTE_29_GATE_APPROACH_X = 24
 ROUTE_29_EAST_LEDGE_DEAD_END_X = 44
+ROUTE_29_SIGN_DEAD_END_X = 14
 
 
 def _route_29_gate_path_drifts_east(path: list[str]) -> bool:
@@ -84,6 +86,12 @@ def _route_29_gate_south_corridor_waypoint(
     west = ROUTE_29_LEDGE_WEST_DESCENT
     west_complete = west in walked
     skip_ledge_reclimb = west_complete
+    if west_complete and py == 12 and px >= 23:
+        anchor = ROUTE_29_Y16_EAST_ANCHOR
+        if find_path(
+            px, py, anchor[0], anchor[1], map_key=gs.map_key, state=state
+        ):
+            return anchor
     if (
         west_complete
         and py <= 12
@@ -169,11 +177,18 @@ def _route_29_gate_south_corridor_waypoint(
         ):
             return climb
     if west_complete and py >= reentry[1] and px <= ROUTE_29_GATE_APPROACH_X:
-        gate_path = find_path(
-            px, py, gate[0], gate[1], map_key=gs.map_key, state=state
-        )
-        if gate_path and not _route_29_gate_path_drifts_east(gate_path):
-            return target
+        if px <= ROUTE_29_SIGN_DEAD_END_X:
+            anchor = ROUTE_29_Y16_EAST_ANCHOR
+            if find_path(
+                px, py, anchor[0], anchor[1], map_key=gs.map_key, state=state
+            ):
+                return anchor
+        else:
+            gate_path = find_path(
+                px, py, gate[0], gate[1], map_key=gs.map_key, state=state
+            )
+            if gate_path and not _route_29_gate_path_drifts_east(gate_path):
+                return target
     if not west_complete and py >= 14 and px < reentry[0]:
         if find_path(
             px, py, reentry[0], reentry[1], map_key=gs.map_key, state=state

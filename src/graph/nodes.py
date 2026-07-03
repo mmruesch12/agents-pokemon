@@ -87,6 +87,19 @@ ROUTE_29_FORCED_LEDGE_STEP: dict[tuple[int, int], str] = {
     (44, 10): "down",
     (25, 11): "down",
 }
+ROUTE_29_SIGN_TRAP: tuple[tuple[int, int], ...] = ((14, 14), (14, 15))
+
+
+def _route_29_sign_dead_end_path_step(
+    gs: GameState,
+    path: list[str],
+) -> str | None:
+    """Escape the ROM sign pocket at (14,14)/(14,15) by heading east."""
+    if gs.map_key != MAP_KEY_ROUTE_29:
+        return None
+    if (gs.player.x, gs.player.y) not in ROUTE_29_SIGN_TRAP:
+        return None
+    return "right"
 
 
 def _route_29_south_corridor_path_step(
@@ -368,6 +381,9 @@ def select_navigation_action(
     if _interact_candidate_justified(gs, state, target, candidates):
         return "a"
     if path:
+        trap_step = _route_29_sign_dead_end_path_step(gs, path)
+        if trap_step is not None:
+            return trap_step
         corridor_step = _route_29_south_corridor_path_step(gs, target, path)
         if corridor_step is not None:
             return corridor_step

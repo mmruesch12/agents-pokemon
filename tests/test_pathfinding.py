@@ -147,12 +147,14 @@ def test_route_29_gate_waypoint_post_west_descent_uses_gate_approach_row():
     state: dict = {}
     for tile in ((23, 11), (27, 10), (25, 10), (25, 11)):
         record_session_walkable(state, "24:3", *tile)
+    from src.graph.navigation_resolve import ROUTE_29_Y16_EAST_ANCHOR
+
     gs_mid_corridor = GameState(
         player={"map_group": 24, "map_id": 3, "x": 23, "y": 12},
         party_count=1,
     )
     assert _route_29_gate_south_corridor_waypoint(gs_mid_corridor, (10, 5), state) == (
-        ROUTE_29_WEST_GATE_APPROACH
+        ROUTE_29_Y16_EAST_ANCHOR
     )
 
     gs_at_descent = GameState(
@@ -202,6 +204,35 @@ def test_route_29_grid_blocks_sign_tile():
     assert _is_walkable(grid, 25, 10) is True
     assert _is_walkable(grid, 38, 14) is False
     assert _is_walkable(grid, 42, 14) is False
+    assert _is_walkable(grid, 13, 14) is False
+    assert _is_walkable(grid, 14, 14) is True
+    assert _is_walkable(grid, 22, 12) is False
+
+
+def test_find_path_route_29_sign_pocket_avoids_west_on_y14():
+    path = find_path(14, 14, 10, 5, map_key="24:3")
+    assert path
+    assert path[0] != "left"
+    assert path[0] != "down" or path.count("right") > 0
+
+
+def test_route_29_gate_waypoint_sign_pocket_routes_to_y16_anchor():
+    from src.graph.navigation_resolve import (
+        ROUTE_29_Y16_EAST_ANCHOR,
+        _route_29_gate_south_corridor_waypoint,
+    )
+    from src.graph.pathfinding import record_session_walkable
+
+    state: dict = {}
+    for tile in ((23, 11), (27, 10), (25, 10), (25, 11)):
+        record_session_walkable(state, "24:3", *tile)
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 14, "y": 14},
+        party_count=1,
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), state) == (
+        ROUTE_29_Y16_EAST_ANCHOR
+    )
 
 
 def test_find_path_route_29_ledge_detours_south():
