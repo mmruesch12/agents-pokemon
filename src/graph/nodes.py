@@ -237,6 +237,8 @@ def _interact_candidate_justified(
     """True when 'a' is in candidates for ROM signal, stuck fallback, or blocked-ahead."""
     if "a" not in candidates:
         return False
+    if outdoor_interact_recovery_active(gs, state):
+        return False
     if generic_prefer_interact_candidate(gs, state) or house_exit.prefer_interact_candidate(gs):
         return True
     if house_exit.stuck_interact_fallback(gs, state) or generic_stuck_interact_fallback(
@@ -738,12 +740,14 @@ def _navigation_candidates(
             candidates.append(step)
     if primary != "a" and primary not in candidates:
         candidates.append(primary)
-    if house_exit.prefer_interact_candidate(gs) or generic_prefer_interact_candidate(
-        gs, state
+    if not outdoor_interact_recovery_active(gs, state) and (
+        house_exit.prefer_interact_candidate(gs)
+        or generic_prefer_interact_candidate(gs, state)
     ):
         candidates.insert(0, "a")
-    elif house_exit.stuck_interact_fallback(gs, state) or generic_stuck_interact_fallback(
-        gs, state
+    elif not outdoor_interact_recovery_active(gs, state) and (
+        house_exit.stuck_interact_fallback(gs, state)
+        or generic_stuck_interact_fallback(gs, state)
     ):
         candidates.append("a")
     elif at_target_blocked_ahead_interact_eligible(
