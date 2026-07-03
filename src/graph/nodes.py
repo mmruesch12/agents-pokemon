@@ -899,10 +899,8 @@ def critic_node(state: AgentState) -> AgentState:
         and stuck >= 2
     )
     oscillation = not dialog_active and _history_oscillates(history, min_cycles=3)
-    interact_spam = (
-        not dialog_active
-        and stuck >= 2
-        and _history_interact_repeats(history, min_count=5)
+    interact_spam = _history_interact_repeats(history, min_count=5) and (
+        stuck >= 2 or state.get("interact_no_progress_count", 0) >= 3
     )
 
     if repetition or oscillation or interact_spam or stuck >= STUCK_THRESHOLD:
@@ -1081,6 +1079,9 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
             or action.startswith("bootstrap_")
             or action.startswith("interact_")
         ):
+            if action.startswith("interact_"):
+                gs_pre_interact = GameState.model_validate(state.get("game_state", {}))
+                state["pre_action_script_key"] = _script_progress_key(gs_pre_interact)
             direction = action.split("_", 1)[1]
             if direction in ("up", "down", "left", "right", "a", "b", "start", "select"):
                 hold = 12 if direction in ("up", "down", "left", "right") else 8
@@ -1233,6 +1234,16 @@ def _mark_replan_recovery(
         state["replan_events"] = events
 
 
+def _script_progress_key(gs: GameState) -> tuple[Any, ...]:
+    meta = gs.raw_metadata or {}
+    return (
+        meta.get("script_pos"),
+        gs.in_text_box,
+        meta.get("script_mode"),
+        gs.battle.in_battle,
+    )
+
+
 def _update_stuck_from_interaction(
     state: AgentState,
     action: str,
@@ -1242,14 +1253,32 @@ def _update_stuck_from_interaction(
     """Dialog interactions advance story without map movement."""
     del action
     meta = gs.raw_metadata or {}
+    pre_key = state.pop("pre_action_script_key", None)
+    post_key = _script_progress_key(gs)
+    script_progressed = pre_key is not None and pre_key != post_key
     if house_exit.mom_scene_pending(gs):
         state["stuck_count"] = 0
         state["phase"] = "explore"
+        state["interact_no_progress_count"] = 0
         return
     if pos_before != gs.position_key:
         state["stuck_count"] = max(0, state.get("stuck_count", 0) - 2)
+        state["interact_no_progress_count"] = 0
         _mark_replan_recovery(state, gs, pos_before, gs.position_key)
-    elif gs.in_text_box or bool(meta.get("in_script")):
+    elif script_progressed:
         state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
+        state["interact_no_progress_count"] = 0
+    elif gs.in_text_box or bool(meta.get("in_script")):
+        if pre_key == post_key:
+            state["interact_no_progress_count"] = (
+                state.get("interact_no_progress_count", 0) + 1
+            )
+            state["stuck_count"] = state.get("stuck_count", 0) + 1
+            parsed = parse_position_key(gs.position_key)
+            if parsed is not None:
+                map_key, x, y = parsed
+                record_session_blocked(state, map_key, x, y)
+        else:
+            state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
     else:
         state["stuck_count"] = state.get("stuck_count", 0) + 1

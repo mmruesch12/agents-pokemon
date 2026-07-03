@@ -799,6 +799,42 @@ def test_select_navigation_skips_llm_when_repeating_blocked_direction():
     assert action != "left"
 
 
+def test_interact_without_script_progress_blocks_tile_and_increments_stuck():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 41, "y": 14},
+        in_text_box=True,
+        raw_metadata={
+            "script_pos": 31532,
+            "script_mode": 1,
+            "in_script": True,
+            "script_flags": 4,
+        },
+    )
+    state: dict = {"stuck_count": 0}
+    script_key = (31532, True, 1, False)
+    state["pre_action_script_key"] = script_key
+    _update_stuck_from_interaction(state, "interact_a", gs.position_key, gs)
+    assert state["stuck_count"] == 1
+    assert state.get("interact_no_progress_count") == 1
+    assert (41, 14) in state.get("session_blocked", {}).get("24:3", [])
+
+
+def test_critic_replans_on_interact_no_progress_even_during_dialog():
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 41, "y": 14},
+        in_text_box=True,
+        raw_metadata={"script_pos": 1, "script_mode": 1, "in_script": True},
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["short_term_history"] = ["interact:a@41,14"] * 6
+    state["stuck_count"] = 0
+    state["interact_no_progress_count"] = 3
+    result = critic_node(state)
+    assert result["critic_verdict"] == "replan"
+    assert result["should_replan"] is True
+
+
 def test_select_navigation_falls_through_when_only_repeat_dir_candidate():
     gs = GameState(player={"map_group": 24, "map_id": 3, "x": 44, "y": 8})
     state = initial_agent_state(gs)
