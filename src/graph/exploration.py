@@ -13,7 +13,7 @@ from src.graph.pathfinding import (
     session_blocked_for_map,
     session_walkable_for_map,
 )
-from src.state.gold_state_reader import MAP_KEY_NEW_BARK_TOWN
+from src.state.gold_state_reader import MAP_KEY_NEW_BARK_TOWN, MAP_KEY_ROUTE_29
 from src.state.models import GameState
 
 _ROUTE_29_EXIT_MARKERS = (
@@ -59,6 +59,30 @@ def exploration_heading_west(
     return False
 
 
+def exploration_heading_route_30_gate(
+    gs: GameState,
+    state: dict[str, Any],
+    *,
+    hint_tile: tuple[int, int] | None = None,
+) -> bool:
+    """True when post-starter Route 29 progress should bias toward the north gate."""
+    if hint_tile is not None:
+        gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
+        if gate and hint_tile == gate:
+            return True
+        if hint_tile[1] < gs.player.y or hint_tile[0] < gs.player.x:
+            return True
+    if gs.map_key != MAP_KEY_ROUTE_29:
+        return False
+    text = exploration_hint_text(state, gs).lower()
+    if "cross route 29" not in text and "visit mr" not in text:
+        return False
+    gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
+    if not gate:
+        return False
+    return gs.player.y > gate[1] or gs.player.x > gate[0]
+
+
 def exploration_hint_tile(state: dict[str, Any], gs: GameState):
     """Return coords only when a known landmark matches the current map."""
     from src.graph.navigation_resolve import _starter_quest_landmark_id
@@ -101,7 +125,10 @@ def exploration_target(
     visited_search = {start}
     best_unvisited, best_score = None, float("-inf")
     west_row = MAP_WARP_HINT_ROWS.get(gs.map_key, {}).get("west")
+    north_row = MAP_WARP_HINT_ROWS.get(gs.map_key, {}).get("north")
     hint_west = exploration_heading_west(gs, state, hint_tile=hint_tile)
+    hint_gate = exploration_heading_route_30_gate(gs, state, hint_tile=hint_tile)
+    gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
     while open_set:
         _, x, y, dist = heapq.heappop(open_set)
         pos_key = f"{gs.map_key}:{x}:{y}"
@@ -112,6 +139,14 @@ def exploration_target(
                     score += 10.0 + (gs.player.x - x)
                 elif y == west_row:
                     score += 4.0
+            if hint_gate and gate is not None:
+                gate_x, gate_y = gate
+                if y < gs.player.y:
+                    score += 6.0 + (gs.player.y - y)
+                if x < gs.player.x:
+                    score += 4.0 + (gs.player.x - x) * 0.5
+                if north_row is not None and y == north_row and y < gs.player.y:
+                    score += 8.0
             if score > best_score:
                 best_score, best_unvisited = score, (x, y)
         for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
@@ -130,6 +165,12 @@ def exploration_target(
             heapq.heappush(open_set, (dist + 1, nx, ny, dist + 1))
     if best_unvisited:
         return best_unvisited
+    if hint_gate and gate is not None:
+        gate_x, gate_y = gate
+        if gs.player.y > gate_y:
+            return (gs.player.x, max(0, gs.player.y - 1))
+        if gs.player.x > gate_x:
+            return (max(0, gs.player.x - 1), gs.player.y)
     if hint_west and west_row is not None:
         return (max(0, gs.player.x - 1), west_row)
     return (gs.player.x + 1, gs.player.y)

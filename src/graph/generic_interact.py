@@ -46,8 +46,10 @@ def joypad_blocked_facing_object(gs: GameState) -> bool:
 
 
 def outdoor_interact_recovery_active(gs: GameState, state: dict[str, Any]) -> bool:
-    """Outdoor maps: ROM dialog is not advancing — prefer navigation recovery."""
+    """Outdoor maps: prefer navigation only after ROM no longer expects dialog input."""
     if gs.map_key in INDOOR_NAV_STUCK_MAPS:
+        return False
+    if is_rom_interact_signal(gs):
         return False
     return state.get("interact_no_progress_count", 0) >= INTERACT_NO_PROGRESS_RECOVERY
 

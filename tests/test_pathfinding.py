@@ -32,6 +32,42 @@ def test_find_path_route_29_ledge_detours_south():
     assert path[0] in {"down", "right", "up"}
 
 
+def test_interact_tick_frames_uses_outdoor_ticks_between_sign_pages():
+    from src.graph.nodes import OUTDOOR_INTERACT_TICKS, SCRIPT_WAIT_TICKS, _interact_tick_frames
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 38, "y": 14},
+        in_text_box=False,
+        raw_metadata={"script_mode": 1, "in_script": True},
+    )
+    assert _interact_tick_frames(gs) == OUTDOOR_INTERACT_TICKS
+
+    indoor = GameState(
+        player={"map_group": 24, "map_id": 5, "x": 4, "y": 3},
+        in_text_box=True,
+        raw_metadata={"in_script": True},
+    )
+    assert _interact_tick_frames(indoor) == SCRIPT_WAIT_TICKS
+
+
+def test_exploration_biases_northwest_toward_route_30_gate():
+    from src.graph.exploration import exploration_target
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 25, "y": 14},
+        party_count=1,
+        raw_metadata={"has_starter": True},
+    )
+    state = {
+        "house_exit_complete": True,
+        "active_subgoal": "Cross Route 29",
+        "subgoals": ["Enter Route 29", "Cross Route 29", "Visit Mr. Pokemon's house"],
+        "visited_positions": ["24:3:25:14"],
+    }
+    target = exploration_target(gs, state, hint_tile=(10, 5))
+    assert target[0] < gs.player.x or target[1] < gs.player.y
+
+
 def test_exploration_target_skips_unreachable_landmark(monkeypatch):
     from src.graph import exploration as exploration_mod
     from src.graph.exploration import exploration_target

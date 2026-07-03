@@ -822,8 +822,8 @@ def test_interact_without_script_progress_blocks_tile_and_increments_stuck():
 def test_navigation_skips_interact_candidate_during_outdoor_recovery():
     gs = GameState(
         player={"map_group": 24, "map_id": 3, "x": 41, "y": 14},
-        in_text_box=True,
-        raw_metadata={"script_pos": 1, "script_mode": 1, "in_script": True},
+        in_text_box=False,
+        raw_metadata={"script_pos": 1, "script_mode": 0, "in_script": False},
     )
     state = initial_agent_state(gs)
     state["interact_no_progress_count"] = 22
@@ -831,7 +831,35 @@ def test_navigation_skips_interact_candidate_during_outdoor_recovery():
     assert "a" not in candidates
 
 
+def test_outdoor_recovery_suppressed_while_rom_expects_dialog():
+    from src.graph.generic_interact import outdoor_interact_recovery_active
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 41, "y": 14},
+        in_text_box=True,
+        raw_metadata={"script_pos": 1, "script_mode": 1, "in_script": True},
+    )
+    state = {"interact_no_progress_count": 22}
+    assert outdoor_interact_recovery_active(gs, state) is False
+
+
 def test_planner_routes_navigator_when_outdoor_interact_stuck():
+    from src.graph.nodes import needs_interaction, planner_node
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 41, "y": 14},
+        in_text_box=False,
+        raw_metadata={"script_pos": 1, "script_mode": 0, "in_script": False},
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["interact_no_progress_count"] = 22
+    assert needs_interaction(gs, state) is False
+    result = planner_node(state)
+    assert result["next_node"] == "navigator"
+
+
+def test_planner_keeps_interactor_while_outdoor_dialog_active():
     from src.graph.nodes import needs_interaction, planner_node
 
     gs = GameState(
@@ -842,9 +870,9 @@ def test_planner_routes_navigator_when_outdoor_interact_stuck():
     state = initial_agent_state(gs)
     state["house_exit_complete"] = True
     state["interact_no_progress_count"] = 22
-    assert needs_interaction(gs, state) is False
+    assert needs_interaction(gs, state) is True
     result = planner_node(state)
-    assert result["next_node"] == "navigator"
+    assert result["next_node"] == "interactor"
 
 
 def test_critic_replans_on_interact_no_progress_even_during_dialog():

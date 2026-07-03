@@ -82,6 +82,20 @@ INTERACT_HOLD_FRAMES = int(os.getenv("INTERACT_HOLD_FRAMES", "30"))
 OUTDOOR_INTERACT_TICKS = int(os.getenv("OUTDOOR_INTERACT_TICKS", "120"))
 SCRIPT_WAIT_TICKS = int(os.getenv("SCRIPT_WAIT_TICKS", "45"))
 
+
+def _interact_tick_frames(gs: GameState) -> int:
+    """Outdoor multi-page signs need long ticks even between text-box pages."""
+    if gs.map_key in INDOOR_NAV_STUCK_MAPS:
+        return SCRIPT_WAIT_TICKS
+    meta = gs.raw_metadata or {}
+    if (
+        gs.in_text_box
+        or meta.get("in_script")
+        or meta.get("script_mode") == SCRIPT_READ
+    ):
+        return OUTDOOR_INTERACT_TICKS
+    return SCRIPT_WAIT_TICKS
+
 _DIRECTION_DELTA = {
     "up": (0, -1),
     "down": (0, 1),
@@ -1108,13 +1122,7 @@ def apply_action_node(state: AgentState, emulator: Any = None) -> AgentState:
                     emulator.tick(30)
                 elif action.startswith("interact_"):
                     gs_tick = GameState.model_validate(state.get("game_state", {}))
-                    tick = SCRIPT_WAIT_TICKS
-                    if (
-                        gs_tick.in_text_box
-                        and gs_tick.map_key not in INDOOR_NAV_STUCK_MAPS
-                    ):
-                        tick = OUTDOOR_INTERACT_TICKS
-                    emulator.tick(tick)
+                    emulator.tick(_interact_tick_frames(gs_tick))
         elif action.startswith("battle_"):
             battle_action = action.replace("battle_", "")
             pokemon_tools.battle_decide.invoke({"action": battle_action})

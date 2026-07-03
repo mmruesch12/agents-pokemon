@@ -327,6 +327,9 @@ LAB_DESK_START_STATE = os.getenv("LAB_DESK_START_STATE", "lab_desk_start")
 ROUTE_29_WEST_ENTRANCE_STATE = os.getenv(
     "ROUTE_29_WEST_ENTRANCE_STATE", "route29_west_entrance"
 )
+ROUTE_29_GATE_APPROACH_STATE = os.getenv(
+    "ROUTE_29_GATE_APPROACH_STATE", "route29_gate_approach"
+)
 
 
 def seed_bedroom_agent_state(
