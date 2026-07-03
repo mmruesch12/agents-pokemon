@@ -868,6 +868,28 @@ def test_route_29_y11_dead_end_session_blocked_after_entry():
     assert ROUTE_29_Y11_DEAD_END in state.get("session_blocked", {}).get("24:3", [])
 
 
+def test_select_navigation_forces_east_on_route_29_south_corridor():
+    from src.graph.navigation_resolve import ROUTE_29_CORRIDOR_EAST_REENTRY
+    from src.graph.nodes import select_navigation_action
+
+    gs = GameState(player={"map_group": 24, "map_id": 3, "x": 14, "y": 14})
+    state: dict = {
+        "visited_positions": ["24:3:15:14", "24:3:14:14"],
+        "short_term_history": [],
+    }
+    action = select_navigation_action(
+        door_exit=None,
+        path=["right", "right", "right", "right", "right", "right", "right", "right"],
+        llm_choice="left",
+        candidates=["left", "right"],
+        stuck_count=0,
+        gs=gs,
+        state=state,
+        target=ROUTE_29_CORRIDOR_EAST_REENTRY,
+    )
+    assert action == "right"
+
+
 def test_navigation_candidates_omit_blocked_primary_at_route_29_y11_trap():
     gs = GameState(player={"map_group": 24, "map_id": 3, "x": 23, "y": 11})
     path = ["right", "up", "left"]

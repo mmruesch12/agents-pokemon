@@ -89,6 +89,27 @@ ROUTE_29_FORCED_LEDGE_STEP: dict[tuple[int, int], str] = {
 }
 
 
+def _route_29_south_corridor_path_step(
+    gs: GameState,
+    target: tuple[int, int],
+    path: list[str],
+) -> str | None:
+    """ROM-valid east progress on the y=14 south corridor toward re-entry."""
+    from src.graph.navigation_resolve import ROUTE_29_CORRIDOR_EAST_REENTRY
+
+    reentry = ROUTE_29_CORRIDOR_EAST_REENTRY
+    if (
+        gs.map_key != MAP_KEY_ROUTE_29
+        or gs.player.y != reentry[1]
+        or target[0] < reentry[0]
+        or gs.player.x >= reentry[0]
+    ):
+        return None
+    if path and path[0] != "right":
+        return None
+    return "right"
+
+
 def _route_29_ledge_path_step(
     gs: GameState,
     target: tuple[int, int],
@@ -329,6 +350,13 @@ def select_navigation_action(
         return door_exit
     if _interact_candidate_justified(gs, state, target, candidates):
         return "a"
+    if path:
+        corridor_step = _route_29_south_corridor_path_step(gs, target, path)
+        if corridor_step is not None:
+            return corridor_step
+        ledge_step = _route_29_ledge_path_step(gs, target, path)
+        if ledge_step is not None:
+            return ledge_step
     arbitrate = navigation_arbitration_active(stuck_count, state)
     repeat_dir = (
         repeating_nav_direction(state.get("short_term_history", [])) if arbitrate else None
@@ -351,9 +379,6 @@ def select_navigation_action(
             if ranked and ranked[0] != "a":
                 return ranked[0]
     if path:
-        ledge_step = _route_29_ledge_path_step(gs, target, path)
-        if ledge_step is not None:
-            return ledge_step
         return visit_aware_path_step(path, gs, state) or path[0]
     if llm_choice and llm_choice in candidates and llm_choice != "a":
         return llm_choice
