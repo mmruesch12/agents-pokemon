@@ -93,25 +93,36 @@ def test_route_29_gate_waypoint_east_reentry_from_west_corridor():
     )
 
 
-def test_route_29_gate_waypoint_keeps_south_corridor_on_approach_column():
+def test_route_29_gate_waypoint_gate_approach_column_routes_ledge_then_gate():
     from src.graph.navigation_resolve import (
+        ROUTE_29_LEDGE_CONNECTOR,
         ROUTE_29_SOUTH_CORRIDOR,
         _route_29_gate_south_corridor_waypoint,
     )
 
-    for y in (10, 11, 12, 13, 14):
+    gate = (10, 5)
+    for y in (10, 11):
         gs = GameState(
             player={"map_group": 24, "map_id": 3, "x": 24, "y": y},
             party_count=1,
         )
-        assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == (
-            ROUTE_29_SOUTH_CORRIDOR
+        assert _route_29_gate_south_corridor_waypoint(gs, gate, {}) == ROUTE_29_LEDGE_CONNECTOR
+    for y in (12, 13):
+        gs = GameState(
+            player={"map_group": 24, "map_id": 3, "x": 24, "y": y},
+            party_count=1,
         )
+        assert _route_29_gate_south_corridor_waypoint(gs, gate, {}) == gate
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 24, "y": 14},
+        party_count=1,
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs, gate, {}) == ROUTE_29_SOUTH_CORRIDOR
 
 
-def test_route_29_gate_waypoint_prefers_south_corridor_from_gate_approach():
+def test_route_29_gate_waypoint_prefers_ledge_from_gate_approach():
     from src.graph.navigation_resolve import (
-        ROUTE_29_SOUTH_CORRIDOR,
+        ROUTE_29_LEDGE_CONNECTOR,
         _route_29_gate_south_corridor_waypoint,
     )
 
@@ -120,7 +131,7 @@ def test_route_29_gate_waypoint_prefers_south_corridor_from_gate_approach():
         party_count=1,
         raw_metadata={"has_starter": True},
     )
-    assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == ROUTE_29_SOUTH_CORRIDOR
+    assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), {}) == ROUTE_29_LEDGE_CONNECTOR
 
 
 def test_route_29_gate_waypoint_east_ledge_dead_end_uses_south_corridor():
@@ -147,14 +158,12 @@ def test_route_29_gate_waypoint_post_west_descent_uses_gate_approach_row():
     state: dict = {}
     for tile in ((23, 11), (27, 10), (25, 10), (25, 11)):
         record_session_walkable(state, "24:3", *tile)
-    from src.graph.navigation_resolve import ROUTE_29_Y16_EAST_ANCHOR
-
     gs_mid_corridor = GameState(
         player={"map_group": 24, "map_id": 3, "x": 23, "y": 12},
         party_count=1,
     )
     assert _route_29_gate_south_corridor_waypoint(gs_mid_corridor, (10, 5), state) == (
-        ROUTE_29_Y16_EAST_ANCHOR
+        ROUTE_29_WEST_GATE_APPROACH
     )
 
     gs_at_descent = GameState(
@@ -174,16 +183,14 @@ def test_route_29_gate_waypoint_post_west_descent_uses_gate_approach_row():
         5,
     )
 
-    from src.graph.navigation_resolve import ROUTE_29_Y16_EAST_ANCHOR
-
+    gate = (10, 5)
     for x, y in ((21, 14), (22, 14), (22, 15), (25, 13), (25, 14), (25, 15)):
         gs_corridor = GameState(
             player={"map_group": 24, "map_id": 3, "x": x, "y": y},
             party_count=1,
         )
-        assert _route_29_gate_south_corridor_waypoint(gs_corridor, (10, 5), state) == (
-            ROUTE_29_Y16_EAST_ANCHOR
-        )
+        waypoint = _route_29_gate_south_corridor_waypoint(gs_corridor, gate, state)
+        assert waypoint in (ROUTE_29_WEST_GATE_APPROACH, gate)
 
 
 def test_find_path_post_west_descent_prefers_south_then_west_corridor():
@@ -217,9 +224,9 @@ def test_find_path_route_29_sign_pocket_avoids_west_on_y14():
     assert path[0] != "down" or path.count("right") > 0
 
 
-def test_route_29_gate_waypoint_sign_pocket_y15_routes_to_y16_anchor():
+def test_route_29_gate_waypoint_sign_pocket_y15_routes_to_west_corridor():
     from src.graph.navigation_resolve import (
-        ROUTE_29_Y16_EAST_ANCHOR,
+        ROUTE_29_WEST_GATE_APPROACH,
         _route_29_gate_south_corridor_waypoint,
     )
     from src.graph.pathfinding import record_session_walkable
@@ -233,13 +240,13 @@ def test_route_29_gate_waypoint_sign_pocket_y15_routes_to_y16_anchor():
             party_count=1,
         )
         assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), state) == (
-            ROUTE_29_Y16_EAST_ANCHOR
+            ROUTE_29_WEST_GATE_APPROACH
         )
 
 
-def test_route_29_gate_waypoint_sign_pocket_routes_to_y16_anchor():
+def test_route_29_gate_waypoint_sign_pocket_routes_to_west_corridor():
     from src.graph.navigation_resolve import (
-        ROUTE_29_Y16_EAST_ANCHOR,
+        ROUTE_29_WEST_GATE_APPROACH,
         _route_29_gate_south_corridor_waypoint,
     )
     from src.graph.pathfinding import record_session_walkable
@@ -252,7 +259,7 @@ def test_route_29_gate_waypoint_sign_pocket_routes_to_y16_anchor():
         party_count=1,
     )
     assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), state) == (
-        ROUTE_29_Y16_EAST_ANCHOR
+        ROUTE_29_WEST_GATE_APPROACH
     )
 
 

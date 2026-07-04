@@ -88,24 +88,42 @@ ROUTE_29_FORCED_LEDGE_STEP: dict[tuple[int, int], str] = {
     (25, 11): "down",
 }
 ROUTE_29_SIGN_TRAP_ROWS = (14, 15)
-ROUTE_29_SIGN_TRAP_MAX_X = 16
+ROUTE_29_SIGN_TRAP_MAX_X = 14
 
 
 def _route_29_sign_dead_end_path_step(
     gs: GameState,
     path: list[str],
+    target: tuple[int, int],
 ) -> str | None:
     """Escape the ROM sign pocket west of x=17 by heading east on y=14–15."""
-    from src.graph.navigation_resolve import ROUTE_29_CORRIDOR_EAST_REENTRY
+    from src.graph.navigation_resolve import (
+        ROUTE_29_CORRIDOR_EAST_REENTRY,
+        ROUTE_29_WEST_GATE_APPROACH,
+    )
 
     if gs.map_key != MAP_KEY_ROUTE_29:
         return None
     px, py = gs.player.x, gs.player.y
+    gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
+    west_approach = ROUTE_29_WEST_GATE_APPROACH
     if py not in ROUTE_29_SIGN_TRAP_ROWS:
         return None
-    if px <= ROUTE_29_SIGN_TRAP_MAX_X:
+    if (
+        gate
+        and (px, py) == (14, 14)
+        and target in (gate, west_approach)
+        and path
+        and path[0] in ("up", "right")
+    ):
+        return "down"
+    if (px, py) == (15, 14) and path and path[0] in ("up", "left"):
+        return "left"
+    if (px, py) == (15, 15) and path and path[0] == "up":
+        return "left"
+    if (px, py) == (14, 15) and path and path[0] == "up":
         return "right"
-    if px < ROUTE_29_CORRIDOR_EAST_REENTRY[0] and path and path[0] == "left":
+    if px <= ROUTE_29_SIGN_TRAP_MAX_X and path and path[0] in ("left", "down"):
         return "right"
     return None
 
@@ -113,11 +131,20 @@ def _route_29_sign_dead_end_path_step(
 def _route_29_y16_corridor_path_step(
     gs: GameState,
     path: list[str],
+    target: tuple[int, int],
 ) -> str | None:
-    """ROM y=16 west dead-end: left is blocked at x=24 — march east instead."""
-    from src.graph.navigation_resolve import ROUTE_29_Y16_EAST_ANCHOR
+    """ROM y=16 west dead-end: left is blocked at x=24 when heading east, not toward gate."""
+    from src.graph.navigation_resolve import (
+        ROUTE_29_WEST_GATE_APPROACH,
+        ROUTE_29_Y16_EAST_ANCHOR,
+    )
+    from src.graph.pathfinding import MAP_LANDMARK_ANCHORS
 
     if gs.map_key != MAP_KEY_ROUTE_29 or not path:
+        return None
+    gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
+    west_approach = ROUTE_29_WEST_GATE_APPROACH
+    if gate and target in (gate, west_approach):
         return None
     px, py = gs.player.x, gs.player.y
     anchor = ROUTE_29_Y16_EAST_ANCHOR
@@ -125,6 +152,31 @@ def _route_29_y16_corridor_path_step(
         return "right"
     if (px, py) == (anchor[0], anchor[1] - 1) and path[0] in ("up", "down"):
         return "right"
+    return None
+
+
+def _route_29_west_row_path_step(
+    gs: GameState,
+    target: tuple[int, int],
+    path: list[str],
+) -> str | None:
+    """Hold the y=13 west corridor instead of dipping into the sign pocket on y=14."""
+    from src.graph.navigation_resolve import ROUTE_29_WEST_GATE_APPROACH
+
+    gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
+    west_approach = ROUTE_29_WEST_GATE_APPROACH
+    if (
+        gs.map_key != MAP_KEY_ROUTE_29
+        or not path
+        or gate is None
+        or target not in (gate, west_approach)
+    ):
+        return None
+    px, py = gs.player.x, gs.player.y
+    if py == 13 and px == 22 and path[0] in ("right", "left"):
+        return "down"
+    if py == 13 and px >= 23 and path[0] == "down":
+        return "left"
     return None
 
 
@@ -152,6 +204,8 @@ def _route_29_south_corridor_path_step(
         and path[0] == "right"
     ):
         return "right"
+    if py == reentry[1] and px == reentry[0] - 1 and path[0] == "right":
+        return "left"
     if (
         gate
         and target in (gate, west_approach)
@@ -407,12 +461,15 @@ def select_navigation_action(
     if _interact_candidate_justified(gs, state, target, candidates):
         return "a"
     if path:
-        trap_step = _route_29_sign_dead_end_path_step(gs, path)
+        trap_step = _route_29_sign_dead_end_path_step(gs, path, target)
         if trap_step is not None:
             return trap_step
-        y16_step = _route_29_y16_corridor_path_step(gs, path)
+        y16_step = _route_29_y16_corridor_path_step(gs, path, target)
         if y16_step is not None:
             return y16_step
+        west_row_step = _route_29_west_row_path_step(gs, target, path)
+        if west_row_step is not None:
+            return west_row_step
         corridor_step = _route_29_south_corridor_path_step(gs, target, path)
         if corridor_step is not None:
             return corridor_step

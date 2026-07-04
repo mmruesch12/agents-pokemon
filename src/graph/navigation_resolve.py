@@ -50,6 +50,20 @@ ROUTE_29_EAST_LEDGE_DEAD_END_X = 44
 ROUTE_29_SIGN_DEAD_END_X = 14
 
 
+def _route_29_west_corridor_waypoint(
+    px: int,
+    py: int,
+    *,
+    map_key: str,
+    state: dict[str, Any] | None,
+) -> tuple[int, int] | None:
+    """ROM-valid west-row interim target toward the Route 30 gate column."""
+    approach = ROUTE_29_WEST_GATE_APPROACH
+    if find_path(px, py, approach[0], approach[1], map_key=map_key, state=state):
+        return approach
+    return None
+
+
 def _route_29_gate_path_drifts_east(path: list[str]) -> bool:
     """True when routing would hug east instead of the south corridor or ledge-up approach."""
     if not path:
@@ -87,11 +101,11 @@ def _route_29_gate_south_corridor_waypoint(
     west_complete = west in walked
     skip_ledge_reclimb = west_complete
     if west_complete and py == 12 and px >= 23:
-        anchor = ROUTE_29_Y16_EAST_ANCHOR
-        if find_path(
-            px, py, anchor[0], anchor[1], map_key=gs.map_key, state=state
-        ):
-            return anchor
+        west_row = _route_29_west_corridor_waypoint(
+            px, py, map_key=gs.map_key, state=state
+        )
+        if west_row is not None:
+            return west_row
     if (
         west_complete
         and py <= 12
@@ -138,6 +152,11 @@ def _route_29_gate_south_corridor_waypoint(
             px, py, ledge[0], ledge[1], map_key=gs.map_key, state=state
         ):
             return ledge
+    if py == ledge[1] and ROUTE_29_GATE_APPROACH_X <= px < ledge[0]:
+        if find_path(
+            px, py, ledge[0], ledge[1], map_key=gs.map_key, state=state
+        ):
+            return ledge
     if climb in walked and ledge in walked and (px, py) == (25, 10):
         if find_path(
             px, py, west[0], west[1], map_key=gs.map_key, state=state
@@ -154,7 +173,7 @@ def _route_29_gate_south_corridor_waypoint(
         ):
             return ledge
     on_gate_approach_column = (
-        (px == ROUTE_29_GATE_APPROACH_X and py <= 14)
+        (px == ROUTE_29_GATE_APPROACH_X and py <= climb[1])
         or (py == reentry[1] and px > reentry[0])
     )
     if ledge in walked and py == 11 and px >= ledge[0] - 1:
@@ -176,20 +195,18 @@ def _route_29_gate_south_corridor_waypoint(
             px, py, climb[0], climb[1], map_key=gs.map_key, state=state
         ):
             return climb
-    if west_complete and px >= 23 and 13 <= py <= 15:
-        anchor = ROUTE_29_Y16_EAST_ANCHOR
-        if find_path(
-            px, py, anchor[0], anchor[1], map_key=gs.map_key, state=state
-        ):
-            return anchor
+    if west_complete and px >= 14 and py >= reentry[1]:
+        west_row = _route_29_west_corridor_waypoint(
+            px, py, map_key=gs.map_key, state=state
+        )
+        if west_row is not None:
+            gate_path = find_path(
+                px, py, gate[0], gate[1], map_key=gs.map_key, state=state
+            )
+            if gate_path and not _route_29_gate_path_drifts_east(gate_path):
+                return west_row
     if west_complete and py >= reentry[1] and px <= ROUTE_29_GATE_APPROACH_X:
-        if px <= reentry[0]:
-            anchor = ROUTE_29_Y16_EAST_ANCHOR
-            if find_path(
-                px, py, anchor[0], anchor[1], map_key=gs.map_key, state=state
-            ):
-                return anchor
-        elif px <= ROUTE_29_WEST_GATE_APPROACH[0] + 2:
+        if px <= ROUTE_29_WEST_GATE_APPROACH[0] + 2:
             gate_path = find_path(
                 px, py, gate[0], gate[1], map_key=gs.map_key, state=state
             )
@@ -219,6 +236,15 @@ def _route_29_gate_south_corridor_waypoint(
         px, py, corridor[0], corridor[1], map_key=gs.map_key, state=state
     ):
         return target
+    if on_gate_approach_column and py <= climb[1]:
+        if find_path(
+            px, py, ledge[0], ledge[1], map_key=gs.map_key, state=state
+        ):
+            return ledge
+        if find_path(
+            px, py, climb[0], climb[1], map_key=gs.map_key, state=state
+        ):
+            return climb
     if on_gate_approach_column:
         return corridor
     gate_path = find_path(
