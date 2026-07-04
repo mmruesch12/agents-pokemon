@@ -913,19 +913,20 @@ def test_select_navigation_forces_gate_path_on_route_29_south_corridor():
 def test_select_navigation_forces_east_out_of_route_29_sign_trap():
     from src.graph.nodes import select_navigation_action
 
-    gs = GameState(player={"map_group": 24, "map_id": 3, "x": 14, "y": 14})
     state: dict = {"short_term_history": []}
-    action = select_navigation_action(
-        door_exit=None,
-        path=["up", "left", "left"],
-        llm_choice="up",
-        candidates=["left", "right", "down", "up"],
-        stuck_count=0,
-        gs=gs,
-        state=state,
-        target=(10, 5),
-    )
-    assert action == "right"
+    for x, y in ((14, 14), (14, 15), (15, 15)):
+        gs = GameState(player={"map_group": 24, "map_id": 3, "x": x, "y": y})
+        action = select_navigation_action(
+            door_exit=None,
+            path=["left", "left", "left"],
+            llm_choice="left",
+            candidates=["left", "right", "down", "up"],
+            stuck_count=0,
+            gs=gs,
+            state=state,
+            target=(10, 5),
+        )
+        assert action == "right"
 
 
 def test_select_navigation_forces_down_on_route_29_west_corridor_row():
