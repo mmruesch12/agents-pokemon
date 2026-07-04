@@ -910,11 +910,32 @@ def test_select_navigation_forces_gate_path_on_route_29_south_corridor():
     assert action == "down"
 
 
+def test_select_navigation_forces_east_on_route_29_y16_dead_end():
+    from src.graph.nodes import select_navigation_action
+
+    state: dict = {"short_term_history": []}
+    for pos, blocked in (((24, 16), "left"), ((24, 15), "down")):
+        gs = GameState(
+            player={"map_group": 24, "map_id": 3, "x": pos[0], "y": pos[1]},
+        )
+        action = select_navigation_action(
+            door_exit=None,
+            path=[blocked, blocked, blocked],
+            llm_choice=blocked,
+            candidates=["left", "right", "down", "up"],
+            stuck_count=0,
+            gs=gs,
+            state=state,
+            target=(10, 5),
+        )
+        assert action == "right"
+
+
 def test_select_navigation_forces_east_out_of_route_29_sign_trap():
     from src.graph.nodes import select_navigation_action
 
     state: dict = {"short_term_history": []}
-    for x, y in ((14, 14), (15, 14), (14, 15), (15, 15)):
+    for x, y in ((14, 14), (15, 14), (14, 15), (15, 15), (16, 15)):
         gs = GameState(player={"map_group": 24, "map_id": 3, "x": x, "y": y})
         action = select_navigation_action(
             door_exit=None,

@@ -330,6 +330,9 @@ ROUTE_29_WEST_ENTRANCE_STATE = os.getenv(
 ROUTE_29_GATE_APPROACH_STATE = os.getenv(
     "ROUTE_29_GATE_APPROACH_STATE", "route29_gate_approach"
 )
+ROUTE_29_WEST_GATE_STATE = os.getenv(
+    "ROUTE_29_WEST_GATE_STATE", "route29_west_gate"
+)
 
 
 def seed_bedroom_agent_state(
@@ -706,6 +709,25 @@ def prepare_emulator_state(
     return seed_agent_state_for_map(state, gs)
 
 
+def install_route_29_snapshot_from_save(
+    source_name: str,
+    *,
+    target_name: str,
+    save_dir: str | Path | None = None,
+) -> Path:
+    """Copy a PyBoy snapshot to a named fast-start state under saves/."""
+    import shutil
+
+    save_dir = Path(save_dir or "saves")
+    source_path = save_dir / f"{source_name}.state"
+    if not source_path.is_file():
+        raise FileNotFoundError(f"Source emulator state not found: {source_path}")
+    target_path = save_dir / f"{target_name}.state"
+    shutil.copy2(source_path, target_path)
+    logger.info("Installed %s -> %s", source_path.name, target_path.name)
+    return target_path
+
+
 def install_route_29_gate_from_save(
     source_name: str,
     *,
@@ -713,17 +735,11 @@ def install_route_29_gate_from_save(
     save_dir: str | Path | None = None,
 ) -> Path:
     """Copy a snapshot (e.g. stuck_113 at (24,10)) to route29_gate_approach.state."""
-    import shutil
-
-    save_dir = Path(save_dir or "saves")
-    source_path = save_dir / f"{source_name}.state"
-    if not source_path.is_file():
-        raise FileNotFoundError(f"Source emulator state not found: {source_path}")
-    target_name = target_name or ROUTE_29_GATE_APPROACH_STATE
-    target_path = save_dir / f"{target_name}.state"
-    shutil.copy2(source_path, target_path)
-    logger.info("Installed %s -> %s", source_path.name, target_path.name)
-    return target_path
+    return install_route_29_snapshot_from_save(
+        source_name,
+        target_name=target_name or ROUTE_29_GATE_APPROACH_STATE,
+        save_dir=save_dir,
+    )
 
 
 def prepare_route_29_gate_start(
@@ -740,6 +756,25 @@ def prepare_route_29_gate_start(
         emu,
         state,
         gate_state_name or ROUTE_29_GATE_APPROACH_STATE,
+        save_dir=save_dir,
+        expected_map_key=MAP_KEY_ROUTE_29,
+    )
+
+
+def prepare_route_29_west_gate_start(
+    emu: PyBoyWrapper,
+    state: dict,
+    *,
+    save_dir: str | Path | None = None,
+    west_gate_state_name: str | None = None,
+) -> dict:
+    """Fast-start on Route 29 west corridor (saves/route29_west_gate.state)."""
+    from src.state.gold_state_reader import MAP_KEY_ROUTE_29
+
+    return prepare_emulator_state(
+        emu,
+        state,
+        west_gate_state_name or ROUTE_29_WEST_GATE_STATE,
         save_dir=save_dir,
         expected_map_key=MAP_KEY_ROUTE_29,
     )

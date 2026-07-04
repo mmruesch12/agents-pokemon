@@ -174,14 +174,15 @@ def test_route_29_gate_waypoint_post_west_descent_uses_gate_approach_row():
         5,
     )
 
-    for x, y in ((21, 14), (22, 14), (22, 15)):
+    from src.graph.navigation_resolve import ROUTE_29_Y16_EAST_ANCHOR
+
+    for x, y in ((21, 14), (22, 14), (22, 15), (25, 13), (25, 14), (25, 15)):
         gs_corridor = GameState(
             player={"map_group": 24, "map_id": 3, "x": x, "y": y},
             party_count=1,
         )
         assert _route_29_gate_south_corridor_waypoint(gs_corridor, (10, 5), state) == (
-            10,
-            5,
+            ROUTE_29_Y16_EAST_ANCHOR
         )
 
 
@@ -214,6 +215,26 @@ def test_find_path_route_29_sign_pocket_avoids_west_on_y14():
     assert path
     assert path[0] != "left"
     assert path[0] != "down" or path.count("right") > 0
+
+
+def test_route_29_gate_waypoint_sign_pocket_y15_routes_to_y16_anchor():
+    from src.graph.navigation_resolve import (
+        ROUTE_29_Y16_EAST_ANCHOR,
+        _route_29_gate_south_corridor_waypoint,
+    )
+    from src.graph.pathfinding import record_session_walkable
+
+    state: dict = {}
+    for tile in ((23, 11), (27, 10), (25, 10), (25, 11)):
+        record_session_walkable(state, "24:3", *tile)
+    for x, y in ((15, 15), (16, 15)):
+        gs = GameState(
+            player={"map_group": 24, "map_id": 3, "x": x, "y": y},
+            party_count=1,
+        )
+        assert _route_29_gate_south_corridor_waypoint(gs, (10, 5), state) == (
+            ROUTE_29_Y16_EAST_ANCHOR
+        )
 
 
 def test_route_29_gate_waypoint_sign_pocket_routes_to_y16_anchor():

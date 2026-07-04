@@ -88,18 +88,42 @@ ROUTE_29_FORCED_LEDGE_STEP: dict[tuple[int, int], str] = {
     (25, 11): "down",
 }
 ROUTE_29_SIGN_TRAP_ROWS = (14, 15)
-ROUTE_29_SIGN_TRAP_MAX_X = 15
+ROUTE_29_SIGN_TRAP_MAX_X = 16
 
 
 def _route_29_sign_dead_end_path_step(
     gs: GameState,
     path: list[str],
 ) -> str | None:
-    """Escape the ROM sign pocket west of x=15 by heading east on y=14–15."""
+    """Escape the ROM sign pocket west of x=17 by heading east on y=14–15."""
+    from src.graph.navigation_resolve import ROUTE_29_CORRIDOR_EAST_REENTRY
+
     if gs.map_key != MAP_KEY_ROUTE_29:
         return None
     px, py = gs.player.x, gs.player.y
-    if py in ROUTE_29_SIGN_TRAP_ROWS and px <= ROUTE_29_SIGN_TRAP_MAX_X:
+    if py not in ROUTE_29_SIGN_TRAP_ROWS:
+        return None
+    if px <= ROUTE_29_SIGN_TRAP_MAX_X:
+        return "right"
+    if px < ROUTE_29_CORRIDOR_EAST_REENTRY[0] and path and path[0] == "left":
+        return "right"
+    return None
+
+
+def _route_29_y16_corridor_path_step(
+    gs: GameState,
+    path: list[str],
+) -> str | None:
+    """ROM y=16 west dead-end: left is blocked at x=24 — march east instead."""
+    from src.graph.navigation_resolve import ROUTE_29_Y16_EAST_ANCHOR
+
+    if gs.map_key != MAP_KEY_ROUTE_29 or not path:
+        return None
+    px, py = gs.player.x, gs.player.y
+    anchor = ROUTE_29_Y16_EAST_ANCHOR
+    if (px, py) == anchor and path[0] in ("left", "up"):
+        return "right"
+    if (px, py) == (anchor[0], anchor[1] - 1) and path[0] in ("up", "down"):
         return "right"
     return None
 
@@ -386,6 +410,9 @@ def select_navigation_action(
         trap_step = _route_29_sign_dead_end_path_step(gs, path)
         if trap_step is not None:
             return trap_step
+        y16_step = _route_29_y16_corridor_path_step(gs, path)
+        if y16_step is not None:
+            return y16_step
         corridor_step = _route_29_south_corridor_path_step(gs, target, path)
         if corridor_step is not None:
             return corridor_step

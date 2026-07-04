@@ -374,6 +374,8 @@ def _route_29_gate_step_penalty(
             penalty += 10
         elif y >= 11 and (to_gate or to_west_approach):
             penalty += 8
+    if nx < x and y >= 15 and (to_gate or to_west_approach):
+        penalty += 40
     return penalty
 
 
