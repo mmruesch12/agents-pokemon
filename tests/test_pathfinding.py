@@ -174,6 +174,14 @@ def test_route_29_gate_waypoint_post_west_descent_uses_gate_approach_row():
         ROUTE_29_WEST_GATE_APPROACH
     )
 
+    gs_post_ledge = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 27, "y": 11},
+        party_count=1,
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs_post_ledge, (10, 5), {}) == (
+        ROUTE_29_WEST_GATE_APPROACH
+    )
+
     gs_on_gate_column = GameState(
         player={"map_group": 24, "map_id": 3, "x": 10, "y": 11},
         party_count=1,

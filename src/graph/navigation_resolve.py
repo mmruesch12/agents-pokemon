@@ -98,7 +98,9 @@ def _route_29_gate_south_corridor_waypoint(
     climb = ROUTE_29_LEDGE_CLIMB
     walked = session_walkable_for_map(state, gs.map_key)
     west = ROUTE_29_LEDGE_WEST_DESCENT
-    west_complete = west in walked
+    west_complete = west in walked or (
+        ledge in walked and py > ledge[1]
+    )
     skip_ledge_reclimb = west_complete
     if west_complete and py == 12 and px >= 23:
         west_row = _route_29_west_corridor_waypoint(
@@ -117,8 +119,14 @@ def _route_29_gate_south_corridor_waypoint(
             px, py, approach[0], approach[1], map_key=gs.map_key, state=state
         ):
             return approach
+    if py == 11 and px >= west[0]:
+        approach = ROUTE_29_WEST_GATE_APPROACH
+        if find_path(
+            px, py, approach[0], approach[1], map_key=gs.map_key, state=state
+        ):
+            return approach
     if (px, py) == west:
-        return target
+        return ROUTE_29_WEST_GATE_APPROACH
     if (px, py) == ledge:
         if find_path(
             px, py, west[0], west[1], map_key=gs.map_key, state=state
@@ -176,11 +184,16 @@ def _route_29_gate_south_corridor_waypoint(
         (px == ROUTE_29_GATE_APPROACH_X and py <= climb[1])
         or (py == reentry[1] and px > reentry[0])
     )
-    if ledge in walked and py == 11 and px >= ledge[0] - 1:
+    if py == 11 and px >= ledge[0] - 1:
         if find_path(
             px, py, west[0], west[1], map_key=gs.map_key, state=state
         ):
             return west
+        approach = ROUTE_29_WEST_GATE_APPROACH
+        if find_path(
+            px, py, approach[0], approach[1], map_key=gs.map_key, state=state
+        ):
+            return approach
     if not on_gate_approach_column and py == 11 and reentry[0] <= px < ledge[0]:
         if find_path(
             px, py, ledge[0], ledge[1], map_key=gs.map_key, state=state
@@ -247,6 +260,12 @@ def _route_29_gate_south_corridor_waypoint(
             return climb
     if on_gate_approach_column:
         return corridor
+    if py == 11 and px > west[0]:
+        approach = ROUTE_29_WEST_GATE_APPROACH
+        if find_path(
+            px, py, approach[0], approach[1], map_key=gs.map_key, state=state
+        ):
+            return approach
     gate_path = find_path(
         px, py, gate[0], gate[1], map_key=gs.map_key, state=state
     )
