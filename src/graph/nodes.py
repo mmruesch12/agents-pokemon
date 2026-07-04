@@ -87,7 +87,7 @@ ROUTE_29_FORCED_LEDGE_STEP: dict[tuple[int, int], str] = {
     (44, 10): "down",
     (25, 11): "down",
 }
-ROUTE_29_SIGN_TRAP_Y = 15
+ROUTE_29_SIGN_TRAP_ROWS = (14, 15)
 ROUTE_29_SIGN_TRAP_MAX_X = 15
 
 
@@ -95,13 +95,11 @@ def _route_29_sign_dead_end_path_step(
     gs: GameState,
     path: list[str],
 ) -> str | None:
-    """Escape the ROM sign pocket west of x=15 by heading east on y=15."""
+    """Escape the ROM sign pocket west of x=15 by heading east on y=14–15."""
     if gs.map_key != MAP_KEY_ROUTE_29:
         return None
     px, py = gs.player.x, gs.player.y
-    if py == ROUTE_29_SIGN_TRAP_Y and px <= ROUTE_29_SIGN_TRAP_MAX_X:
-        return "right"
-    if (px, py) == (14, 14):
+    if py in ROUTE_29_SIGN_TRAP_ROWS and px <= ROUTE_29_SIGN_TRAP_MAX_X:
         return "right"
     return None
 

@@ -914,7 +914,7 @@ def test_select_navigation_forces_east_out_of_route_29_sign_trap():
     from src.graph.nodes import select_navigation_action
 
     state: dict = {"short_term_history": []}
-    for x, y in ((14, 14), (14, 15), (15, 15)):
+    for x, y in ((14, 14), (15, 14), (14, 15), (15, 15)):
         gs = GameState(player={"map_group": 24, "map_id": 3, "x": x, "y": y})
         action = select_navigation_action(
             door_exit=None,
