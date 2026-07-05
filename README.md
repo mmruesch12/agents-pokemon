@@ -66,10 +66,57 @@ uv run python -m src.run.cli eval --dataset early_game   # evaluators
 uv run poke-agent traces --limit 10                      # LangSmith trace list (needs key)
 uv run python -m src.run.cli --start-bedroom --steps 200 # fast bedroom start (skips intro)
 uv run poke-agent dashboard --port 8765                  # React debug dashboard
-uv run pytest tests/ -q                                  # tests (no ROM needed; ~214)
+uv run pytest tests/ -q                                  # tests (no ROM needed; ~352)
 ```
 
-Use `--start-bedroom` (with `poke-watch` or `poke-agent`) for quick iteration on early house-exit logic. It caches `saves/bedroom_start.state` after first (slower) run. Incompatible with `--resume`.
+### Fast-start save states
+
+PyBoy snapshots live in `saves/` (gitignored). During a run the agent also writes `stuck_<step>.state` (when the stuck meter hits threshold) and `final_<step>.state` (on exit).
+
+**Fast-start flags** skip title/bootstrap and seed graph state from the snapshot. Use **only one** per run; they cannot be combined with `--resume`.
+
+| Flag | Default snapshot | Typical start | Use case |
+|------|------------------|---------------|----------|
+| `--start-bedroom` | `bedroom_start.state` | Player's House 2F | House-exit iteration (cached after first slower bootstrap) |
+| `--start-lab` | `lab_desk_start.state` | Elm's Lab | Starter-quest iteration |
+| `--emulator-state NAME` | `NAME.state` | Any prior snapshot | Arbitrary map/position (e.g. Route 29 dev seeds below) |
+
+```bash
+# House exit from bedroom (no title screen)
+uv run poke-watch --start-bedroom --steps 500
+
+# Starter quest from Elm's lab desk
+uv run poke-agent --start-lab --steps 300
+
+# Load any snapshot by stem (without .state)
+uv run poke-agent --emulator-state route29_gate_approach --steps 120
+uv run poke-agent --emulator-state stuck_198 --steps 50
+```
+
+**Route 29 dev snapshots** (post-starter; subgoal *Cross Route 29*). Shipped locally under `saves/` when present:
+
+| `--emulator-state` | Position | Notes |
+|--------------------|----------|-------|
+| `route29_gate_approach` | Route 29 `(24, 10)` | West march from ledge toward Route 30 gate |
+| `route29_west_entrance` | Route 29 `(59, 8)` | New Bark east warp; east half of the map |
+| `route29_west_gate` | Route 29 west corridor | Near Route 30 gate `(10, 5)` — capture locally (not in repo) |
+
+Install a named fast-start from a longer session:
+
+```bash
+# Lab desk (CLI)
+uv run poke-agent capture-lab-start --from-save final_200
+
+# Route 29 gate approach (copy stuck_*/final_* into a stable name)
+uv run python -c "from src.emulator.bootstrap import install_route_29_gate_from_save; install_route_29_gate_from_save('stuck_113')"
+
+# Other Route 29 names (e.g. west gate)
+uv run python -c "from src.emulator.bootstrap import install_route_29_snapshot_from_save; install_route_29_snapshot_from_save('stuck_XXX', target_name='route29_west_gate')"
+```
+
+Override default snapshot names with env vars: `BEDROOM_START_STATE`, `LAB_DESK_START_STATE`, `ROUTE_29_GATE_APPROACH_STATE`, `ROUTE_29_WEST_ENTRANCE_STATE`, `ROUTE_29_WEST_GATE_STATE`.
+
+**Resume:** `--resume latest` reloads the LangGraph checkpoint; in headed/watch mode it also loads the newest `saves/*.state` by mtime. Fast-start flags always begin a fresh agent thread (checkpoint reset).
 
 ## Setup (Ubuntu/Debian)
 

@@ -121,10 +121,44 @@ uv run python -m src.run.autonomous_runner --headed --resume latest --max-steps 
 uv run python -m src.run.cli --start-bedroom --steps 200
 uv run poke-watch --start-bedroom --steps 500   # headed; resume skipped
 
+# Fast-start from a named PyBoy snapshot (see "Emulator save states" below)
+uv run poke-agent --emulator-state route29_gate_approach --steps 120
+uv run poke-agent --start-lab --steps 300
+
 uv run pytest tests/ -q                          # run tests (expect ~352)
 ```
 
 System deps (Ubuntu): `libsdl2-dev`, `build-essential`, `python3-dev`
+
+### Emulator save states (`saves/`)
+
+Runtime snapshots are gitignored. The runner writes `stuck_<step>.state` (stuck threshold) and `final_<step>.state` (clean exit). Fast-start flags load a snapshot and call `seed_*_agent_state` / `seed_agent_state_for_map` so graph flags match RAM (milestones, subgoals, landmarks).
+
+**Mutual exclusion:** use only one of `--start-bedroom`, `--start-lab`, or `--emulator-state` per run. None of these may be combined with `--resume` (fresh checkpoint thread; see `AutonomousRunner._validate_fast_start`).
+
+| Mechanism | Default file | Seeding |
+|-----------|--------------|---------|
+| `--start-bedroom` | `bedroom_start.state` | `seed_bedroom_agent_state`; first run bootstraps and caches |
+| `--start-lab` | `lab_desk_start.state` | `prepare_lab_start` → `seed_lab_agent_state` |
+| `--emulator-state NAME` | `NAME.state` | `prepare_emulator_state` → map-based seed (Route 29 + party → `seed_route_29_agent_state`) |
+
+**Route 29 iteration seeds** (`src/emulator/bootstrap.py`):
+
+| Snapshot name | Env override | Map / position | Agent subgoal |
+|---------------|--------------|----------------|---------------|
+| `route29_gate_approach` | `ROUTE_29_GATE_APPROACH_STATE` | `24:3` ~(24, 10) | Cross Route 29 |
+| `route29_west_entrance` | `ROUTE_29_WEST_ENTRANCE_STATE` | `24:3` (59, 8) | Cross Route 29 (east component) |
+| `route29_west_gate` | `ROUTE_29_WEST_GATE_STATE` | `24:3` west corridor | Cross Route 29; warp test to `26:1` — **capture locally** |
+
+Install stable names from session output:
+
+```bash
+uv run poke-agent capture-lab-start --from-save final_200
+uv run python -c "from src.emulator.bootstrap import install_route_29_gate_from_save; install_route_29_gate_from_save('stuck_113')"
+uv run python -c "from src.emulator.bootstrap import install_route_29_snapshot_from_save; install_route_29_snapshot_from_save('stuck_XXX', target_name='route29_west_gate')"
+```
+
+**Headed resume:** `--resume latest` with `poke-watch` loads newest `saves/*.state` by mtime and re-seeds agent state from emulator RAM when no in-proc checkpoint exists (`docs/future-headed-optimizations.md`).
 
 ## Coding conventions
 
@@ -171,6 +205,7 @@ System deps (Ubuntu): `libsdl2-dev`, `build-essential`, `python3-dev`
 - `data/*` is gitignored — memory JSON, watch snapshots, and checkpoints stay local
 - RAM offsets must match pret/pokegold; validate with real ROM when changing `gold_state_reader.py`
 - **Headed/watch profile:** `MemorySaver` (in-proc) instead of sqlite; `_resolve_thread_id("latest")` peeks sqlite only when **not** headed; LangSmith off unless `--langsmith` (see `docs/future-headed-optimizations.md`)
-- `--start-bedroom` is incompatible with `--resume` (fresh bedroom state each run)
+- `--start-bedroom`, `--start-lab`, and `--emulator-state` are incompatible with each other and with `--resume` (fresh fast-start thread each run)
+- Route 29 west-gate snapshot (`route29_west_gate`) is not shipped — create via headed run + `install_route_29_snapshot_from_save` before testing Route 30 warp
 - Dashboard needs `cd dashboard && npm run build` before `poke-agent dashboard` serves the React UI
 - If untracked WIP `.py` files appear under `src/` or `tests/` after local runs, they are **not shipped** — run `git checkout HEAD -- src/ tests/` and delete orphans before committing
