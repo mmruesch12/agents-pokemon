@@ -91,6 +91,8 @@ ROUTE_29_FORCED_LEDGE_STEP: dict[tuple[int, int], str] = {
 }
 ROUTE_29_SIGN_TRAP_ROWS = (14, 15)
 ROUTE_29_SIGN_TRAP_MAX_X = 14
+ROUTE_29_SIGN_TRAP_Y15_EAST_MAX_X = 17
+ROUTE_29_Y15_EAST_DEAD_END_X = 33
 
 
 def _route_29_sign_dead_end_path_step(
@@ -125,8 +127,22 @@ def _route_29_sign_dead_end_path_step(
         return "right"
     if (px, py) == (14, 15) and path and path[0] in ("up", "left"):
         return "right"
-    if py == 15 and px >= 16 and path and path[0] in ("up", "left", "down"):
+    if (
+        py == 15
+        and ROUTE_29_SIGN_TRAP_MAX_X < px <= ROUTE_29_SIGN_TRAP_Y15_EAST_MAX_X
+        and path
+        and path[0] in ("up", "left", "down")
+    ):
         return "right"
+    if (
+        gate
+        and py == 15
+        and px >= ROUTE_29_Y15_EAST_DEAD_END_X
+        and target in (gate, west_approach)
+        and path
+        and path[0] == "right"
+    ):
+        return "up"
     if (
         gate
         and (px, py) == (14, 14)

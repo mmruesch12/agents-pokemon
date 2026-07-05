@@ -1013,6 +1013,36 @@ def test_select_navigation_escapes_route_29_sign_pocket_at_y15_east():
     )
 
 
+def test_select_navigation_route_29_y15_east_dead_end_ascends_to_corridor():
+    from src.graph.nodes import select_navigation_action
+
+    gs = GameState(player={"map_group": 24, "map_id": 3, "x": 33, "y": 15})
+    action = select_navigation_action(
+        door_exit=None,
+        path=["up", "left", "left", "left"],
+        llm_choice="right",
+        candidates=["left", "right", "down", "up"],
+        stuck_count=0,
+        gs=gs,
+        state={"short_term_history": []},
+        target=(10, 12),
+    )
+    assert action == "up"
+
+    gs_mid = GameState(player={"map_group": 24, "map_id": 3, "x": 24, "y": 15})
+    action_mid = select_navigation_action(
+        door_exit=None,
+        path=["left", "left", "up"],
+        llm_choice="right",
+        candidates=["left", "right", "down", "up"],
+        stuck_count=0,
+        gs=gs_mid,
+        state={"short_term_history": []},
+        target=(22, 14),
+    )
+    assert action_mid == "left"
+
+
 def test_select_navigation_forces_down_on_route_29_west_corridor_row():
     from src.graph.nodes import select_navigation_action
     from src.graph.pathfinding import MAP_LANDMARK_ANCHORS
