@@ -81,7 +81,10 @@ def test_navigation_arbitration_active_at_threshold_or_repeat():
 
 def test_select_navigation_action_prefers_llm_when_stuck():
     gs = GameState(player={"x": 8, "y": 12})
-    state = initial_agent_state(gs)
+    # When arbitrating on a repeating direction, a non-repeating LLM choice wins
+    # (core M11 behavior). When path provides a non-repeating escape, path is used.
+    state_arbit = initial_agent_state(gs)
+    state_arbit["short_term_history"] = ["navigate:right@8,12"] * 3
     low = select_navigation_action(
         door_exit=None,
         path=["right"],
@@ -89,7 +92,7 @@ def test_select_navigation_action_prefers_llm_when_stuck():
         candidates=["right", "up"],
         stuck_count=5,
         gs=gs,
-        state=state,
+        state=state_arbit,
         target=(10, 12),
     )
     mid = select_navigation_action(
@@ -99,9 +102,11 @@ def test_select_navigation_action_prefers_llm_when_stuck():
         candidates=["right", "up"],
         stuck_count=STUCK_ARBITRATION_THRESHOLD,
         gs=gs,
-        state=state,
+        state=state_arbit,
         target=(10, 12),
     )
+    # Non-arbitration (or path not repeating) falls back to path
+    state = initial_agent_state(gs)
     high = select_navigation_action(
         door_exit=None,
         path=["right"],
@@ -297,6 +302,8 @@ def test_navigator_prefers_llm_choice_when_stuck(new_bark_ram: dict, monkeypatch
     gs = GoldStateReader(ByteArrayReader(new_bark_ram)).read()
     state = initial_agent_state(gs)
     state["stuck_count"] = STUCK_ARBITRATION_THRESHOLD
+    # Make the A* path direction the repeating one so arbitration skips it and takes LLM alternate
+    state["short_term_history"] = [f"navigate:right@{gs.player.x},{gs.player.y}"] * 3
     result = navigator_node(state)
     assert result["last_action"] == "navigate_left"
 
