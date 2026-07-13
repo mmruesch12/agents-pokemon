@@ -21,6 +21,9 @@ MAP_WARP_HINT_ROWS: dict[str, dict[str, int]] = {
     "24:5": {"north": 2},
     "24:3": {"north": 5, "east": 8},
     "26:1": {"north": 3},
+    "26:3": {"north": 0},  # Cherrygrove City
+    "26:2": {"west": 8},  # Route 31
+    "10:5": {"north": 17},  # Violet City (gym approach row)
 }
 
 # Building/warp anchor tiles from MAP_GRIDS layout (bootstrap landmark seeding only).
@@ -34,6 +37,17 @@ MAP_LANDMARK_ANCHORS: dict[str, dict[str, tuple[int, int]]] = {
     },
     "26:1": {
         "mr_pokemon_gate": (10, 3),
+        "route_31_gate": (10, 1),
+    },
+    "26:3": {
+        "north_exit": (17, 0),
+    },
+    "26:2": {
+        "west_gate": (0, 8),
+    },
+    "10:5": {
+        # pret VIOLET_CITY gym warp is near SE of map; coarse open-grid seed.
+        "gym_entrance": (18, 17),
     },
     "24:5": {
         "desk_approach": (4, 3),
@@ -151,6 +165,38 @@ MAP_GRIDS: dict[str, list[list[int]]] = {
             "1000000001",
             "1000000001",
             "1000110001",  # Mr. Pokemon at (5,5)
+            "1000000001",
+            "1000000001",
+            "1111111111",
+        ]
+    ),
+    # Coarse open grids for corridor maps (session overlays refine walkability).
+    "26:3": _grid_from_rows(  # Cherrygrove City 20x9 blocks → ~40x18 tiles; open seed
+        ["0" * 20 for _ in range(12)]
+    ),
+    "26:2": _grid_from_rows(  # Route 31 20x9 blocks
+        ["0" * 20 for _ in range(12)]
+    ),
+    "26:11": _grid_from_rows(  # Route 31 Violet Gate interior
+        [
+            "1111111111",
+            "1000000001",
+            "1000000001",
+            "1000000001",
+            "1111111111",
+        ]
+    ),
+    "10:5": _grid_from_rows(  # Violet City open seed
+        ["0" * 20 for _ in range(20)]
+    ),
+    "10:7": _grid_from_rows(  # Violet Gym interior (5x8 blocks)
+        [
+            "1111111111",
+            "1000000001",
+            "1000000001",
+            "1000000001",
+            "1000000001",
+            "1000000001",
             "1000000001",
             "1000000001",
             "1111111111",

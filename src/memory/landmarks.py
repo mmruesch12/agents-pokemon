@@ -21,6 +21,10 @@ NEW_BARK_WEST_EXIT_ID = "new_bark_west_exit"
 NEW_BARK_EAST_EXIT_ID = NEW_BARK_WEST_EXIT_ID
 ROUTE_29_NORTH_GATE_ID = "route_29_north_gate"
 ROUTE_30_NORTH_GATE_ID = "route_30_north_gate"
+ROUTE_30_TO_ROUTE_31_ID = "route_30_to_route_31"
+CHERRYGROVE_NORTH_EXIT_ID = "cherrygrove_north_exit"
+ROUTE_31_WEST_GATE_ID = "route_31_west_gate"
+VIOLET_GYM_ENTRANCE_ID = "violet_gym_entrance"
 MR_POKEMONS_HOUSE_ENTRANCE_ID = "mr_pokemons_house_entrance"
 
 # Lab door tiles on New Bark Town (discovered via map transitions, not phase routing).
@@ -160,10 +164,14 @@ def discover_quest_transition_landmarks(
 ) -> list[dict[str, Any]]:
     """Record warp tiles discovered on first Route 29 / route / Mr. Pokemon transitions."""
     from src.state.gold_state_reader import (
+        MAP_KEY_CHERRYGROVE_CITY,
         MAP_KEY_MR_POKEMONS_HOUSE,
         MAP_KEY_NEW_BARK_TOWN,
         MAP_KEY_ROUTE_29,
         MAP_KEY_ROUTE_30,
+        MAP_KEY_ROUTE_31,
+        MAP_KEY_VIOLET_CITY,
+        MAP_KEY_VIOLET_GYM,
     )
 
     if not from_map or not to_map or not from_pos:
@@ -211,6 +219,57 @@ def discover_quest_transition_landmarks(
                 metadata={"transition": "route_30_to_mr_pokemon"},
             )
         )
+    elif from_map == MAP_KEY_ROUTE_30 and to_map == MAP_KEY_ROUTE_31:
+        landmarks.append(
+            make_landmark(
+                landmark_id=ROUTE_30_TO_ROUTE_31_ID,
+                name="Route 30 to Route 31",
+                map_key=map_key,
+                x=int(x),
+                y=int(y),
+                kind=LANDMARK_KIND_MAP_VISIT,
+                metadata={"transition": "route_30_to_route_31"},
+            )
+        )
+    elif from_map == MAP_KEY_CHERRYGROVE_CITY and to_map == MAP_KEY_ROUTE_30:
+        landmarks.append(
+            make_landmark(
+                landmark_id=CHERRYGROVE_NORTH_EXIT_ID,
+                name="Cherrygrove north exit",
+                map_key=map_key,
+                x=int(x),
+                y=int(y),
+                kind=LANDMARK_KIND_MAP_VISIT,
+                metadata={"transition": "cherrygrove_to_route_30"},
+            )
+        )
+    elif from_map == MAP_KEY_ROUTE_31 and to_map in (
+        MAP_KEY_VIOLET_CITY,
+        "26:11",
+    ):
+        landmarks.append(
+            make_landmark(
+                landmark_id=ROUTE_31_WEST_GATE_ID,
+                name="Route 31 west toward Violet",
+                map_key=map_key,
+                x=int(x),
+                y=int(y),
+                kind=LANDMARK_KIND_MAP_VISIT,
+                metadata={"transition": "route_31_to_violet"},
+            )
+        )
+    elif from_map == MAP_KEY_VIOLET_CITY and to_map == MAP_KEY_VIOLET_GYM:
+        landmarks.append(
+            make_landmark(
+                landmark_id=VIOLET_GYM_ENTRANCE_ID,
+                name="Violet Gym entrance",
+                map_key=map_key,
+                x=int(x),
+                y=int(y),
+                kind=LANDMARK_KIND_BUILDING_ENTRANCE,
+                metadata={"transition": "violet_to_gym", "building": "violet_gym"},
+            )
+        )
     return landmarks
 
 
@@ -234,16 +293,22 @@ def seed_static_map_landmarks(state: dict[str, Any]) -> list[dict[str, Any]]:
     """Register known building entrances and warp gates from MAP_LANDMARK_ANCHORS."""
     from src.graph.pathfinding import MAP_LANDMARK_ANCHORS, MAP_WARP_HINT_ROWS
     from src.state.gold_state_reader import (
+        MAP_KEY_CHERRYGROVE_CITY,
         MAP_KEY_ELMS_LAB,
         MAP_KEY_NEW_BARK_TOWN,
         MAP_KEY_ROUTE_29,
         MAP_KEY_ROUTE_30,
+        MAP_KEY_ROUTE_31,
+        MAP_KEY_VIOLET_CITY,
     )
 
     merged = list(state.get("known_landmarks", []))
     new_bark = MAP_LANDMARK_ANCHORS.get(MAP_KEY_NEW_BARK_TOWN, {})
     route_29 = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {})
     route_30 = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_30, {})
+    cherry = MAP_LANDMARK_ANCHORS.get(MAP_KEY_CHERRYGROVE_CITY, {})
+    route_31 = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_31, {})
+    violet = MAP_LANDMARK_ANCHORS.get(MAP_KEY_VIOLET_CITY, {})
     elms_lab = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ELMS_LAB, {})
     west_row = MAP_WARP_HINT_ROWS.get(MAP_KEY_NEW_BARK_TOWN, {}).get("west", 8)
     lab_door = new_bark.get("elms_lab_door", _ELMS_LAB_PRIMARY_DOOR)
@@ -284,6 +349,42 @@ def seed_static_map_landmarks(state: dict[str, Any]) -> list[dict[str, Any]]:
             y=route_30.get("mr_pokemon_gate", (10, 3))[1],
             kind=LANDMARK_KIND_MAP_VISIT,
             metadata={"transition": "route_30_to_mr_pokemon", "seed": "map_anchors"},
+        ),
+        make_landmark(
+            landmark_id=ROUTE_30_TO_ROUTE_31_ID,
+            name="Route 30 toward Route 31",
+            map_key=MAP_KEY_ROUTE_30,
+            x=route_30.get("route_31_gate", (10, 1))[0],
+            y=route_30.get("route_31_gate", (10, 1))[1],
+            kind=LANDMARK_KIND_MAP_VISIT,
+            metadata={"transition": "route_30_to_route_31", "seed": "map_anchors"},
+        ),
+        make_landmark(
+            landmark_id=CHERRYGROVE_NORTH_EXIT_ID,
+            name="Cherrygrove north exit",
+            map_key=MAP_KEY_CHERRYGROVE_CITY,
+            x=cherry.get("north_exit", (17, 0))[0],
+            y=cherry.get("north_exit", (17, 0))[1],
+            kind=LANDMARK_KIND_MAP_VISIT,
+            metadata={"transition": "cherrygrove_to_route_30", "seed": "map_anchors"},
+        ),
+        make_landmark(
+            landmark_id=ROUTE_31_WEST_GATE_ID,
+            name="Route 31 west toward Violet",
+            map_key=MAP_KEY_ROUTE_31,
+            x=route_31.get("west_gate", (0, 8))[0],
+            y=route_31.get("west_gate", (0, 8))[1],
+            kind=LANDMARK_KIND_MAP_VISIT,
+            metadata={"transition": "route_31_to_violet", "seed": "map_anchors"},
+        ),
+        make_landmark(
+            landmark_id=VIOLET_GYM_ENTRANCE_ID,
+            name="Violet Gym entrance",
+            map_key=MAP_KEY_VIOLET_CITY,
+            x=violet.get("gym_entrance", (18, 17))[0],
+            y=violet.get("gym_entrance", (18, 17))[1],
+            kind=LANDMARK_KIND_BUILDING_ENTRANCE,
+            metadata={"building": "violet_gym", "seed": "map_anchors"},
         ),
         make_landmark(
             landmark_id=ELMS_LAB_DESK_APPROACH_ID,

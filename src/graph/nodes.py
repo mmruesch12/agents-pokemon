@@ -67,6 +67,10 @@ from src.state.gold_state_reader import (
     MAP_KEY_PLAYERS_HOUSE_1F,
     MAP_KEY_PLAYERS_HOUSE_2F,
     MAP_KEY_ROUTE_29,
+    MAP_KEY_ROUTE_30,
+    MAP_KEY_ROUTE_31,
+    MAP_KEY_VIOLET_CITY,
+    MAP_KEY_VIOLET_GYM,
     PLAYERS_HOUSE_1F_DOOR,
 )
 from src.state.models import GameState
@@ -590,11 +594,14 @@ EARLY_GAME_OBJECTIVES = {
     MAP_KEY_PLAYERS_HOUSE_1F: "Talk to Mom and leave through the front door to New Bark Town",
     MAP_KEY_NEW_BARK_TOWN: "Visit Professor Elm's lab and choose a starter Pokemon",
     "24:5": "Talk to Elm, choose a starter Pokemon, receive Potion",
-    MAP_KEY_ROUTE_29: "Travel north through Route 29 toward Cherrygrove City",
-    MAP_KEY_CHERRYGROVE_CITY: "Explore Cherrygrove and continue toward Violet City",
+    MAP_KEY_ROUTE_29: "Travel west through Route 29 toward Cherrygrove City",
+    MAP_KEY_ROUTE_30: "Travel Route 30 toward Route 31 and Violet City",
+    MAP_KEY_ROUTE_31: "Cross Route 31 west into Violet City",
+    MAP_KEY_CHERRYGROVE_CITY: "Leave Cherrygrove north toward Route 30/31 and Violet City",
+    MAP_KEY_MR_POKEMONS_HOUSE: "Talk to Mr. Pokemon and receive the Mystery Egg from Oak",
+    MAP_KEY_VIOLET_CITY: "Find and enter Violet Gym (first gym)",
+    MAP_KEY_VIOLET_GYM: "First gym reached — challenge Falkner when ready",
     "26:10": "Talk to Mr. Pokemon and receive the Mystery Egg from Oak",
-    "1:2": "Visit Pokemon Center and continue toward Violet City",
-    "1:4": "Challenge Violet City gym (first badge goal)",
 }
 
 
@@ -1253,7 +1260,7 @@ def memory_node(state: AgentState) -> AgentState:
             house_exit.on_house_exit_complete(state, gs)
         elif milestone == starter_quest.MILESTONE_RIVAL_BATTLE:
             starter_quest.on_starter_quest_complete(state, gs)
-        elif milestone == early_progression.MILESTONE_REACHED_CHERRYGROVE:
+        elif milestone == early_progression.MILESTONE_ENTERED_FIRST_GYM:
             early_progression.on_early_progression_complete(state, gs)
 
     if milestone == starter_quest.MILESTONE_ENTERED_LAB and not landmark_known(
@@ -1291,12 +1298,9 @@ def _check_milestone(
         return quest
     if gs.map_key == MAP_KEY_ROUTE_29 and maps_visited.count(MAP_KEY_ROUTE_29) == 1:
         return "Reached Route 29"
-    if gs.map_key == early_progression.MAP_KEY_CHERRYGROVE_CITY and maps_visited.count(
-        early_progression.MAP_KEY_CHERRYGROVE_CITY
-    ) == 1:
-        return early_progression.MILESTONE_REACHED_CHERRYGROVE
-    if gs.map_key == "1:4" and maps_visited.count("1:4") == 1:
-        return "Reached Violet City"
+    progress = early_progression.progression_milestone(gs, maps_visited)
+    if progress and progress not in earned:
+        return progress
     if gs.battle.in_battle and gs.battle.phase.value == "wild":
         wild_key = "wild_encounter"
         if wild_key not in state.get("milestones", []):

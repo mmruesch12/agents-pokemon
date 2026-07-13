@@ -590,7 +590,11 @@ def seed_route_29_agent_state(
     state["bootstrap_action_index"] = INDOOR_BOOTSTRAP_ACTIONS
     state["movement_observed"] = True
     state["house_exit_complete"] = True
-    state["starter_quest_complete"] = False
+    # Post-rival Route 29 snapshots (egg already delivered) enter early progression.
+    meta = gs.raw_metadata or {}
+    post_rival = bool(meta.get("egg_delivered"))
+    state["starter_quest_complete"] = post_rival
+    state["early_progression_complete"] = False
     state["should_replan"] = False
     state["stuck_count"] = 0
     state["maps_visited"] = [
@@ -601,13 +605,22 @@ def seed_route_29_agent_state(
         MAP_KEY_ROUTE_29,
     ]
     milestones = list(state.get("milestones", []))
-    for milestone in (
+    base_milestones = [
         "Reached Player's House 1F",
         HOUSE_EXIT_MILESTONE,
         starter_quest.MILESTONE_ENTERED_LAB,
         starter_quest.MILESTONE_CHOSE_STARTER,
         "Reached Route 29",
-    ):
+    ]
+    if post_rival:
+        base_milestones.extend(
+            [
+                starter_quest.MILESTONE_MR_POKEMON,
+                starter_quest.MILESTONE_EGG_DELIVERED,
+                starter_quest.MILESTONE_RIVAL_BATTLE,
+            ]
+        )
+    for milestone in base_milestones:
         if milestone not in milestones:
             milestones.append(milestone)
     state["milestones"] = milestones
@@ -618,7 +631,12 @@ def seed_route_29_agent_state(
         state["pocket_stuck_count"] = 0
         state["pocket_nav_positions"] = []
     seed_static_map_landmarks(state)
-    starter_quest.sync_subgoals(gs, state)
+    if post_rival:
+        from src.graph.phases import early_progression
+
+        early_progression.sync_subgoals(gs, state)
+    else:
+        starter_quest.sync_subgoals(gs, state)
     return state
 
 

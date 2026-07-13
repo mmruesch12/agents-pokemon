@@ -6,9 +6,13 @@ import pytest
 
 from src.graph.quest_geography import retired_geography_landmark_id
 from src.memory.landmarks import (
+    CHERRYGROVE_NORTH_EXIT_ID,
     NEW_BARK_WEST_EXIT_ID,
     ROUTE_29_NORTH_GATE_ID,
     ROUTE_30_NORTH_GATE_ID,
+    ROUTE_30_TO_ROUTE_31_ID,
+    ROUTE_31_WEST_GATE_ID,
+    VIOLET_GYM_ENTRANCE_ID,
 )
 from src.state.models import GameState
 
@@ -67,6 +71,30 @@ def _state(**kwargs) -> dict:
             {"has_starter": True, "has_mystery_egg": True, "egg_delivered": True},
             {"starter_quest_complete": True},
             NEW_BARK_WEST_EXIT_ID,
+        ),
+        (
+            {"map_group": 26, "map_id": 1, "x": 10, "y": 8},
+            {"has_starter": True},
+            {"starter_quest_complete": True},
+            ROUTE_30_TO_ROUTE_31_ID,
+        ),
+        (
+            {"map_group": 26, "map_id": 3, "x": 17, "y": 5},
+            {"has_starter": True},
+            {"starter_quest_complete": True},
+            CHERRYGROVE_NORTH_EXIT_ID,
+        ),
+        (
+            {"map_group": 26, "map_id": 2, "x": 10, "y": 8},
+            {"has_starter": True},
+            {"starter_quest_complete": True},
+            ROUTE_31_WEST_GATE_ID,
+        ),
+        (
+            {"map_group": 10, "map_id": 5, "x": 10, "y": 12},
+            {"has_starter": True},
+            {"starter_quest_complete": True},
+            VIOLET_GYM_ENTRANCE_ID,
         ),
     ],
 )

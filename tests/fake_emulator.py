@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from src.state.gold_state_reader import (
     MAP_CHERRYGROVE_CITY,
-    MAPGROUP_JOHTO_CITIES,
+    MAP_ROUTE_31,
+    MAP_VIOLET_CITY,
+    MAP_VIOLET_GYM,
+    MAPGROUP_CHERRYGROVE,
+    MAPGROUP_VIOLET,
     ADDR_BATTLE_MODE,
     ADDR_ENEMY_HP,
     ADDR_ENEMY_MAX_HP,
@@ -107,6 +111,7 @@ class MutableRamEmulator:
             return
         if not _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM):
             return
+        # Simplified corridor warps for ROM-free progression tests (not full ROM graph).
         if group == MAPGROUP_NEW_BARK and map_id == MAP_ROUTE_29 and y <= 5:
             self._memory[ADDR_MAP_GROUP] = MAPGROUP_JOHTO_ROUTES
             self._memory[ADDR_MAP_NUMBER] = MAP_ROUTE_30
@@ -114,10 +119,38 @@ class MutableRamEmulator:
             self._memory[ADDR_Y_COORD] = 12
             return
         if group == MAPGROUP_JOHTO_ROUTES and map_id == MAP_ROUTE_30 and y <= 3:
-            self._memory[ADDR_MAP_GROUP] = MAPGROUP_JOHTO_CITIES
+            # North of Route 30 → Cherrygrove (simplified; real ROM south is Cherry).
+            self._memory[ADDR_MAP_GROUP] = MAPGROUP_CHERRYGROVE
             self._memory[ADDR_MAP_NUMBER] = MAP_CHERRYGROVE_CITY
-            self._memory[ADDR_X_COORD] = 20
-            self._memory[ADDR_Y_COORD] = 20
+            self._memory[ADDR_X_COORD] = 17
+            self._memory[ADDR_Y_COORD] = 5
+            return
+        if (
+            group == MAPGROUP_CHERRYGROVE
+            and map_id == MAP_CHERRYGROVE_CITY
+            and y <= 0
+        ):
+            self._memory[ADDR_MAP_GROUP] = MAPGROUP_JOHTO_ROUTES
+            self._memory[ADDR_MAP_NUMBER] = MAP_ROUTE_31
+            self._memory[ADDR_X_COORD] = 15
+            self._memory[ADDR_Y_COORD] = 8
+            return
+        if group == MAPGROUP_JOHTO_ROUTES and map_id == MAP_ROUTE_31 and x <= 0:
+            self._memory[ADDR_MAP_GROUP] = MAPGROUP_VIOLET
+            self._memory[ADDR_MAP_NUMBER] = MAP_VIOLET_CITY
+            self._memory[ADDR_X_COORD] = 10
+            self._memory[ADDR_Y_COORD] = 17
+            return
+        if (
+            group == MAPGROUP_VIOLET
+            and map_id == MAP_VIOLET_CITY
+            and x >= 18
+            and y >= 17
+        ):
+            self._memory[ADDR_MAP_GROUP] = MAPGROUP_VIOLET
+            self._memory[ADDR_MAP_NUMBER] = MAP_VIOLET_GYM
+            self._memory[ADDR_X_COORD] = 4
+            self._memory[ADDR_Y_COORD] = 7
 
     def advance_frames(self, n: int = 1) -> int:
         self._frame_count += n
