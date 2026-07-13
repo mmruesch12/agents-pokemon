@@ -203,6 +203,9 @@ def test_mom_scene_reset_only_during_house_mom_scene():
         house_state, "interact_a", house_gs.position_key, house_gs
     )
     assert house_state["stuck_count"] == 0
+    # MeetMom does not accumulate stall counters (would false-trigger post-Mom escape).
+    assert house_state.get("interact_no_progress_count", 0) == 0
+    assert house_state.get("interact_stall_escape") is not True
 
     lab_gs = GameState(
         player={"map_group": 24, "map_id": 5, "x": 5, "y": 3},

@@ -46,16 +46,19 @@ def mom_scene_pending(gs: GameState) -> bool:
 
 
 def needs_house_interaction(gs: GameState, state: dict[str, Any]) -> bool:
-    """Extra interact signals while on 1F (beyond generic dialog detection)."""
-    if gs.map_key != MAP_KEY_PLAYERS_HOUSE_1F:
-        return False
-    if mom_scene_pending(gs):
-        return True
-    return state.get("stuck_count", 0) >= INDOOR_INTERACT_STUCK
+    """Extra interact signals while on 1F (beyond generic dialog detection).
+
+    Only MeetMom: player is locked at entry until the event flag sets.
+    Post-Mom stuck A-spam is handled by generic_interact stall recovery, not
+    phase force-interact (avoids permanent A on sticky SCRIPT_READ residue).
+    """
+    del state  # phase no longer uses stuck_count for force-A after Mom
+    return mom_scene_pending(gs)
 
 
 def force_interactor(gs: GameState, state: dict[str, Any]) -> bool:
     """Supervisor must route to interactor (Mom scene not finished)."""
+    # Do not apply stall recovery here: player cannot leave (9,1) until Mom completes.
     return mom_scene_pending(gs)
 
 
@@ -81,9 +84,11 @@ def navigation_target(
 ) -> tuple[int, int] | None:
     """Navigation target for house maps; None defers to default explorer logic."""
     map_key = map_key or gs.map_key
+    del state  # reserved for future landmark-driven targets
     if map_key == MAP_KEY_PLAYERS_HOUSE_2F:
         return STAIRS_2F
     if map_key == MAP_KEY_PLAYERS_HOUSE_1F:
+        # MeetMom holds the player at entry; movement targets only after the flag.
         if mom_scene_pending(gs):
             return (gs.player.x, gs.player.y)
         pos = (gs.player.x, gs.player.y)
@@ -116,13 +121,24 @@ def blocked_stairs_up(gs: GameState) -> bool:
     return gs.player.x >= 9 and gs.player.y <= 1
 
 
-def prefer_interact_candidate(gs: GameState) -> bool:
+def prefer_interact_candidate(
+    gs: GameState, state: dict[str, Any] | None = None
+) -> bool:
+    state = state or {}
+    from src.graph.generic_interact import interact_stall_recovery_active
+
+    if interact_stall_recovery_active(gs, state):
+        return False
     if gs.in_text_box or mom_scene_pending(gs):
         return True
     return False
 
 
 def stuck_interact_fallback(gs: GameState, state: dict[str, Any]) -> bool:
+    from src.graph.generic_interact import interact_stall_recovery_active
+
+    if interact_stall_recovery_active(gs, state):
+        return False
     return (
         gs.map_key == MAP_KEY_PLAYERS_HOUSE_1F
         and state.get("stuck_count", 0) >= INDOOR_INTERACT_STUCK

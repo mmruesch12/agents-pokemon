@@ -11,11 +11,15 @@ from src.emulator.bootstrap import needs_bootstrap, pick_bootstrap_button
 from src.graph.generic_interact import (
     INDOOR_NAV_STUCK_MAPS,
     INTERACT_NO_PROGRESS_RECOVERY,
+    INTERACT_STALL_STREAK,
+    arm_interact_stall_escape,
+    clear_interact_stall_escape,
     clear_pocket_stuck,
     generic_force_interactor,
     generic_is_interact_needed,
     generic_prefer_interact_candidate,
     generic_stuck_interact_fallback,
+    interact_stall_recovery_active,
     outdoor_interact_recovery_active,
     in_navigation_pocket,
     record_pocket_nav_failure,
@@ -453,9 +457,13 @@ def _interact_candidate_justified(
     """True when 'a' is in candidates for ROM signal, stuck fallback, or blocked-ahead."""
     if "a" not in candidates:
         return False
-    if outdoor_interact_recovery_active(gs, state):
+    if outdoor_interact_recovery_active(gs, state) or interact_stall_recovery_active(
+        gs, state
+    ):
         return False
-    if generic_prefer_interact_candidate(gs, state) or house_exit.prefer_interact_candidate(gs):
+    if generic_prefer_interact_candidate(gs, state) or house_exit.prefer_interact_candidate(
+        gs, state
+    ):
         return True
     if house_exit.stuck_interact_fallback(gs, state) or generic_stuck_interact_fallback(
         gs, state
@@ -681,11 +689,14 @@ def needs_interaction(gs: GameState, state: dict | None = None) -> bool:
         return False
     if needs_script_wait(gs, state):
         return False
-    if outdoor_interact_recovery_active(gs, state):
-        return False
     starter_quest.ensure_house_exit_complete(gs, state)
+    # Phase-forced scenes (MeetMom) beat stall recovery — movement is locked.
     if house_exit.needs_house_interaction(gs, state):
         return True
+    if outdoor_interact_recovery_active(gs, state) or interact_stall_recovery_active(
+        gs, state
+    ):
+        return False
     return generic_is_interact_needed(gs, state)
 
 
@@ -808,8 +819,10 @@ def planner_node(state: AgentState) -> AgentState:
     state["should_replan"] = False
     state["last_action"] = "plan_replan"
     state["last_action_result"] = {"subgoals": subgoals}
-    if generic_is_interact_needed(gs, state) and not outdoor_interact_recovery_active(
-        gs, state
+    if house_exit.force_interactor(gs, state) or (
+        generic_is_interact_needed(gs, state)
+        and not outdoor_interact_recovery_active(gs, state)
+        and not interact_stall_recovery_active(gs, state)
     ):
         state["phase"] = "interact"
         state["next_node"] = "interactor"
@@ -979,17 +992,20 @@ def _navigation_candidates(
             candidates.append(step)
     if primary != "a" and primary not in candidates and primary in cardinals:
         candidates.append(primary)
-    if not outdoor_interact_recovery_active(gs, state) and (
-        house_exit.prefer_interact_candidate(gs)
+    recovery = outdoor_interact_recovery_active(
+        gs, state
+    ) or interact_stall_recovery_active(gs, state)
+    if not recovery and (
+        house_exit.prefer_interact_candidate(gs, state)
         or generic_prefer_interact_candidate(gs, state)
     ):
         candidates.insert(0, "a")
-    elif not outdoor_interact_recovery_active(gs, state) and (
+    elif not recovery and (
         house_exit.stuck_interact_fallback(gs, state)
         or generic_stuck_interact_fallback(gs, state)
     ):
         candidates.append("a")
-    elif at_target_blocked_ahead_interact_eligible(
+    elif not recovery and at_target_blocked_ahead_interact_eligible(
         gs.map_key,
         gs.player.x,
         gs.player.y,
@@ -1442,6 +1458,8 @@ def _update_stuck_from_movement(
         clear_pocket_stuck(state)
         state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
         state["interact_no_progress_count"] = 0
+        state["interact_stall_escape_fails"] = 0
+        clear_interact_stall_escape(state)
         if gs is not None:
             parsed = parse_position_key(pos_after)
             if parsed is not None:
@@ -1451,6 +1469,16 @@ def _update_stuck_from_movement(
                     record_session_blocked(state, map_key, x, y)
             _mark_replan_recovery(state, gs, pos_before, pos_after)
         return
+    # Failed move while stall-escape is latched: player may still be script-locked
+    # (e.g. post-Mom EVENT flag set but dialog/movement hold remains). After a few
+    # failures, drop the latch so interactor can finish remaining dialog.
+    if state.get("interact_stall_escape"):
+        fails = int(state.get("interact_stall_escape_fails", 0)) + 1
+        state["interact_stall_escape_fails"] = fails
+        if fails >= 3:
+            clear_interact_stall_escape(state)
+            state["interact_stall_escape_fails"] = 0
+            state["interact_no_progress_count"] = 0
     state["stuck_count"] = state.get("stuck_count", 0) + 1
     if gs is not None:
         parsed_before = parse_position_key(pos_before)
@@ -1499,7 +1527,26 @@ def _script_progress_key(gs: GameState) -> tuple[Any, ...]:
         gs.in_text_box,
         meta.get("script_mode"),
         gs.battle.in_battle,
+        bool(meta.get("in_script")),
+        bool(meta.get("script_active")),
     )
+
+
+def _meaningful_script_progress(
+    pre_key: tuple[Any, ...] | None, post_key: tuple[Any, ...]
+) -> bool:
+    """True when dialog/script state advanced — not pure script_pos jitter.
+
+    Compares in_text_box / script_mode / in_battle (key[1:4]) so legacy 4-tuples
+    and extended keys both work. script_pos-only changes do not count.
+    """
+    if pre_key is None:
+        return False
+    if pre_key == post_key:
+        return False
+    if len(pre_key) < 4 or len(post_key) < 4:
+        return pre_key != post_key
+    return pre_key[1:4] != post_key[1:4]
 
 
 def _update_stuck_from_interaction(
@@ -1513,19 +1560,25 @@ def _update_stuck_from_interaction(
     meta = gs.raw_metadata or {}
     pre_key = state.pop("pre_action_script_key", None)
     post_key = _script_progress_key(gs)
-    script_progressed = pre_key is not None and pre_key != post_key
+    script_progressed = _meaningful_script_progress(pre_key, post_key)
     if house_exit.mom_scene_pending(gs):
-        state["stuck_count"] = 0
+        # MeetMom is pure A until the event flag. Do not accumulate stall counters
+        # or arm nav escape — movement is locked at entry, and a high count would
+        # immediately fire recovery on the first post-Mom step while dialog remains.
         state["phase"] = "explore"
+        state["stuck_count"] = 0
         state["interact_no_progress_count"] = 0
+        clear_interact_stall_escape(state)
         return
     if pos_before != gs.position_key:
         state["stuck_count"] = max(0, state.get("stuck_count", 0) - 2)
         state["interact_no_progress_count"] = 0
+        clear_interact_stall_escape(state)
         _mark_replan_recovery(state, gs, pos_before, gs.position_key)
     elif script_progressed:
         state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
         state["interact_no_progress_count"] = 0
+        clear_interact_stall_escape(state)
         if (
             pre_key is not None
             and pre_key[1]
@@ -1537,11 +1590,15 @@ def _update_stuck_from_interaction(
                 map_key, x, y = parsed
                 record_session_blocked(state, map_key, x, y)
     elif gs.in_text_box or bool(meta.get("in_script")):
-        if pre_key == post_key:
+        # No meaningful progress (same flags or script_pos-only jitter).
+        # Missing pre_key keeps legacy soft-progress (stuck--) for unit fixtures.
+        if pre_key is not None and not script_progressed:
             state["interact_no_progress_count"] = (
                 state.get("interact_no_progress_count", 0) + 1
             )
             state["stuck_count"] = state.get("stuck_count", 0) + 1
+            if state["interact_no_progress_count"] >= INTERACT_STALL_STREAK:
+                arm_interact_stall_escape(state)
             parsed = parse_position_key(gs.position_key)
             if parsed is not None:
                 map_key, x, y = parsed
@@ -1550,3 +1607,8 @@ def _update_stuck_from_interaction(
             state["stuck_count"] = max(0, state.get("stuck_count", 0) - 1)
     else:
         state["stuck_count"] = state.get("stuck_count", 0) + 1
+        state["interact_no_progress_count"] = (
+            state.get("interact_no_progress_count", 0) + 1
+        )
+        if state["interact_no_progress_count"] >= INTERACT_STALL_STREAK:
+            arm_interact_stall_escape(state)

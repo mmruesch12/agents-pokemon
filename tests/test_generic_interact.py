@@ -6,13 +6,15 @@ from src.graph.generic_interact import (
     dialog_or_script_active,
     generic_is_interact_needed,
     generic_stuck_interact_fallback,
+    interact_stall_recovery_active,
     is_rom_interact_signal,
     navigate_stuck_at_tile,
 )
-from src.graph.nodes import needs_interaction, supervisor_node
+from src.graph.nodes import needs_interaction, navigator_node, supervisor_node
 from src.graph.phases import starter_quest
 from src.graph.state import initial_agent_state
 from src.state.models import GameState
+from src.state.script_constants import SCRIPT_READ
 
 
 def _gs(**kwargs) -> GameState:
@@ -89,3 +91,161 @@ def test_starter_quest_has_no_lab_phase_enum():
 def test_navigation_target_returns_none():
     gs = _gs(raw_metadata={"has_starter": False})
     assert starter_quest.navigation_target(gs) is None
+
+
+def test_script_read_alone_without_active_script_is_not_interact_signal():
+    """Idle SCRIPT_READ residue must not force permanent A spam."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=False,
+        raw_metadata={
+            "script_mode": SCRIPT_READ,
+            "script_active": False,
+            "in_script": False,
+            "joypad_disable": 0,
+            "mom_scene_complete": True,
+        },
+    )
+    assert is_rom_interact_signal(gs) is False
+    assert needs_interaction(gs, {"bootstrap_complete": True, "stuck_count": 0}) is False
+
+
+def test_interact_stall_recovery_breaks_sticky_indoor_dialog_flags():
+    """Post-Mom sticky in_script + fruitless same-tile A streak → navigate."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=True,
+        raw_metadata={
+            "script_mode": SCRIPT_READ,
+            "script_active": True,
+            "in_script": True,
+            "joypad_disable": 0,
+            "mom_scene_complete": True,
+        },
+    )
+    state = initial_agent_state(gs)
+    state["bootstrap_complete"] = True
+    # Require no-progress count (not history alone) so live post-Mom dialog finishes.
+    state["interact_no_progress_count"] = 8
+    state["short_term_history"] = ["interact:a@9,1"] * 5
+    assert interact_stall_recovery_active(gs, state) is True
+    assert needs_interaction(gs, state) is False
+    assert generic_is_interact_needed(gs, state) is False
+    result = supervisor_node(state)
+    assert result["next_node"] == "navigator"
+
+
+def test_post_mom_short_interact_streak_does_not_escape():
+    """Brief post-Mom A presses must not nav-escape (live follow-up dialog)."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=True,
+        raw_metadata={
+            "script_mode": SCRIPT_READ,
+            "script_active": True,
+            "in_script": True,
+            "joypad_disable": 0,
+            "mom_scene_complete": True,
+        },
+    )
+    state = initial_agent_state(gs)
+    state["bootstrap_complete"] = True
+    state["interact_no_progress_count"] = 0
+    # Shorter than INTERACT_STALL_STREAK (8) — still finish dialog with A.
+    state["short_term_history"] = ["interact:a@9,1"] * 5
+    assert interact_stall_recovery_active(gs, state) is False
+    assert needs_interaction(gs, state) is True
+
+
+def test_mom_history_alone_does_not_arm_recovery_after_flag():
+    """MeetMom A spam in history must not arm escape the instant the flag sets."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=True,
+        raw_metadata={
+            "script_mode": SCRIPT_READ,
+            "script_active": True,
+            "in_script": True,
+            "joypad_disable": 0,
+            "mom_scene_complete": True,
+        },
+    )
+    state = initial_agent_state(gs)
+    state["bootstrap_complete"] = True
+    state["interact_no_progress_count"] = 0
+    state["short_term_history"] = ["interact:a@9,1"] * 17
+    assert interact_stall_recovery_active(gs, state) is False
+    assert needs_interaction(gs, state) is True
+
+
+def test_joypad_blocked_suppresses_interact_stall_recovery():
+    """Hard joypad disable means navigation cannot succeed — keep interacting."""
+    from src.state.script_constants import JOYPAD_DISABLE_INPUT_MASK
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=True,
+        raw_metadata={
+            "script_mode": SCRIPT_READ,
+            "script_active": True,
+            "in_script": True,
+            "joypad_disable": JOYPAD_DISABLE_INPUT_MASK,
+            "mom_scene_complete": True,
+        },
+    )
+    state = initial_agent_state(gs)
+    state["bootstrap_complete"] = True
+    state["interact_no_progress_count"] = 20
+    state["short_term_history"] = ["interact:a@9,1"] * 8
+    state["interact_stall_escape"] = True
+    assert interact_stall_recovery_active(gs, state) is False
+    assert needs_interaction(gs, state) is True
+
+
+def test_navigator_prefers_path_not_a_after_interact_stall():
+    """After interact stall recovery, navigator must not force navigate_a."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=False,
+        raw_metadata={
+            "script_mode": SCRIPT_READ,
+            "script_active": True,
+            "in_script": True,
+            "joypad_disable": 0,
+            "mom_scene_complete": True,
+        },
+    )
+    state = initial_agent_state(gs)
+    state["bootstrap_complete"] = True
+    state["interact_no_progress_count"] = 8
+    state["short_term_history"] = ["interact:a@9,1"] * 6
+    state["stuck_count"] = 3
+    result = navigator_node(state)
+    assert result["last_action"].startswith("navigate_")
+    assert result["last_action"] != "navigate_a"
+    assert "a" not in result["last_action_result"]["candidates"][:1]
+
+
+def test_interact_stall_escape_latches_through_mixed_history():
+    """One navigate attempt must not re-arm force-interact A spam."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=True,
+        raw_metadata={
+            "script_mode": SCRIPT_READ,
+            "script_active": True,
+            "in_script": True,
+            "joypad_disable": 0,
+            "mom_scene_complete": True,
+        },
+    )
+    state = initial_agent_state(gs)
+    state["bootstrap_complete"] = True
+    state["interact_no_progress_count"] = 8
+    state["short_term_history"] = ["interact:a@9,1"] * 5
+    assert interact_stall_recovery_active(gs, state) is True
+    assert state.get("interact_stall_escape") is True
+    # Mixed history would break pure interact-streak detection without latch.
+    state["short_term_history"] = ["interact:a@9,1"] * 4 + ["navigate:down@9,1"]
+    assert interact_stall_recovery_active(gs, state) is True
+    assert needs_interaction(gs, state) is False

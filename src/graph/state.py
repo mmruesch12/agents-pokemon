@@ -35,6 +35,7 @@ class AgentState(TypedDict, total=False):
     metrics: dict[str, Any]
     stuck_count: int
     interact_no_progress_count: int
+    interact_stall_escape: bool
     pocket_stuck_count: int
     pocket_nav_positions: list[str]
     session_id: str
@@ -86,6 +87,7 @@ def initial_agent_state(game_state: GameState | dict | None = None) -> AgentStat
         metrics={"steps": 0, "badges_earned": 0, "battles_won": 0},
         stuck_count=0,
         interact_no_progress_count=0,
+        interact_stall_escape=False,
         pocket_stuck_count=0,
         pocket_nav_positions=[],
         session_id="",

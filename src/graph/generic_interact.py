@@ -17,6 +17,9 @@ INDOOR_INTERACT_STUCK = int(os.getenv("INDOOR_INTERACT_STUCK", "2"))
 INTERACT_NO_PROGRESS_RECOVERY = int(
     os.getenv("INTERACT_NO_PROGRESS_RECOVERY", "22")
 )
+# Faster escape for same-tile A-spam when script flags stay sticky (e.g. post-Mom).
+INTERACT_STALL_STREAK = int(os.getenv("INTERACT_STALL_STREAK", "8"))
+INTERACT_STALL_MIN_HISTORY = int(os.getenv("INTERACT_STALL_MIN_HISTORY", "5"))
 POCKET_STUCK_MAX_POSITIONS = 4
 
 INDOOR_NAV_STUCK_MAPS = frozenset(
@@ -45,10 +48,83 @@ def joypad_blocked_facing_object(gs: GameState) -> bool:
     return dialog_or_script_active(gs)
 
 
+def _same_tile_interact_streak(history: list[str], *, min_count: int) -> bool:
+    """True when the last min_count history entries are interact at one tile."""
+    if len(history) < min_count:
+        return False
+    positions: set[str] = set()
+    for item in history[-min_count:]:
+        if "@" not in item:
+            return False
+        action, pos = item.split("@", 1)
+        if action.split(":")[0] != "interact":
+            return False
+        positions.add(pos)
+    return len(positions) == 1
+
+
+def arm_interact_stall_escape(state: dict[str, Any]) -> None:
+    """Latch navigation preference until clear_interact_stall_escape."""
+    state["interact_stall_escape"] = True
+
+
+def clear_interact_stall_escape(state: dict[str, Any]) -> None:
+    state["interact_stall_escape"] = False
+
+
+def interact_stall_recovery_active(gs: GameState, state: dict[str, Any]) -> bool:
+    """Prefer navigation after unproductive interact spam (indoor or outdoor).
+
+    Covers sticky SCRIPT_READ / in_script residue after a scene ends: A no longer
+    advances meaningful dialog, but ROM flags still look like dialog is active.
+
+    Once armed (interact_stall_escape), recovery stays latched through mixed
+    navigate/interact history until position or script progress clears it —
+    otherwise a single navigate attempt breaks the interact streak and forces A again.
+
+    Guards:
+    - MeetMom pending: movement is locked; never nav-escape mid-scene.
+    - Joypad hard-disabled: movement cannot succeed; keep A/B.
+    - Require interact_no_progress_count + same-tile streak (not history alone) so
+      post-Mom live dialog after EVENT_PLAYERS_HOUSE_MOM_1 still finishes with A.
+    """
+    meta = _meta(gs)
+    # Never escape while MeetMom is still pending — movement is locked at entry.
+    if gs.map_key == MAP_KEY_PLAYERS_HOUSE_1F and not meta.get("mom_scene_complete"):
+        if state.get("interact_stall_escape"):
+            clear_interact_stall_escape(state)
+        return False
+    joypad_disable = meta.get("joypad_disable", 0)
+    if joypad_input_blocked(joypad_disable):
+        # Cannot leave the tile while pret skips joypad — keep interacting.
+        if state.get("interact_stall_escape"):
+            clear_interact_stall_escape(state)
+        return False
+    if state.get("interact_stall_escape"):
+        return True
+    count = state.get("interact_no_progress_count", 0)
+    history = list(state.get("short_term_history", []))
+    same = _same_tile_interact_streak(
+        history, min_count=INTERACT_STALL_MIN_HISTORY
+    )
+    # Require no-progress count — history alone is wrong because MeetMom fills
+    # short_term_history with interacts, then the event flag flips while the
+    # player is still movement-locked for remaining dialog.
+    if count >= INTERACT_STALL_STREAK and same:
+        arm_interact_stall_escape(state)
+        return True
+    if count >= INTERACT_NO_PROGRESS_RECOVERY and not is_rom_interact_signal(gs):
+        arm_interact_stall_escape(state)
+        return True
+    return False
+
+
 def outdoor_interact_recovery_active(gs: GameState, state: dict[str, Any]) -> bool:
-    """Outdoor maps: prefer navigation only after ROM no longer expects dialog input."""
+    """Outdoor maps: prefer navigation after unproductive interact spam."""
     if gs.map_key in INDOOR_NAV_STUCK_MAPS:
         return False
+    if interact_stall_recovery_active(gs, state):
+        return True
     if is_rom_interact_signal(gs):
         return False
     return state.get("interact_no_progress_count", 0) >= INTERACT_NO_PROGRESS_RECOVERY
@@ -61,7 +137,9 @@ def is_rom_interact_signal(gs: GameState) -> bool:
     blocked = joypad_input_blocked(joypad_disable)
     if dialog_or_script_active(gs) and not blocked:
         return True
-    if meta.get("script_mode") == SCRIPT_READ and not blocked:
+    # SCRIPT_READ alone is idle residue; require an active script bit.
+    script_live = bool(meta.get("script_active") or meta.get("in_script"))
+    if meta.get("script_mode") == SCRIPT_READ and script_live and not blocked:
         return True
     if joypad_blocked_facing_object(gs):
         return True
@@ -137,13 +215,15 @@ def navigate_stuck_at_tile(gs: GameState, state: dict[str, Any]) -> bool:
 
 def generic_is_interact_needed(gs: GameState, state: dict[str, Any]) -> bool:
     """True when ROM signals expect A/B instead of movement."""
-    del state
+    if interact_stall_recovery_active(gs, state):
+        return False
     return is_rom_interact_signal(gs)
 
 
 def generic_force_interactor(gs: GameState, state: dict[str, Any]) -> bool:
     """Supervisor must route to interactor before navigator (active dialog/script)."""
-    del state
+    if interact_stall_recovery_active(gs, state):
+        return False
     return is_rom_interact_signal(gs)
 
 
@@ -158,6 +238,8 @@ def _standing_on_session_blocked_tile(gs: GameState, state: dict[str, Any]) -> b
 
 def generic_prefer_interact_candidate(gs: GameState, state: dict[str, Any]) -> bool:
     """Navigator should offer interact when ROM signals expect dialog input."""
+    if interact_stall_recovery_active(gs, state):
+        return False
     if _standing_on_session_blocked_tile(gs, state):
         return False
     return is_rom_interact_signal(gs)
@@ -165,6 +247,8 @@ def generic_prefer_interact_candidate(gs: GameState, state: dict[str, Any]) -> b
 
 def generic_stuck_interact_fallback(gs: GameState, state: dict[str, Any]) -> bool:
     """Append interact candidate after navigate stuck — indoor maps only."""
+    if interact_stall_recovery_active(gs, state):
+        return False
     if is_rom_interact_signal(gs) and not _standing_on_session_blocked_tile(gs, state):
         return True
     if gs.map_key in INDOOR_NAV_STUCK_MAPS:
