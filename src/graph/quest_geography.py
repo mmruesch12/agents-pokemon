@@ -56,6 +56,9 @@ def retired_geography_landmark_id(gs: GameState, state: dict[str, Any]) -> str |
         return NEW_BARK_WEST_EXIT_ID
     if gs.map_key == MAP_KEY_ROUTE_29:
         return ROUTE_29_NORTH_GATE_ID
+    if gs.map_key == MAP_KEY_CHERRYGROVE_CITY:
+        # Pre-egg: Cherrygrove is on the Mr. Pokemon path (north → Route 30).
+        return CHERRYGROVE_NORTH_EXIT_ID
     if gs.map_key == MAP_KEY_ROUTE_30:
         return ROUTE_30_NORTH_GATE_ID
     return None

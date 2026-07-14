@@ -10,6 +10,7 @@ from src.emulator.bootstrap import seed_bedroom_agent_state
 from src.graph.llm import llm_navigate
 from src.graph.navigation_resolve import resolve_landmark_navigation_target
 from src.graph.nodes import _navigation_target, memory_node, navigator_node
+from src.graph.pathfinding import MAP_LANDMARK_ANCHORS
 from src.graph.state import initial_agent_state
 from src.memory.landmarks import (
     ELMS_LAB_ENTRANCE_ID,
@@ -373,13 +374,13 @@ def test_navigation_wrong_map_west_landmark_uses_frontier():
             landmark_id=ROUTE_29_NORTH_GATE_ID,
             name="Route 29 north gate",
             map_key="24:3",
-            x=10,
-            y=5,
+            x=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"][0],
+            y=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"][1],
             kind="map_visit",
         ),
     ]
     target = _navigation_target(gs, state=state)
-    assert target == (10, 5)
+    assert target == MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"]
     assert target != (0, 8)
 
 
@@ -406,8 +407,8 @@ def test_hydrate_state_enables_west_exit_navigation():
                 landmark_id=ROUTE_29_NORTH_GATE_ID,
                 name="Route 29 north gate",
                 map_key="24:3",
-                x=10,
-                y=5,
+                x=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"][0],
+                y=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"][1],
                 kind="map_visit",
             )
         )
@@ -421,8 +422,8 @@ def test_hydrate_state_enables_west_exit_navigation():
             party_count=1,
         )
         hydrated_route = mem.hydrate_state({**hydrated, "game_state": gs_route.model_dump()})
-        assert _navigation_target(gs_route, state=hydrated_route) == (10, 5)
-        assert _navigation_target(gs_route, state=hydrated_route) == (10, 5)
+        assert _navigation_target(gs_route, state=hydrated_route) == MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"]
+        assert _navigation_target(gs_route, state=hydrated_route) == MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"]
 
 
 def test_hydrate_mr_entrance_enables_interior_navigation():
@@ -525,12 +526,12 @@ def test_navigation_uses_route_29_landmark():
             landmark_id=ROUTE_29_NORTH_GATE_ID,
             name="Route 29 north gate",
             map_key="24:3",
-            x=10,
-            y=5,
+            x=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"][0],
+            y=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"][1],
             kind="map_visit",
         )
     ]
-    assert _navigation_target(gs, state=state) == (10, 5)
+    assert _navigation_target(gs, state=state) == MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"]
 
 
 def test_exploration_hint_targets_lab_warp():

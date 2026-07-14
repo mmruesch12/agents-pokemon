@@ -57,8 +57,10 @@ def test_read_party_infers_count_when_species_present():
     mem = {
         ADDR_PARTY_COUNT: 0,
         ADDR_PARTY_SPECIES: 158,
-        ADDR_PARTY_MON1 + PARTYMON_HP_OFFSET: 20,
-        ADDR_PARTY_MON1 + PARTYMON_HP_OFFSET + 2: 20,
+        ADDR_PARTY_MON1 + PARTYMON_HP_OFFSET: 0,
+        ADDR_PARTY_MON1 + PARTYMON_HP_OFFSET + 1: 20,
+        ADDR_PARTY_MON1 + PARTYMON_HP_OFFSET + 2: 0,
+        ADDR_PARTY_MON1 + PARTYMON_HP_OFFSET + 3: 20,
         ADDR_PARTY_MON1 + PARTYMON_LEVEL_OFFSET: 5,
         flag_addr: 1 << (EVENT_GOT_A_POKEMON_FROM_ELM % 8),
     }

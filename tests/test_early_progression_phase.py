@@ -309,7 +309,12 @@ def test_post_rival_emulator_reaches_route_29_west(new_bark_ram: dict):
 
 
 def test_post_rival_emulator_reaches_cherrygrove_within_budget(new_bark_ram: dict):
-    """Post-rival macro steps reach Cherrygrove entry within step budget."""
+    """Post-rival macro steps reach Cherrygrove entry within step budget.
+
+    Fake PostRivalEmulator warps R30→Cherry at y<=3. Live-accurate Route 30 grid
+    keeps east/west corridors separate, so mid-east starts need a longer detour
+    onto the west path before the north edge (~40 BFS steps).
+    """
     from tests.fake_emulator import PostRivalEmulator
 
     mem = _post_rival_mem(new_bark_ram)
@@ -319,18 +324,19 @@ def test_post_rival_emulator_reaches_cherrygrove_within_budget(new_bark_ram: dic
     mem[0xDA03] = 10
     emu = PostRivalEmulator(mem)
     state = _state(emu.get_game_state())
-    for step in range(30):
+    budget = 50
+    for step in range(budget):
         sup = supervisor_node(state)
         assert sup["next_node"] != "idle"
         state = _macro_step(state, emu)
         gs = GameState.model_validate(state["game_state"])
         if gs.map_key == MAP_KEY_CHERRYGROVE_CITY:
-            assert step < 30
+            assert step < budget
             # Still must not terminal-hold on Cherrygrove
             assert _hold_phase_satisfied(gs, state) is False
             return
     gs_final = GameState.model_validate(state["game_state"])
-    raise AssertionError(f"expected Cherrygrove within 30 steps, ended on {gs_final.map_key}")
+    raise AssertionError(f"expected Cherrygrove within {budget} steps, ended on {gs_final.map_key}")
 
 
 def test_post_rival_emulator_corridor_to_first_gym(new_bark_ram: dict):

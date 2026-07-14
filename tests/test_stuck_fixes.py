@@ -7,7 +7,7 @@ from src.graph.generic_interact import (
     generic_stuck_interact_fallback,
     pocket_navigate_stuck,
 )
-from src.graph.pathfinding import record_session_blocked
+from src.graph.pathfinding import MAP_LANDMARK_ANCHORS, record_session_blocked
 from src.graph.nodes import (
     _history_interact_repeats,
     _history_oscillates,
@@ -643,15 +643,55 @@ def test_pocket_stuck_off_target_selects_interact_under_arbitration():
 
 
 def test_pure_nav_oscillation_respects_max_positions_four():
-    history = [
-        "navigate:up@1,1",
-        "navigate:down@1,2",
-        "navigate:left@0,1",
-        "navigate:right@1,1",
-        "navigate:up@2,1",
-        "navigate:down@2,2",
-    ] * 3
+    """Sparse one-pass tiles outside a tight bbox do not count as classic oscillation.
+
+    Compact multi-tile pockets still fire via bounding-box recovery (see below).
+    """
+    # Wide span (x 0..10) with no repeats → not a pocket loop.
+    history = [f"navigate:right@{x},1" for x in range(12)]
     assert _history_oscillates(history, min_cycles=2, max_positions=4) is False
+
+
+def test_pure_nav_sign_pocket_history_triggers_oscillation_and_replan():
+    """Live Route 29 failure signature: wander (14–18,14–15) with stuck_count=0."""
+    from src.graph.nodes import critic_node, navigation_arbitration_active
+    from src.graph.state import initial_agent_state
+
+    # Alternating tiles across the sign pocket (more than 4 unique positions).
+    pocket = [
+        (14, 14),
+        (15, 14),
+        (16, 14),
+        (17, 14),
+        (18, 14),
+        (18, 15),
+        (17, 15),
+        (16, 15),
+        (15, 15),
+        (14, 15),
+    ]
+    history = []
+    dirs = ["right", "right", "right", "right", "down", "left", "left", "left", "left", "up"]
+    for _ in range(2):
+        for d, (x, y) in zip(dirs, pocket):
+            history.append(f"navigate:{d}@{x},{y}")
+    assert _history_oscillates(history, min_cycles=2, max_positions=4) is True
+    assert _history_oscillates(history, min_cycles=3, max_positions=4) is True
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 14, "y": 14, "facing": 0},
+        raw_metadata={},
+        party_count=1,
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["starter_quest_complete"] = True
+    state["short_term_history"] = history
+    state["stuck_count"] = 0
+    assert navigation_arbitration_active(0, state) is True
+    result = critic_node(state)
+    assert result["critic_verdict"] == "replan"
+    assert result["should_replan"] is True
 
 
 def test_outdoor_at_target_does_not_add_blocked_ahead_interact():
@@ -780,7 +820,7 @@ def test_route_29_ledge_path_detours_instead_of_west_on_row_8():
         )
     ]
     record_session_blocked(state, "24:3", 43, 8)
-    path = find_path(44, 8, 10, 5, map_key="24:3", state=state)
+    path = find_path(44, 8, *MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"], map_key="24:3", state=state)
     assert path
     assert path[0] != "left"
 
@@ -800,7 +840,7 @@ def test_select_navigation_follows_path_on_route_29_ledge_row():
         stuck_count=0,
         gs=gs,
         state=state,
-        target=(10, 5),
+        target=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"],
     )
     assert action == "up"
 
@@ -817,7 +857,7 @@ def test_select_navigation_skips_llm_when_repeating_blocked_direction():
         stuck_count=5,
         gs=gs,
         state=state,
-        target=(10, 5),
+        target=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"],
     )
     assert action != "left"
 
@@ -926,7 +966,7 @@ def test_select_navigation_follows_gate_path_on_route_29_y16_west():
         stuck_count=0,
         gs=gs,
         state=state,
-        target=(10, 5),
+        target=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"],
     )
     assert action == "up"
 
@@ -950,11 +990,14 @@ def test_select_navigation_forces_east_on_route_29_y16_when_not_gate_target():
     assert action == "right"
 
 
-def test_select_navigation_forces_east_out_of_route_29_sign_trap():
+def test_select_navigation_rejects_left_into_route_29_sign_wall():
+    """Wrong A* left into the sign wall is corrected; valid escape is not forced east."""
     from src.graph.nodes import select_navigation_action
+    from src.graph.pathfinding import find_path
 
     state: dict = {"short_term_history": []}
     gs_sign = GameState(player={"map_group": 24, "map_id": 3, "x": 14, "y": 14})
+    # Broken path into wall → not left.
     assert (
         select_navigation_action(
             door_exit=None,
@@ -964,56 +1007,62 @@ def test_select_navigation_forces_east_out_of_route_29_sign_trap():
             stuck_count=0,
             gs=gs_sign,
             state=state,
-            target=(10, 5),
+            target=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"],
         )
-        == "down"
+        != "left"
     )
+    # Real A* from the pocket follows path (escape is up/right, not forced down/east).
+    real_path = find_path(14, 14, *MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"], map_key="24:3")
+    assert real_path
+    action = select_navigation_action(
+        door_exit=None,
+        path=real_path,
+        llm_choice="left",
+        candidates=["left", "right", "down", "up"],
+        stuck_count=0,
+        gs=gs_sign,
+        state=state,
+        target=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"],
+    )
+    assert action == real_path[0]
+    assert action in ("right", "up")
+
     gs_pocket = GameState(player={"map_group": 24, "map_id": 3, "x": 14, "y": 15})
     assert (
         select_navigation_action(
             door_exit=None,
-            path=["left", "left", "left"],
+            path=["left", "up", "right"],
             llm_choice="left",
             candidates=["left", "right", "down", "up"],
             stuck_count=0,
             gs=gs_pocket,
             state=state,
-            target=(10, 5),
+            target=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"],
         )
-        == "right"
+        == "up"
     )
 
 
-def test_select_navigation_escapes_route_29_sign_pocket_at_y15_east():
+def test_select_navigation_follows_path_out_of_route_29_sign_pocket():
+    """A* escape (up/right then corridor) is not overridden by east-force trap."""
     from src.graph.nodes import select_navigation_action
+    from src.graph.pathfinding import find_path
 
-    gs = GameState(player={"map_group": 24, "map_id": 3, "x": 15, "y": 15})
-    action = select_navigation_action(
-        door_exit=None,
-        path=["left", "up", "left"],
-        llm_choice="left",
-        candidates=["left", "right", "down", "up"],
-        stuck_count=0,
-        gs=gs,
-        state={"short_term_history": []},
-        target=(10, 12),
-    )
-    assert action == "right"
-
-    gs_east = GameState(player={"map_group": 24, "map_id": 3, "x": 16, "y": 15})
-    assert (
-        select_navigation_action(
+    for x, y in ((15, 15), (16, 15), (15, 14), (18, 14)):
+        gs = GameState(player={"map_group": 24, "map_id": 3, "x": x, "y": y})
+        path = find_path(x, y, 10, 12, map_key="24:3")
+        assert path, f"no path from {(x, y)}"
+        action = select_navigation_action(
             door_exit=None,
-            path=["up", "left", "left"],
-            llm_choice="up",
+            path=path,
+            llm_choice="left",
             candidates=["left", "right", "down", "up"],
             stuck_count=0,
-            gs=gs_east,
+            gs=gs,
             state={"short_term_history": []},
             target=(10, 12),
         )
-        == "right"
-    )
+        assert action == path[0], f"{(x, y)}: got {action}, path0 {path[0]}"
 
 
 def test_select_navigation_route_29_y15_east_dead_end_ascends_to_corridor():
@@ -1066,10 +1115,17 @@ def test_select_navigation_forces_down_on_route_29_west_corridor_row():
     assert action == "down"
 
 
-def test_navigation_candidates_omit_blocked_primary_at_route_29_y11_trap():
+def test_navigation_candidates_omit_session_blocked_at_route_29_y11():
+    """Session-blocked dead-end tile is not offered as a navigation candidate."""
+    from src.graph.pathfinding import record_session_blocked
+
     gs = GameState(player={"map_group": 24, "map_id": 3, "x": 23, "y": 11})
+    state: dict = {}
+    record_session_blocked(state, "24:3", 22, 11)
     path = ["right", "up", "left"]
-    candidates = _navigation_candidates(gs, (10, 5), path, {})
+    candidates = _navigation_candidates(
+        gs, MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"], path, state
+    )
     assert "left" not in candidates
     assert "right" in candidates
 
@@ -1096,7 +1152,7 @@ def test_navigation_skips_interact_candidate_during_outdoor_recovery():
     )
     state = initial_agent_state(gs)
     state["interact_no_progress_count"] = 22
-    candidates = _navigation_candidates(gs, (10, 5), ["up", "right"], state)
+    candidates = _navigation_candidates(gs, MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"], ["up", "right"], state)
     assert "a" not in candidates
 
 
@@ -1172,7 +1228,7 @@ def test_select_navigation_prefers_path_over_llm_when_arbitrating():
         stuck_count=5,
         gs=gs,
         state=state,
-        target=(10, 5),
+        target=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"],
     )
     assert action == "right"
 
@@ -1189,7 +1245,7 @@ def test_select_navigation_skips_repeat_dir_in_path_prefix():
         stuck_count=5,
         gs=gs,
         state=state,
-        target=(10, 5),
+        target=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"],
     )
     assert action == "right"
 
@@ -1206,7 +1262,7 @@ def test_select_navigation_falls_through_when_only_repeat_dir_candidate():
         stuck_count=5,
         gs=gs,
         state=state,
-        target=(10, 5),
+        target=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"],
     )
     assert action == "down"
 

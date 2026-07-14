@@ -73,9 +73,12 @@ MAP_KEY_UNINITIALIZED = "0:0"
 MAX_PLAYABLE_COORD = 31
 INVALID_FACING = 255
 
-ADDR_PARTY_COUNT = 0xD163
-ADDR_PARTY_SPECIES = 0xD164
-ADDR_PARTY_MON1 = 0xD16B
+# pret Gold/Silver: party block sits in WRAM1 near map state (wMapGroup @ $DA00).
+# Verified on live Silver ROM: $DA22=count, $DA23=species list, $DA2A=wPartyMon1.
+# (Older $D163 values match Crystal-era layouts and read party_count=0 on G/S.)
+ADDR_PARTY_COUNT = 0xDA22
+ADDR_PARTY_SPECIES = 0xDA23
+ADDR_PARTY_MON1 = 0xDA2A
 
 ADDR_MONEY = 0xD573
 ADDR_JOHTO_BADGES = 0xD356
@@ -288,11 +291,12 @@ class GoldStateReader:
             if species_id == 0:
                 break
             base = ADDR_PARTY_MON1 + i * PARTYMON_STRUCT_LENGTH
-            hp = r.read_byte(base + PARTYMON_HP_OFFSET) | (
-                r.read_byte(base + PARTYMON_HP_OFFSET + 1) << 8
+            # Party mon HP/max HP are big-endian in Gold/Silver (pret PartyMon).
+            hp = (r.read_byte(base + PARTYMON_HP_OFFSET) << 8) | r.read_byte(
+                base + PARTYMON_HP_OFFSET + 1
             )
-            max_hp = r.read_byte(base + PARTYMON_HP_OFFSET + 2) | (
-                r.read_byte(base + PARTYMON_HP_OFFSET + 3) << 8
+            max_hp = (r.read_byte(base + PARTYMON_HP_OFFSET + 2) << 8) | r.read_byte(
+                base + PARTYMON_HP_OFFSET + 3
             )
             level = r.read_byte(base + PARTYMON_LEVEL_OFFSET)
             members.append(
@@ -347,11 +351,11 @@ class GoldStateReader:
         count = r.read_byte(ADDR_PARTY_COUNT)
         if count > 0:
             base = ADDR_PARTY_MON1
-            player_hp = r.read_byte(base + PARTYMON_HP_OFFSET) | (
-                r.read_byte(base + PARTYMON_HP_OFFSET + 1) << 8
+            player_hp = (r.read_byte(base + PARTYMON_HP_OFFSET) << 8) | r.read_byte(
+                base + PARTYMON_HP_OFFSET + 1
             )
-            player_max_hp = r.read_byte(base + PARTYMON_HP_OFFSET + 2) | (
-                r.read_byte(base + PARTYMON_HP_OFFSET + 3) << 8
+            player_max_hp = (r.read_byte(base + PARTYMON_HP_OFFSET + 2) << 8) | r.read_byte(
+                base + PARTYMON_HP_OFFSET + 3
             )
 
         return BattleState(

@@ -640,16 +640,163 @@ def seed_route_29_agent_state(
     return state
 
 
+def seed_corridor_agent_state(
+    state: dict,
+    gs: GameState,
+    *,
+    reset_counters: bool = True,
+) -> dict:
+    """Seed post-house, post-starter agent flags for corridor maps (Cherry→Violet).
+
+    Used for segmented live runs from installed snapshots on Cherrygrove / Routes
+    30–31 / Violet / Gym. Detects post-rival via egg-delivered metadata when present.
+    """
+    from src.graph.phases import early_progression, starter_quest
+    from src.graph.phases.house_exit import HOUSE_EXIT_MILESTONE
+    from src.graph.state import update_game_state
+    from src.memory.landmarks import seed_static_map_landmarks
+    from src.state.gold_state_reader import (
+        MAP_KEY_CHERRYGROVE_CITY,
+        MAP_KEY_ELMS_LAB,
+        MAP_KEY_MR_POKEMONS_HOUSE,
+        MAP_KEY_NEW_BARK_TOWN,
+        MAP_KEY_PLAYERS_HOUSE_1F,
+        MAP_KEY_PLAYERS_HOUSE_2F,
+        MAP_KEY_ROUTE_29,
+        MAP_KEY_ROUTE_30,
+        MAP_KEY_ROUTE_31,
+        MAP_KEY_VIOLET_CITY,
+        MAP_KEY_VIOLET_GYM,
+    )
+
+    result = BootstrapResult(
+        success=True,
+        movement_ready=True,
+        map_loaded=True,
+        actions_taken=INDOOR_BOOTSTRAP_ACTIONS,
+        frames_elapsed=0,
+    )
+    gs = apply_bootstrap_metadata(gs, result)
+    state = update_game_state(state, gs)
+    state["bootstrap_complete"] = True
+    state["phase"] = "explore"
+    state["bootstrap_action_index"] = INDOOR_BOOTSTRAP_ACTIONS
+    state["movement_observed"] = True
+    state["house_exit_complete"] = True
+    meta = gs.raw_metadata or {}
+    post_rival = bool(meta.get("egg_delivered"))
+    # Corridor maps beyond Route 29 imply starter; post-rival if egg already delivered.
+    state["starter_quest_complete"] = post_rival
+    state["early_progression_complete"] = gs.map_key == MAP_KEY_VIOLET_GYM
+    state["should_replan"] = False
+    state["stuck_count"] = 0
+    maps = [
+        MAP_KEY_PLAYERS_HOUSE_2F,
+        MAP_KEY_PLAYERS_HOUSE_1F,
+        MAP_KEY_NEW_BARK_TOWN,
+        MAP_KEY_ELMS_LAB,
+        MAP_KEY_ROUTE_29,
+    ]
+    corridor = (
+        MAP_KEY_CHERRYGROVE_CITY,
+        MAP_KEY_ROUTE_30,
+        MAP_KEY_MR_POKEMONS_HOUSE,
+        MAP_KEY_ROUTE_31,
+        MAP_KEY_VIOLET_CITY,
+        MAP_KEY_VIOLET_GYM,
+    )
+    # Include current map and all corridor maps "before" it in a coarse order.
+    for mk in corridor:
+        if mk not in maps:
+            maps.append(mk)
+        if mk == gs.map_key:
+            break
+    if gs.map_key not in maps:
+        maps.append(gs.map_key)
+    state["maps_visited"] = maps
+    milestones = list(state.get("milestones", []))
+    base = [
+        "Reached Player's House 1F",
+        HOUSE_EXIT_MILESTONE,
+        starter_quest.MILESTONE_ENTERED_LAB,
+        starter_quest.MILESTONE_CHOSE_STARTER,
+        "Reached Route 29",
+    ]
+    if gs.map_key in (
+        MAP_KEY_CHERRYGROVE_CITY,
+        MAP_KEY_ROUTE_30,
+        MAP_KEY_MR_POKEMONS_HOUSE,
+        MAP_KEY_ROUTE_31,
+        MAP_KEY_VIOLET_CITY,
+        MAP_KEY_VIOLET_GYM,
+    ):
+        base.append(early_progression.MILESTONE_REACHED_CHERRYGROVE)
+    if gs.map_key in (MAP_KEY_ROUTE_31, MAP_KEY_VIOLET_CITY, MAP_KEY_VIOLET_GYM):
+        base.append(early_progression.MILESTONE_REACHED_ROUTE_31)
+    if gs.map_key in (MAP_KEY_VIOLET_CITY, MAP_KEY_VIOLET_GYM):
+        base.append(early_progression.MILESTONE_REACHED_VIOLET)
+    if gs.map_key == MAP_KEY_VIOLET_GYM:
+        base.append(early_progression.MILESTONE_ENTERED_FIRST_GYM)
+    if post_rival:
+        base.extend(
+            [
+                starter_quest.MILESTONE_MR_POKEMON,
+                starter_quest.MILESTONE_EGG_DELIVERED,
+                starter_quest.MILESTONE_RIVAL_BATTLE,
+            ]
+        )
+    for milestone in base:
+        if milestone not in milestones:
+            milestones.append(milestone)
+    state["milestones"] = milestones
+    if reset_counters:
+        state["short_term_history"] = []
+        state["replan_count"] = 0
+        state["pocket_stuck_count"] = 0
+        state["pocket_nav_positions"] = []
+    seed_static_map_landmarks(state)
+    if gs.map_key in (MAP_KEY_VIOLET_CITY, MAP_KEY_VIOLET_GYM):
+        # At/near the gym: always use early-progression subgoals (arrival is terminal).
+        state["starter_quest_complete"] = True
+        if gs.map_key == MAP_KEY_VIOLET_GYM:
+            # sync_subgoals no-ops when early_progression_complete; set gym goal directly.
+            subgoals = ["Challenge Falkner (first gym reached)"]
+            state["subgoals"] = subgoals
+            state["active_subgoal"] = subgoals[0]
+        else:
+            early_progression.sync_subgoals(gs, state)
+    elif post_rival or gs.map_key in (
+        MAP_KEY_CHERRYGROVE_CITY,
+        MAP_KEY_ROUTE_31,
+    ):
+        # Post-rival or deep corridor: early progression hold policy.
+        if not post_rival and gs.map_key != MAP_KEY_ROUTE_30:
+            # Still may need Mr. Pokemon if not post-rival; keep starter quest.
+            starter_quest.sync_subgoals(gs, state)
+        else:
+            state["starter_quest_complete"] = True
+            early_progression.sync_subgoals(gs, state)
+    else:
+        starter_quest.sync_subgoals(gs, state)
+    return state
+
+
 def seed_agent_state_for_map(state: dict, gs: GameState) -> dict:
     """Infer graph flags from the map loaded in a PyBoy .state snapshot."""
     from src.graph.phases import starter_quest
     from src.graph.state import update_game_state
     from src.memory.landmarks import seed_static_map_landmarks
     from src.state.gold_state_reader import (
+        MAP_KEY_CHERRYGROVE_CITY,
         MAP_KEY_ELMS_LAB,
+        MAP_KEY_MR_POKEMONS_HOUSE,
         MAP_KEY_NEW_BARK_TOWN,
         MAP_KEY_PLAYERS_HOUSE_2F,
         MAP_KEY_ROUTE_29,
+        MAP_KEY_ROUTE_30,
+        MAP_KEY_ROUTE_31,
+        MAP_KEY_VIOLET_CITY,
+        MAP_KEY_VIOLET_GYM,
     )
 
     if gs.map_key == MAP_KEY_PLAYERS_HOUSE_2F:
@@ -660,6 +807,18 @@ def seed_agent_state_for_map(state: dict, gs: GameState) -> dict:
         starter_quest.has_starter(gs) or gs.party_count > 0
     ):
         return seed_route_29_agent_state(state, gs)
+    corridor_maps = {
+        MAP_KEY_CHERRYGROVE_CITY,
+        MAP_KEY_ROUTE_30,
+        MAP_KEY_MR_POKEMONS_HOUSE,
+        MAP_KEY_ROUTE_31,
+        MAP_KEY_VIOLET_CITY,
+        MAP_KEY_VIOLET_GYM,
+    }
+    if gs.map_key in corridor_maps and (
+        starter_quest.has_starter(gs) or gs.party_count > 0
+    ):
+        return seed_corridor_agent_state(state, gs)
     result = BootstrapResult(
         success=True,
         movement_ready=True,

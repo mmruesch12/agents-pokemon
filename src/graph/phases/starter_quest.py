@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.state.gold_state_reader import (
+    MAP_KEY_CHERRYGROVE_CITY,
     MAP_KEY_ELMS_LAB,
     MAP_KEY_MR_POKEMONS_HOUSE,
     MAP_KEY_NEW_BARK_TOWN,
@@ -127,7 +128,12 @@ def _subgoal_index(gs: GameState, state: dict[str, Any]) -> int:
                     return 1
         return 0
     if not _has_egg(gs):
-        if gs.map_key == MAP_KEY_ROUTE_30:
+        if gs.map_key in (
+            MAP_KEY_ROUTE_30,
+            MAP_KEY_MR_POKEMONS_HOUSE,
+            MAP_KEY_CHERRYGROVE_CITY,
+        ):
+            # West of Route 29: crossing is done — target Mr. Pokemon.
             return 2
         if gs.map_key == MAP_KEY_ROUTE_29:
             return 1

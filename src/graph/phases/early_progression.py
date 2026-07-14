@@ -56,8 +56,13 @@ def is_satisfied(gs: GameState, state: dict[str, Any]) -> bool:
 
 
 def on_early_progression_complete(state: dict[str, Any], gs: GameState) -> None:
-    del gs
+    """Mark early progression done and set a post-arrival gym subgoal."""
     state["early_progression_complete"] = True
+    # Keep a clear in-gym objective (sync_subgoals is gated off once complete).
+    if gs.map_key == MAP_KEY_VIOLET_GYM:
+        subgoals = ["Challenge Falkner (first gym reached)"]
+        state["subgoals"] = subgoals
+        state["active_subgoal"] = subgoals[0]
 
 
 def planner_allows_llm(gs: GameState, state: dict[str, Any]) -> bool:

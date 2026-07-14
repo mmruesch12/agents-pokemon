@@ -112,7 +112,7 @@ class MutableRamEmulator:
         if not _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM):
             return
         # Simplified corridor warps for ROM-free progression tests (not full ROM graph).
-        if group == MAPGROUP_NEW_BARK and map_id == MAP_ROUTE_29 and y <= 5:
+        if group == MAPGROUP_NEW_BARK and map_id == MAP_ROUTE_29 and y <= 8 and x <= 12:
             self._memory[ADDR_MAP_GROUP] = MAPGROUP_JOHTO_ROUTES
             self._memory[ADDR_MAP_NUMBER] = MAP_ROUTE_30
             self._memory[ADDR_X_COORD] = 10
@@ -321,7 +321,9 @@ class StarterQuestEmulator(MutableRamEmulator):
             elif (
                 _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM)
                 and not _has_flag(self._memory, EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON)
-                and y <= 5
+                # Gate approach is (10, 8); accept north/west corridor near the gate column.
+                and y <= 8
+                and x <= 12
             ):
                 self._warp(MAPGROUP_JOHTO_ROUTES, MAP_ROUTE_30, 10, 12)
             return
@@ -332,14 +334,21 @@ class StarterQuestEmulator(MutableRamEmulator):
             elif (
                 _has_flag(self._memory, EVENT_GOT_A_POKEMON_FROM_ELM)
                 and not _has_flag(self._memory, EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON)
-                and y <= 3
+                # Live ROM Mr. Pokemon door is (17, 5); north edge y<=3 is unreachable
+                # from the east corridor after MAP_GRID alignment (wall at y=4 x>=16).
+                and (
+                    y <= 3
+                    or (x >= 15 and y <= 5)
+                    or (x, y) == (17, 5)
+                )
             ):
                 self._warp(MAPGROUP_JOHTO_ROUTES, MAP_MR_POKEMONS_HOUSE, 5, 7)
             return
 
         if group == MAPGROUP_JOHTO_ROUTES and map_id == MAP_MR_POKEMONS_HOUSE:
             if _has_flag(self._memory, EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON) and y >= 8:
-                self._warp(MAPGROUP_JOHTO_ROUTES, MAP_ROUTE_30, 10, 5)
+                # Exit onto door tile so re-entry does not immediately re-warp.
+                self._warp(MAPGROUP_JOHTO_ROUTES, MAP_ROUTE_30, 17, 6)
 
     def _warp(self, group: int, map_id: int, x: int, y: int) -> None:
         self._memory[ADDR_MAP_GROUP] = group
@@ -371,10 +380,11 @@ class StarterQuestEmulator(MutableRamEmulator):
                 self._memory[ADDR_PARTY_COUNT] = 1
                 self._memory[ADDR_PARTY_SPECIES] = 158  # Totodile
                 base = ADDR_PARTY_MON1
-                self._memory[base + PARTYMON_HP_OFFSET] = 20
-                self._memory[base + PARTYMON_HP_OFFSET + 1] = 0
-                self._memory[base + PARTYMON_HP_OFFSET + 2] = 20
-                self._memory[base + PARTYMON_HP_OFFSET + 3] = 0
+                # Party HP fields are big-endian on Gold/Silver (matches GoldStateReader).
+                self._memory[base + PARTYMON_HP_OFFSET] = 0
+                self._memory[base + PARTYMON_HP_OFFSET + 1] = 20
+                self._memory[base + PARTYMON_HP_OFFSET + 2] = 0
+                self._memory[base + PARTYMON_HP_OFFSET + 3] = 20
                 self._memory[base + PARTYMON_LEVEL_OFFSET] = 5
             elif (
                 (x, y) in ((4, 2), (5, 2))
@@ -388,10 +398,10 @@ class StarterQuestEmulator(MutableRamEmulator):
             ):
                 self._memory[ADDR_BATTLE_MODE] = 2
                 self._memory[ADDR_ENEMY_SPECIES] = 155  # Cyndaquil (rival)
-                self._memory[ADDR_ENEMY_HP] = 18
-                self._memory[ADDR_ENEMY_HP + 1] = 0
-                self._memory[ADDR_ENEMY_MAX_HP] = 20
-                self._memory[ADDR_ENEMY_MAX_HP + 1] = 0
+                self._memory[ADDR_ENEMY_HP] = 0
+                self._memory[ADDR_ENEMY_HP + 1] = 18
+                self._memory[ADDR_ENEMY_MAX_HP] = 0
+                self._memory[ADDR_ENEMY_MAX_HP + 1] = 20
             return
 
         if group == MAPGROUP_JOHTO_ROUTES and map_id == MAP_MR_POKEMONS_HOUSE:

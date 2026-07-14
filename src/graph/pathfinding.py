@@ -19,8 +19,8 @@ def _grid_from_rows(rows: list[str]) -> list[list[int]]:
 MAP_WARP_HINT_ROWS: dict[str, dict[str, int]] = {
     "24:4": {"west": 8, "north": 3},
     "24:5": {"north": 2},
-    "24:3": {"north": 5, "east": 8},
-    "26:1": {"north": 3},
+    "24:3": {"north": 5, "east": 8, "west": 7},
+    "26:1": {"north": 3},  # Route 30 toward Mr. Pokemon / Route 31
     "26:3": {"north": 0},  # Cherrygrove City
     "26:2": {"west": 8},  # Route 31
     "10:5": {"north": 17},  # Violet City (gym approach row)
@@ -33,14 +33,19 @@ MAP_LANDMARK_ANCHORS: dict[str, dict[str, tuple[int, int]]] = {
         "west_exit": (0, 8),
     },
     "24:3": {
-        "route_30_gate": (10, 5),
+        # West corridor mid-point (ROM-reachable); final Cherrygrove edge is west_exit.
+        "route_30_gate": (10, 8),
+        "west_exit": (0, 7),
     },
     "26:1": {
-        "mr_pokemon_gate": (10, 3),
-        "route_31_gate": (10, 1),
+        # Live ROM: Mr. Pokemon door warp is (17, 5) → map 26:10 (pret warp_event 17,5).
+        "mr_pokemon_gate": (17, 5),
+        # North map connection to Route 31 is on the west corridor (tiles ~4-7, y=0).
+        # Approach via western path after crossing from the east fork near y=6-7.
+        "route_31_gate": (5, 0),
     },
     "26:3": {
-        "north_exit": (17, 0),
+        "north_exit": (16, 0),  # ROM: Cherrygrove north warp → Route 30
     },
     "26:2": {
         "west_gate": (0, 8),
@@ -118,43 +123,26 @@ MAP_GRIDS: dict[str, list[list[int]]] = {
     ),
     "24:3": _grid_from_rows(
         [
-            # 60x18 — pret ROUTE_29 30x9 blocks; collision from ROM BFS (x=21..59) + west connectors
+            # 60x18 — live Silver ROM BFS + west-corridor expansion (route29_gate_approach).
+            # One-way ledge y=14→13 also enforced via ROUTE_29_Y14_CLIMB_X.
             "111111111111111111111111111111111111111111111111111111111111",  # y=0
-            "111111111111111111111111111011111111111111111111111111111111",  # y=1
-            "111111111111111111111111000000111111111111111111111111111111",  # y=2
-            "111111111111111111111111010100111111111111111111111111111111",  # y=3
-            "111111111111111111111001000000111100000010111111111111111111",  # y=4
-            "000000000000000000000000000000011100000001011111111111111111",  # y=5 gate row
-            "111111111101111111111001101000000000001110111111100000111111",  # y=6 west gate column x=10
-            "111111111101111111111110100101000000001100111110011100111111",  # y=7 west gate column x=10
-            "111111111101111111111110000001001111001100110000000000000000",  # y=8 west gate column x=10
-            "111111111101111111111111111111111111001100010000000000000000",  # y=9 block x=27; west column x=10
-            "111111111101111111111111000000000000000001010000000001111111",  # y=10 west column + ROM x=25
-            "111111111101111111111110010000000000000000100000000000111111",  # y=11 west column + x=25,26 descent
-            "000000000000000000000111001111000001110000010001001000111111",  # y=12 block x=22 ROM left from (23,12)
-            "000000000000001000000110000011111111110100110000100000111111",  # y=13 block x=14 ROM north of sign
-            "111111111111110000000010000000000011111000110000111111111111",  # y=14 block x<14 ROM sign pocket
-            "111111111111110000000000000000000011111000000000111111111111",  # y=15 block x<14 ROM sign pocket
-            "000000000000000000000111000000000000000000001111111111111111",  # y=16
-            "000000000000000000000111111100000000000000001111111111111111",  # y=17
-        ]
-    ),
-    "26:1": _grid_from_rows(
-        [
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
-            "00000000000000000000",
+            "111111111111111111111111111111111111111111111111111111111111",  # y=1
+            "111111111111111100011111000000111111110000000000111111111111",  # y=2
+            "111111111111111100000011010000111111110000000011111111111111",  # y=3
+            "110000111111111100000001000000111100000000001111111111111111",  # y=4
+            "110100011111111100011000000000011100000000001111111111111111",  # y=5
+            "000000001000000000111000000000000000001100111111100000111111",  # y=6
+            "000000001000000000111110000000000000001100111110000100111111",  # y=7 west_exit
+            "011100001000000111111110000001001111001100010000000000000000",  # y=8
+            "011100001110111111111111111111111111001100010000000000000000",  # y=9
+            "111100000000000011111111000010000000000000010000000000111111",  # y=10 gap x=28
+            "111100000000000011111100000010000000000000010000000000111111",  # y=11
+            "111100000011100011111110000010000001110000010000001000111111",  # y=12
+            "111100000011111111111100000011101111111111110000000000111111",  # y=13 climbs 22-27,31
+            "111100001111110000000000000000000011110000000000111111111111",  # y=14
+            "111100001111110000000000000000000011110000000000111111111111",  # y=15
+            "111111111111111111111111000100000000000000001111111111111111",  # y=16
+            "111111111111111111111111110000000000000000001111111111111111",  # y=17
         ]
     ),
     "26:10": _grid_from_rows(
@@ -171,11 +159,93 @@ MAP_GRIDS: dict[str, list[list[int]]] = {
         ]
     ),
     # Coarse open grids for corridor maps (session overlays refine walkability).
-    "26:3": _grid_from_rows(  # Cherrygrove City 20x9 blocks → ~40x18 tiles; open seed
-        ["0" * 20 for _ in range(12)]
+    "26:3": _grid_from_rows(
+        [
+            # Live ROM BFS from cherrygrove_entry (Silver); north exit (16,0)/(17,0).
+            "1111111111111111001111111111111111111111",  # y=0
+            "1111111111111111001111111111111111111111",  # y=1
+            "1111111111111111001111111111111111111111",  # y=2
+            "1111111111111111001111111111111111111111",  # y=3
+            "1111111111110000000000000000000011111111",  # y=4
+            "1111111111110000000000000000000011111111",  # y=5
+            "1111111111000000111100000000000010000000",  # y=6
+            "1111111111000000111100100000000000000000",  # y=7
+            "1111111111000000000000001111001000111111",  # y=8
+            "1111111111000000000000011111000000111111",  # y=9
+            "1111111111111100000000000000001111111111",  # y=10
+            "1111111111111100000000000000001111111111",  # y=11
+            "1111111111111111111111000000000000111111",  # y=12
+            "1111111111111111111111000000000000111111",  # y=13
+            "1111111111111111111111111111111111111111",  # y=14
+            "1111111111111111111111111111111111111111",  # y=15
+            "1111111111111111111111111111111111111111",  # y=16
+            "1111111111111111111111111111111111111111",  # y=17
+        ]
     ),
-    "26:2": _grid_from_rows(  # Route 31 20x9 blocks
-        ["0" * 20 for _ in range(12)]
+    "26:2": _grid_from_rows(  # Route 31 open seed
+        ["0" * 40 for _ in range(18)]
+    ),
+    # Route 30: 0=walkable. Live Silver BFS (post EVENT_ROUTE_30_BATTLE):
+    # - North exit to R31 is west corridor x=4..7 at y=0 (not east).
+    # - East (Mr Pokemon) and west corridors stay separated north of ~y=15.
+    # - South climb to north only at x=12 from y=48 (see ROUTE_30_Y48_NORTH_X).
+    "26:1": _grid_from_rows(
+        [
+            "11000000111111111111",  # y0  R31 edge x2-7 (live warps x4-7)
+            "11000000111111111111",  # y1
+            "11000000111111111111",  # y2
+            "11000000111100001111",  # y3  east pocket x12-15; west x2-7
+            "11000000110000001111",  # y4
+            "11000011110100000011",  # y5  west x2-5; Mr P door (17,5); barrier mid
+            "00001111100000000000",  # y6  west x0-3 | east x9+
+            "00001111100000000000",  # y7
+            "00001111000000000000",  # y8  east open from x8 (test start mid)
+            "00001111000000000000",  # y9
+            "00001111000000000011",  # y10
+            "00001111000000000011",  # y11
+            "00000011000000000011",  # y12 west expands + east
+            "00000011000000000011",  # y13
+            "00000011000000110000",  # y14
+            "00000011000000110000",  # y15
+            "00000011000000111100",  # y16
+            "00000011000000111100",  # y17
+            "00000000000011110000",  # y18 mid join toward south
+            "00000000000011110000",  # y19
+            "00000000000011000011",  # y20
+            "00000000000011000011",  # y21
+            "00000000000000001111",  # y22
+            "00000000000000001111",  # y23 Mikey
+            "00000000000000001111",  # y24 Joey row (objects cleared by event)
+            "00000010000000001111",  # y25 narrow west gap + east open
+            "00000000000011001111",  # y26
+            "00000000000011001111",  # y27
+            "11000000001100001111",  # y28
+            "11000000001101001111",  # y29
+            "11000000000000000011",  # y30
+            "11000000000000000011",  # y31
+            "11000000000000000011",  # y32
+            "11000000000000000011",  # y33
+            "11001111000000001111",  # y34
+            "11001111000000001111",  # y35
+            "11001111111100001111",  # y36
+            "11111111111100001111",  # y37
+            "11000011111100111111",  # y38
+            "11000111111100111111",  # y39 berry house (7,39)
+            "11000000000000111111",  # y40
+            "11100000000000111111",  # y41
+            "11111100000000111111",  # y42
+            "11111100010000111111",  # y43
+            "11111110000000111111",  # y44
+            "11111111000000111111",  # y45
+            "11111111100000111111",  # y46
+            "11111111111100111111",  # y47
+            "11111100000001111111",  # y48 climb x12 only (directional)
+            "11111100000001111111",  # y49
+            "11111100000001111111",  # y50
+            "11111100000001111111",  # y51
+            "11111100000001111111",  # y52
+            "11111100000001111111",  # y53 south to Cherry
+        ]
     ),
     "26:11": _grid_from_rows(  # Route 31 Violet Gate interior
         [
@@ -413,15 +483,22 @@ def _route_29_gate_step_penalty(
             penalty += 50
         if ny > y and x == 24 and y in (11, 12, 13):
             penalty -= 6
+    # On the south ledge row, the only west-bound escape is east to a climb gap
+    # (x in ROUTE_29_Y14_CLIMB_X) then north — do not punish east progress there.
     if nx > x:
-        if y >= 15:
+        if y >= 15 and x >= 32:
             penalty += 20
-        elif y >= 14:
+        elif y >= 14 and x >= 32:
             penalty += 10
-        elif y >= 11 and (to_gate or to_west_approach):
+        elif y >= 11 and y < 14 and (to_gate or to_west_approach):
             penalty += 8
-    if nx < x and y >= 15 and (to_gate or to_west_approach):
+    if nx < x and y >= 15 and x < 22 and (to_gate or to_west_approach):
+        # West into the sign pocket while still below the climb is a dead-end trap.
         penalty += 40
+    if y == 14 and ny == 13 and nx in ROUTE_29_Y14_CLIMB_X and (to_gate or to_west_approach):
+        penalty -= 12
+    if y == 14 and nx > x and x < 31 and (to_gate or to_west_approach):
+        penalty -= 6
     return penalty
 
 
@@ -479,6 +556,32 @@ _DIRECTION_DELTA: dict[str, tuple[int, int]] = {
     "left": (-1, 0),
     "right": (1, 0),
 }
+
+# Route 29 south-facing ledge (y=13→14 down OK; y=14→13 up only at climb gaps).
+# Confirmed via live ROM BFS from route29_gate_approach (Silver/Gold layout).
+ROUTE_29_Y14_CLIMB_X: frozenset[int] = frozenset({22, 23, 24, 25, 26, 27, 31})
+
+# Route 30 south approach: from y=48 only x=12 climbs north (live ROM probe).
+ROUTE_30_Y48_NORTH_X: frozenset[int] = frozenset({12})
+
+
+def _directional_step_allowed(
+    map_key: str,
+    x: int,
+    y: int,
+    nx: int,
+    ny: int,
+) -> bool:
+    """False for one-way ledge climbs that static grids cannot express."""
+    if map_key == "24:3":
+        if y == 14 and ny == 13 and nx == x and x not in ROUTE_29_Y14_CLIMB_X:
+            return False
+        return True
+    if map_key == "26:1":
+        if y == 48 and ny == 47 and nx == x and x not in ROUTE_30_Y48_NORTH_X:
+            return False
+        return True
+    return True
 
 
 def tile_blocked(
@@ -632,7 +735,7 @@ def find_path(
     end_y: int,
     *,
     map_key: str = "",
-    max_steps: int = 50,
+    max_steps: int = 80,
     state: dict | None = None,
     _allow_backoff: bool = True,
 ) -> list[Direction]:
@@ -643,6 +746,9 @@ def find_path(
     grid = MAP_GRIDS.get(map_key)
     session_walkable = session_walkable_for_map(state, map_key)
     session_blocked = session_blocked_for_map(state, map_key)
+    # Route 29 west exit needs ~55+ steps via the y=14 climb then north corridor.
+    if map_key == "24:3" and max_steps < 100:
+        max_steps = 100
     if _allow_backoff:
         backoff = _east_row_session_backoff_prefix(
             start_x,
@@ -691,6 +797,8 @@ def find_path(
         ]:
             nx, ny = x + dx, y + dy
             if (nx, ny) in visited:
+                continue
+            if not _directional_step_allowed(map_key, x, y, nx, ny):
                 continue
             if not _is_walkable(
                 grid,

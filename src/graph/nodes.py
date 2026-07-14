@@ -108,59 +108,39 @@ def _route_29_sign_dead_end_path_step(
     path: list[str],
     target: tuple[int, int],
 ) -> str | None:
-    """Escape the ROM sign pocket west of x=17 by heading east on y=14–15."""
-    from src.graph.navigation_resolve import (
-        ROUTE_29_CORRIDOR_EAST_REENTRY,
-        ROUTE_29_WEST_GATE_APPROACH,
-    )
+    """Only correct path steps that walk into the ROM-blocked sign wall.
 
-    if gs.map_key != MAP_KEY_ROUTE_29:
+    A* already escapes the y=14–15 pocket via up/right then the west corridor.
+    Prior overrides that forced east/down against a valid escape created a pure-nav
+    loop (stuck_count stayed 0). Intervene only when path[0] is into solid tiles
+    or the far y=15 east cul-de-sac.
+    """
+    from src.graph.navigation_resolve import ROUTE_29_WEST_GATE_APPROACH
+
+    if gs.map_key != MAP_KEY_ROUTE_29 or not path:
         return None
     px, py = gs.player.x, gs.player.y
-    gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
-    west_approach = ROUTE_29_WEST_GATE_APPROACH
     if py not in ROUTE_29_SIGN_TRAP_ROWS:
         return None
-    if (
-        gate
-        and (px, py) == (14, 14)
-        and target in (gate, west_approach)
-        and path
-        and path[0] in ("up", "right")
-    ):
-        return "down"
-    if (px, py) == (15, 14) and path and path[0] in ("up", "left"):
-        return "left"
-    if (px, py) == (15, 15) and path and path[0] in ("left", "up"):
+    gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
+    west_approach = ROUTE_29_WEST_GATE_APPROACH
+    step = path[0]
+    # West wall of sign pocket: x<=14 cannot go left on y=14–15.
+    if step == "left" and px <= ROUTE_29_SIGN_TRAP_MAX_X:
+        # Prefer A* rest if present; otherwise step east to open space.
+        for alt in path[1:4]:
+            if alt != "left":
+                return alt
         return "right"
-    if (px, py) == (14, 15) and path and path[0] in ("up", "left"):
-        return "right"
-    if (
-        py == 15
-        and ROUTE_29_SIGN_TRAP_MAX_X < px <= ROUTE_29_SIGN_TRAP_Y15_EAST_MAX_X
-        and path
-        and path[0] in ("up", "left", "down")
-    ):
-        return "right"
+    # Far east cul-de-sac on y=15: do not keep walking right into the dead end.
     if (
         gate
         and py == 15
         and px >= ROUTE_29_Y15_EAST_DEAD_END_X
         and target in (gate, west_approach)
-        and path
-        and path[0] == "right"
+        and step == "right"
     ):
         return "up"
-    if (
-        gate
-        and (px, py) == (14, 14)
-        and target in (gate, west_approach)
-        and path
-        and path[0] in ("up", "left", "right")
-    ):
-        return "down"
-    if px <= ROUTE_29_SIGN_TRAP_MAX_X and path and path[0] in ("left", "down"):
-        return "right"
     return None
 
 
@@ -298,9 +278,11 @@ def _interact_tick_frames(gs: GameState) -> int:
     if (
         gs.in_text_box
         or meta.get("in_script")
+        or meta.get("script_active")
         or meta.get("script_mode") == SCRIPT_READ
     ):
-        return OUTDOOR_INTERACT_TICKS
+        # Route trainers / multi-page outdoor scripts need longer settle time.
+        return max(OUTDOOR_INTERACT_TICKS, 120)
     return SCRIPT_WAIT_TICKS
 
 _DIRECTION_DELTA = {
@@ -379,7 +361,11 @@ def navigation_repeat_detected(
 def navigation_arbitration_active(stuck_count: int, state: AgentState) -> bool:
     """True when navigator should override blind path[0] (M11)."""
     history = state.get("short_term_history", [])
-    return stuck_count >= STUCK_ARBITRATION_THRESHOLD or navigation_repeat_detected(history)
+    return (
+        stuck_count >= STUCK_ARBITRATION_THRESHOLD
+        or navigation_repeat_detected(history)
+        or _history_oscillates(history, min_cycles=2, max_positions=8)
+    )
 
 
 def walkable_cardinal_candidates(gs: GameState, state: AgentState | None = None) -> list[str]:
@@ -1102,17 +1088,42 @@ def _history_oscillates_nav_interact(
     return cycles >= min_cycles
 
 
+def _parse_history_xy(pos: str) -> tuple[int, int] | None:
+    """Parse x,y from history payload (supports x,y or map:id:x:y)."""
+    parts = pos.split(":")
+    if len(parts) >= 2 and parts[-1].lstrip("-").isdigit() and parts[-2].lstrip("-").isdigit():
+        try:
+            return int(parts[-2]), int(parts[-1])
+        except ValueError:
+            return None
+    if "," in pos:
+        a, b = pos.split(",", 1)
+        try:
+            return int(a), int(b)
+        except ValueError:
+            return None
+    return None
+
+
 def _history_oscillates_nav_only(
     history: list[str],
     *,
     min_cycles: int = 3,
     max_positions: int = 6,
 ) -> bool:
-    """Detect navigate-only ping-pong across a small tile pocket."""
+    """Detect navigate-only ping-pong across a small tile pocket.
+
+    Two signals (either is enough):
+    - Classic: few unique tiles each revisited >= min_cycles times.
+    - Bounding-box: many pure-nav steps confined to a small area (covers the
+      live Route 29 sign-pocket case where stuck_count stays 0 while the agent
+      wanders 5+ tiles without net progress).
+    """
     if len(history) < min_cycles * 2:
         return False
     window = min(len(history), 20)
     positions_list: list[str] = []
+    coords: list[tuple[int, int]] = []
     for item in history[-window:]:
         if "@" not in item:
             return False
@@ -1120,13 +1131,38 @@ def _history_oscillates_nav_only(
         if action.split(":")[0] != "navigate":
             return False
         positions_list.append(pos)
+        parsed = _parse_history_xy(pos)
+        if parsed is not None:
+            coords.append(parsed)
     unique = set(positions_list)
-    if len(unique) < 2 or len(unique) > max_positions:
+    if len(unique) < 2:
         return False
     counts: dict[str, int] = {}
     for pos in positions_list:
         counts[pos] = counts.get(pos, 0) + 1
-    return min(counts.values()) >= min_cycles
+    if len(unique) <= max_positions and min(counts.values()) >= min_cycles:
+        return True
+    # Compact pure-nav pocket: enough steps, small bbox, repeated tiles.
+    # Live Route 29 sign pocket wanders ~10 tiles twice in a 20-step window
+    # (max count=2), so do not require min_cycles per tile.
+    min_pocket_steps = max(10, min_cycles * 3)
+    if len(coords) < min_pocket_steps or len(coords) != len(positions_list):
+        return False
+    xs = [c[0] for c in coords]
+    ys = [c[1] for c in coords]
+    span_x = max(xs) - min(xs)
+    span_y = max(ys) - min(ys)
+    if span_x > 6 or span_y > 3:
+        return False
+    if len(unique) > 12:
+        return False
+    revisited = sum(1 for n in counts.values() if n >= 2)
+    extra_visits = sum(n - 1 for n in counts.values() if n >= 2)
+    return (
+        max(counts.values()) >= 2
+        and revisited >= 2
+        and extra_visits >= max(min_cycles, 2)
+    )
 
 
 def _history_oscillates(

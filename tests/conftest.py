@@ -56,10 +56,11 @@ def new_bark_ram() -> dict[int, int]:
     mem[ADDR_PARTY_COUNT] = 1
     mem[ADDR_PARTY_SPECIES] = 152  # Chikorita
     base = ADDR_PARTY_MON1
-    mem[base + PARTYMON_HP_OFFSET] = 20
-    mem[base + PARTYMON_HP_OFFSET + 1] = 0
-    mem[base + PARTYMON_HP_OFFSET + 2] = 20
-    mem[base + PARTYMON_HP_OFFSET + 3] = 0
+    # Big-endian HP/max (pret PartyMon / live Gold-Silver ROM).
+    mem[base + PARTYMON_HP_OFFSET] = 0
+    mem[base + PARTYMON_HP_OFFSET + 1] = 20
+    mem[base + PARTYMON_HP_OFFSET + 2] = 0
+    mem[base + PARTYMON_HP_OFFSET + 3] = 20
     mem[base + PARTYMON_LEVEL_OFFSET] = 5
     mem[ADDR_JOHTO_BADGES] = 0
     mem[ADDR_BATTLE_MODE] = 0

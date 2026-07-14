@@ -120,14 +120,24 @@ def interact_stall_recovery_active(gs: GameState, state: dict[str, Any]) -> bool
 
 
 def outdoor_interact_recovery_active(gs: GameState, state: dict[str, Any]) -> bool:
-    """Outdoor maps: prefer navigation after unproductive interact spam."""
+    """Outdoor maps: prefer navigation after unproductive interact spam.
+
+    High stuck_count with no-progress interacts (trainer/script soft-lock) also
+    forces nav recovery even while ROM still reports dialog residue — otherwise
+    the agent can spam A forever on Route 30/31 signs and trainer LOS edges.
+    """
     if gs.map_key in INDOOR_NAV_STUCK_MAPS:
         return False
     if interact_stall_recovery_active(gs, state):
         return True
+    stuck = int(state.get("stuck_count", 0))
+    no_progress = int(state.get("interact_no_progress_count", 0))
+    if stuck >= 5 and no_progress >= 2:
+        arm_interact_stall_escape(state)
+        return True
     if is_rom_interact_signal(gs):
         return False
-    return state.get("interact_no_progress_count", 0) >= INTERACT_NO_PROGRESS_RECOVERY
+    return no_progress >= INTERACT_NO_PROGRESS_RECOVERY
 
 
 def is_rom_interact_signal(gs: GameState) -> bool:
