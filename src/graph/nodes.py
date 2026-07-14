@@ -11,7 +11,6 @@ from src.emulator.bootstrap import needs_bootstrap, pick_bootstrap_button
 from src.graph.generic_interact import (
     INDOOR_NAV_STUCK_MAPS,
     INTERACT_NO_PROGRESS_RECOVERY,
-    INTERACT_STALL_STREAK,
     arm_interact_stall_escape,
     clear_interact_stall_escape,
     clear_pocket_stuck,
@@ -23,6 +22,7 @@ from src.graph.generic_interact import (
     outdoor_interact_recovery_active,
     in_navigation_pocket,
     record_pocket_nav_failure,
+    should_arm_interact_stall,
 )
 from src.graph.navigation_resolve import resolve_navigation_target
 from src.graph.llm import llm_battle, llm_navigate, llm_plan
@@ -377,7 +377,7 @@ def walkable_cardinal_candidates(gs: GameState, state: AgentState | None = None)
     for direction, (dx, dy) in _DIRECTION_DELTA.items():
         nx, ny = gs.player.x + dx, gs.player.y + dy
         if direction == "up" and (
-            _blocked_stairs_up(gs)
+            _blocked_stairs_up(gs, state)
             or (gs.map_key == MAP_KEY_ELMS_LAB and starter_quest.blocked_lab_exit(gs))
         ):
             continue
@@ -956,8 +956,10 @@ def navigator_node(state: AgentState) -> AgentState:
     return state
 
 
-def _blocked_stairs_up(gs: GameState) -> bool:
-    return house_exit.blocked_stairs_up(gs)
+def _blocked_stairs_up(
+    gs: GameState, state: AgentState | dict[str, Any] | None = None
+) -> bool:
+    return house_exit.blocked_stairs_up(gs, state)
 
 
 def _navigation_candidates(
@@ -969,14 +971,14 @@ def _navigation_candidates(
     """Build direction candidates for pathfinding + LLM selection."""
     state = state or {}
     primary = direction_toward(gs.player.x, gs.player.y, target[0], target[1])
-    if primary == "up" and _blocked_stairs_up(gs):
+    if primary == "up" and _blocked_stairs_up(gs, state):
         primary = direction_toward(gs.player.x, gs.player.y, PLAYERS_HOUSE_1F_DOOR[0], PLAYERS_HOUSE_1F_DOOR[1])
     cardinals = walkable_cardinal_candidates(gs, state)
     candidates: list[str] = []
     if path:
         for step in path[:3]:
             if step == "up" and (
-                _blocked_stairs_up(gs)
+                _blocked_stairs_up(gs, state)
                 or (gs.map_key == MAP_KEY_ELMS_LAB and starter_quest.blocked_lab_exit(gs))
             ):
                 continue
@@ -1575,18 +1577,24 @@ def _script_progress_key(gs: GameState) -> tuple[Any, ...]:
 def _meaningful_script_progress(
     pre_key: tuple[Any, ...] | None, post_key: tuple[Any, ...]
 ) -> bool:
-    """True when dialog/script state advanced — not pure script_pos jitter.
+    """True when dialog/script state advanced between pre/post action snapshots.
 
-    Compares in_text_box / script_mode / in_battle (key[1:4]) so legacy 4-tuples
-    and extended keys both work. script_pos-only changes do not count.
+    Includes ``script_pos`` changes: multi-page SCRIPT_READ (notably post-Mom
+    MeetMom follow-up) often advances only the script pointer while in_text_box,
+    script_mode, and in_battle stay constant. Ignoring pos-only changes caused
+    INTERACT_STALL_STREAK to arm mid-dialog and thrash with navigate at (9,1).
+
+    Compares the shared prefix so legacy 4-tuples vs extended 6-tuples do not
+    spuriously count as progress when only the key length differs.
     """
     if pre_key is None:
         return False
     if pre_key == post_key:
         return False
-    if len(pre_key) < 4 or len(post_key) < 4:
-        return pre_key != post_key
-    return pre_key[1:4] != post_key[1:4]
+    n = min(len(pre_key), len(post_key))
+    if n == 0:
+        return False
+    return pre_key[:n] != post_key[:n]
 
 
 def _update_stuck_from_interaction(
@@ -1630,14 +1638,14 @@ def _update_stuck_from_interaction(
                 map_key, x, y = parsed
                 record_session_blocked(state, map_key, x, y)
     elif gs.in_text_box or bool(meta.get("in_script")):
-        # No meaningful progress (same flags or script_pos-only jitter).
+        # No meaningful progress (keys frozen, including script_pos).
         # Missing pre_key keeps legacy soft-progress (stuck--) for unit fixtures.
         if pre_key is not None and not script_progressed:
             state["interact_no_progress_count"] = (
                 state.get("interact_no_progress_count", 0) + 1
             )
             state["stuck_count"] = state.get("stuck_count", 0) + 1
-            if state["interact_no_progress_count"] >= INTERACT_STALL_STREAK:
+            if should_arm_interact_stall(gs, state["interact_no_progress_count"]):
                 arm_interact_stall_escape(state)
             parsed = parse_position_key(gs.position_key)
             if parsed is not None:
@@ -1650,5 +1658,5 @@ def _update_stuck_from_interaction(
         state["interact_no_progress_count"] = (
             state.get("interact_no_progress_count", 0) + 1
         )
-        if state["interact_no_progress_count"] >= INTERACT_STALL_STREAK:
+        if should_arm_interact_stall(gs, state["interact_no_progress_count"]):
             arm_interact_stall_escape(state)

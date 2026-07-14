@@ -113,10 +113,20 @@ def door_exit_direction(gs: GameState) -> str | None:
     return None
 
 
-def blocked_stairs_up(gs: GameState) -> bool:
+def blocked_stairs_up(
+    gs: GameState, state: dict[str, Any] | None = None
+) -> bool:
+    """Block re-climbing 1F stairs while house-exit is still in progress.
+
+    MeetMom lands the player at (9,1). After the event flag, free movement can
+    walk up onto the stairs warp and bounce 1F↔2F forever — live bedroom runs
+    thrash there once post-Mom dialog finishes. Keep stairs blocked until the
+    house-exit milestone completes (front door → New Bark).
+    """
     if gs.map_key != MAP_KEY_PLAYERS_HOUSE_1F:
         return False
-    if not mom_scene_pending(gs):
+    state = state or {}
+    if state.get("house_exit_complete"):
         return False
     return gs.player.x >= 9 and gs.player.y <= 1
 

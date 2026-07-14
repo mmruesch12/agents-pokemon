@@ -111,7 +111,34 @@ def test_script_read_alone_without_active_script_is_not_interact_signal():
 
 
 def test_interact_stall_recovery_breaks_sticky_indoor_dialog_flags():
-    """Post-Mom sticky in_script + fruitless same-tile A streak → navigate."""
+    """True residue: textbox closed, sticky script flags, fruitless A → navigate."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=False,
+        raw_metadata={
+            "script_mode": SCRIPT_READ,
+            "script_active": True,
+            "in_script": True,
+            "joypad_disable": 0,
+            "mom_scene_complete": True,
+        },
+    )
+    state = initial_agent_state(gs)
+    state["bootstrap_complete"] = True
+    # Short streak is enough once the textbox is closed (residue, not live pages).
+    state["interact_no_progress_count"] = 8
+    state["short_term_history"] = ["interact:a@9,1"] * 5
+    assert interact_stall_recovery_active(gs, state) is True
+    assert needs_interaction(gs, state) is False
+    assert generic_is_interact_needed(gs, state) is False
+    result = supervisor_node(state)
+    assert result["next_node"] == "navigator"
+
+
+def test_live_textbox_short_stall_does_not_escape():
+    """Open textbox + short no-progress streak must keep A (post-Mom multi-page)."""
+    from src.graph.generic_interact import should_arm_interact_stall
+
     gs = GameState(
         player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
         in_text_box=True,
@@ -125,12 +152,34 @@ def test_interact_stall_recovery_breaks_sticky_indoor_dialog_flags():
     )
     state = initial_agent_state(gs)
     state["bootstrap_complete"] = True
-    # Require no-progress count (not history alone) so live post-Mom dialog finishes.
     state["interact_no_progress_count"] = 8
+    state["short_term_history"] = ["interact:a@9,1"] * 5
+    assert should_arm_interact_stall(gs, 8) is False
+    assert interact_stall_recovery_active(gs, state) is False
+    assert needs_interaction(gs, state) is True
+    result = supervisor_node(state)
+    assert result["next_node"] == "interactor"
+
+
+def test_live_textbox_long_stall_still_escapes():
+    """Open textbox with long fruitless streak (true sticky residue) → navigate."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=True,
+        raw_metadata={
+            "script_mode": SCRIPT_READ,
+            "script_active": True,
+            "in_script": True,
+            "joypad_disable": 0,
+            "mom_scene_complete": True,
+        },
+    )
+    state = initial_agent_state(gs)
+    state["bootstrap_complete"] = True
+    state["interact_no_progress_count"] = 22
     state["short_term_history"] = ["interact:a@9,1"] * 5
     assert interact_stall_recovery_active(gs, state) is True
     assert needs_interaction(gs, state) is False
-    assert generic_is_interact_needed(gs, state) is False
     result = supervisor_node(state)
     assert result["next_node"] == "navigator"
 
@@ -230,7 +279,7 @@ def test_interact_stall_escape_latches_through_mixed_history():
     """One navigate attempt must not re-arm force-interact A spam."""
     gs = GameState(
         player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
-        in_text_box=True,
+        in_text_box=False,
         raw_metadata={
             "script_mode": SCRIPT_READ,
             "script_active": True,
@@ -249,3 +298,26 @@ def test_interact_stall_escape_latches_through_mixed_history():
     state["short_term_history"] = ["interact:a@9,1"] * 4 + ["navigate:down@9,1"]
     assert interact_stall_recovery_active(gs, state) is True
     assert needs_interaction(gs, state) is False
+
+
+def test_live_textbox_clears_false_stall_latch():
+    """Mid-dialog nav latch under long threshold is dropped so A continues."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=True,
+        raw_metadata={
+            "script_mode": SCRIPT_READ,
+            "script_active": True,
+            "in_script": True,
+            "joypad_disable": 0,
+            "mom_scene_complete": True,
+        },
+    )
+    state = initial_agent_state(gs)
+    state["bootstrap_complete"] = True
+    state["interact_no_progress_count"] = 5
+    state["interact_stall_escape"] = True
+    state["short_term_history"] = ["interact:a@9,1"] * 5
+    assert interact_stall_recovery_active(gs, state) is False
+    assert state.get("interact_stall_escape") is not True
+    assert needs_interaction(gs, state) is True

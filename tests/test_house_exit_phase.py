@@ -84,7 +84,9 @@ def test_blocked_stairs_up_during_mom_at_east_end():
     gs = _gs(24, 6, 9, 1, mom_done=False)
     assert house_exit.blocked_stairs_up(gs) is True
     gs_done = _gs(24, 6, 9, 1, mom_done=True)
-    assert house_exit.blocked_stairs_up(gs_done) is False
+    # After Mom flag, stairs stay blocked until house_exit_complete (no 1F↔2F thrash).
+    assert house_exit.blocked_stairs_up(gs_done) is True
+    assert house_exit.blocked_stairs_up(gs_done, {"house_exit_complete": True}) is False
 
 
 def test_on_house_exit_complete_sets_flag_only():

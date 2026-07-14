@@ -78,7 +78,7 @@ MAP_GRIDS: dict[str, list[list[int]]] = {
     "24:6": _grid_from_rows(
         [
             "1111111110",  # stairs warp at (9,0)
-            "1101111010",  # block west kitchen counter at (8,1)
+            "1101111000",  # (8,1)/(9,1) walkable after MeetMom (live Silver left from entry)
             "0011111000",  # block counter column at (6,2) — not walkable in-game
             "0001011100",  # table at (3,3), (5,3); mom NPC at (7,3)
             "0000000100",  # block (7,4) — use x=8 corridor toward door

@@ -216,6 +216,128 @@ def test_mom_scene_reset_only_during_house_mom_scene():
     assert lab_state["stuck_count"] == 6
 
 
+def test_script_pos_only_change_is_meaningful_progress():
+    """Multi-page dialog advances script_pos while textbox/mode stay fixed."""
+    from src.graph.nodes import _meaningful_script_progress
+
+    pre = (22144, True, 1, False, True, True)
+    post = (22145, True, 1, False, True, True)
+    assert _meaningful_script_progress(pre, post) is True
+    assert _meaningful_script_progress(pre, pre) is False
+    assert _meaningful_script_progress(None, post) is False
+
+
+def test_post_mom_script_pos_progress_resets_stall_counter():
+    """Post-event live dialog: script_pos-only A must not arm interact_stall_escape."""
+    from src.graph.nodes import _script_progress_key
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=True,
+        raw_metadata={
+            "script_pos": 22144,
+            "script_mode": 1,
+            "in_script": True,
+            "script_active": True,
+            "mom_scene_complete": True,
+            "joypad_disable": 0,
+        },
+    )
+    state: dict = {
+        "stuck_count": 0,
+        "interact_no_progress_count": 7,
+        "interact_stall_escape": False,
+    }
+    # Simulate 12 multi-page A presses: script_pos advances every other step.
+    for i in range(12):
+        pre_pos = 22144 + i
+        post_pos = 22144 + i + (1 if i % 2 == 0 else 0)
+        state["pre_action_script_key"] = (
+            pre_pos,
+            True,
+            1,
+            False,
+            True,
+            True,
+        )
+        gs.raw_metadata["script_pos"] = post_pos
+        # Keep in_text_box True via model field; metadata drives the rest.
+        _update_stuck_from_interaction(state, "interact_a", gs.position_key, gs)
+        assert state.get("interact_stall_escape") is not True, f"armed at step {i}"
+    # Final step with frozen keys (no progress) only bumps count once.
+    assert state.get("interact_no_progress_count", 0) < 8 or state.get(
+        "interact_stall_escape"
+    ) is not True
+
+
+def test_post_mom_frozen_dialog_short_streak_does_not_arm():
+    """Eight frozen A presses while textbox open must not arm nav escape."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=True,
+        raw_metadata={
+            "script_pos": 22144,
+            "script_mode": 1,
+            "in_script": True,
+            "script_active": True,
+            "mom_scene_complete": True,
+            "joypad_disable": 0,
+        },
+    )
+    state: dict = {"stuck_count": 0, "interact_no_progress_count": 0}
+    script_key = (22144, True, 1, False, True, True)
+    for _ in range(8):
+        state["pre_action_script_key"] = script_key
+        _update_stuck_from_interaction(state, "interact_a", gs.position_key, gs)
+    assert state["interact_no_progress_count"] == 8
+    assert state.get("interact_stall_escape") is not True
+
+
+def test_post_mom_frozen_residue_long_streak_arms():
+    """Long fruitless streak with open textbox (sticky residue) still arms escape."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=True,
+        raw_metadata={
+            "script_pos": 22144,
+            "script_mode": 1,
+            "in_script": True,
+            "script_active": True,
+            "mom_scene_complete": True,
+            "joypad_disable": 0,
+        },
+    )
+    state: dict = {"stuck_count": 0, "interact_no_progress_count": 0}
+    script_key = (22144, True, 1, False, True, True)
+    for _ in range(22):
+        state["pre_action_script_key"] = script_key
+        _update_stuck_from_interaction(state, "interact_a", gs.position_key, gs)
+    assert state["interact_no_progress_count"] >= 22
+    assert state.get("interact_stall_escape") is True
+
+
+def test_residue_closed_textbox_short_streak_arms():
+    """Closed textbox + sticky flags + short streak arms escape (generic residue)."""
+    gs = GameState(
+        player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
+        in_text_box=False,
+        raw_metadata={
+            "script_pos": 22144,
+            "script_mode": 1,
+            "in_script": True,
+            "script_active": True,
+            "mom_scene_complete": True,
+            "joypad_disable": 0,
+        },
+    )
+    state: dict = {"stuck_count": 0, "interact_no_progress_count": 0}
+    script_key = (22144, False, 1, False, True, True)
+    for _ in range(8):
+        state["pre_action_script_key"] = script_key
+        _update_stuck_from_interaction(state, "interact_a", gs.position_key, gs)
+    assert state.get("interact_stall_escape") is True
+
+
 def test_history_oscillates_detects_nav_nav_interact_cycles():
     history = [
         "navigate:right@5,3",

@@ -72,6 +72,23 @@ def clear_interact_stall_escape(state: dict[str, Any]) -> None:
     state["interact_stall_escape"] = False
 
 
+def should_arm_interact_stall(gs: GameState, count: int) -> bool:
+    """True when a fruitless interact streak is long enough to prefer navigation.
+
+    Live multi-page SCRIPT_READ (e.g. post-Mom MeetMom follow-up) keeps
+    ``in_text_box`` true for many A presses; ``script_pos`` only advances every
+    few presses (gaps of ~8 observed on Silver). The short INTERACT_STALL_STREAK
+    therefore arms only when the textbox is already closed (sticky residue
+    without open text). An open textbox requires INTERACT_NO_PROGRESS_RECOVERY
+    so remaining dialog finishes with A instead of nav thrash at the entry tile.
+    """
+    if count < INTERACT_STALL_STREAK:
+        return False
+    if gs.in_text_box and count < INTERACT_NO_PROGRESS_RECOVERY:
+        return False
+    return True
+
+
 def interact_stall_recovery_active(gs: GameState, state: dict[str, Any]) -> bool:
     """Prefer navigation after unproductive interact spam (indoor or outdoor).
 
@@ -85,6 +102,8 @@ def interact_stall_recovery_active(gs: GameState, state: dict[str, Any]) -> bool
     Guards:
     - MeetMom pending: movement is locked; never nav-escape mid-scene.
     - Joypad hard-disabled: movement cannot succeed; keep A/B.
+    - Live textbox: short streak alone must not arm (post-event multi-page dialog);
+      require should_arm_interact_stall / long recovery threshold.
     - Require interact_no_progress_count + same-tile streak (not history alone) so
       post-Mom live dialog after EVENT_PLAYERS_HOUSE_MOM_1 still finishes with A.
     """
@@ -100,9 +119,17 @@ def interact_stall_recovery_active(gs: GameState, state: dict[str, Any]) -> bool
         if state.get("interact_stall_escape"):
             clear_interact_stall_escape(state)
         return False
-    if state.get("interact_stall_escape"):
+    count = int(state.get("interact_no_progress_count", 0))
+    # Live textbox under the long recovery threshold: never stay on nav latch.
+    # Covers false-arm mid multi-page dialog (post-Mom) so A can finish the scene.
+    if (
+        state.get("interact_stall_escape")
+        and gs.in_text_box
+        and count < INTERACT_NO_PROGRESS_RECOVERY
+    ):
+        clear_interact_stall_escape(state)
+    elif state.get("interact_stall_escape"):
         return True
-    count = state.get("interact_no_progress_count", 0)
     history = list(state.get("short_term_history", []))
     same = _same_tile_interact_streak(
         history, min_count=INTERACT_STALL_MIN_HISTORY
@@ -110,7 +137,7 @@ def interact_stall_recovery_active(gs: GameState, state: dict[str, Any]) -> bool
     # Require no-progress count — history alone is wrong because MeetMom fills
     # short_term_history with interacts, then the event flag flips while the
     # player is still movement-locked for remaining dialog.
-    if count >= INTERACT_STALL_STREAK and same:
+    if should_arm_interact_stall(gs, count) and same:
         arm_interact_stall_escape(state)
         return True
     if count >= INTERACT_NO_PROGRESS_RECOVERY and not is_rom_interact_signal(gs):

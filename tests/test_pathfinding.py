@@ -432,11 +432,34 @@ def test_find_path_players_house_toward_stairs():
 
 
 def test_find_path_players_house_1f_to_front_door():
-    """Door warp tiles are blocked in the grid but must remain valid goals."""
+    """Door warp tiles are blocked in the grid but must remain valid goals.
+
+    Entry (9,1) after MeetMom; corridor west at (8,1) is walkable on live Silver
+    once free. Path stairs/entry → front door must exist.
+    """
+    from src.graph.pathfinding import MAP_GRIDS
+
+    grid = MAP_GRIDS["24:6"]
+    assert grid[1][8] == 0  # (8,1) walkable corridor after free movement
+    assert grid[1][9] == 0  # (9,1) entry walkable
+    assert grid[2][9] == 0  # first step south from entry
     path = find_path(9, 1, 6, 7, map_key="24:6")
     assert len(path) >= 5
-    assert path[0] == "down"
+    assert path[0] in ("down", "left")
     assert path[-1] == "down"
+    # Reach door threshold without entering blocked kitchen furniture.
+    x, y = 9, 1
+    for step in path:
+        if step == "left":
+            x -= 1
+        elif step == "right":
+            x += 1
+        elif step == "up":
+            y -= 1
+        elif step == "down":
+            y += 1
+        assert grid[y][x] == 0 or (x, y) == (6, 7)
+    assert (x, y) == (6, 7)
 
 
 def test_elms_lab_ball_tiles_blocked_in_grid():
