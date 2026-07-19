@@ -92,19 +92,35 @@ def battle_decide(action: str = "fight") -> dict[str, Any]:
     if not state.battle.in_battle:
         return {"action": action, "result": "not_in_battle"}
 
-    action_map = {
-        "fight": "a",
-        "run": "down",  # simplified menu navigation
-        "switch": "down",
-        "item": "down",
-    }
-    btn = action_map.get(action.lower(), "a")
-    emu.press_button(btn)  # type: ignore[arg-type]
-    if action.lower() == "fight":
+    # Gen 2 battle menu (cursor starts on FIGHT):
+    #   FIGHT | PACK
+    #   PKMN  | RUN
+    act = action.lower()
+    buttons: list[str] = []
+    if act == "fight":
         emu.press_button("a")
+        emu.press_button("a")  # select first move
+        buttons = ["a", "a"]
+    elif act == "run":
+        # From FIGHT → RUN (bottom-right), then confirm.
+        emu.press_button("right")
+        emu.press_button("down")
+        emu.press_button("a")
+        buttons = ["right", "down", "a"]
+    elif act == "item":
+        emu.press_button("right")
+        emu.press_button("a")
+        buttons = ["right", "a"]
+    elif act == "switch":
+        emu.press_button("down")
+        emu.press_button("a")
+        buttons = ["down", "a"]
+    else:
+        emu.press_button("a")
+        buttons = ["a"]
     return {
         "action": action,
-        "buttons": [btn, "a"] if action.lower() == "fight" else [btn],
+        "buttons": buttons,
         "frame_count": emu.frame_count,
     }
 

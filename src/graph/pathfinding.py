@@ -20,9 +20,12 @@ MAP_WARP_HINT_ROWS: dict[str, dict[str, int]] = {
     "24:4": {"west": 8, "north": 3},
     "24:5": {"north": 2},
     "24:3": {"north": 5, "east": 8, "west": 7},
-    "26:1": {"north": 3},  # Route 30 toward Mr. Pokemon / Route 31
+    # Route 30: north → R31/Mr.P; south y=53 → Cherrygrove (live x=6..7).
+    # Route 30 north connection is on y=0 (west corridor x~4-7), not y=3.
+    "26:1": {"north": 0, "south": 53},
     "26:3": {"north": 0},  # Cherrygrove City
-    "26:2": {"west": 8},  # Route 31
+    "26:2": {"west": 7},  # Route 31 → Violet gate at (4,6)/(4,7)
+    "26:11": {"west": 5},  # R31 Violet Gate corridor y=4/5
     "10:5": {"north": 17},  # Violet City (gym approach row)
 }
 
@@ -36,26 +39,45 @@ MAP_LANDMARK_ANCHORS: dict[str, dict[str, tuple[int, int]]] = {
         # West corridor mid-point (ROM-reachable); final Cherrygrove edge is west_exit.
         "route_30_gate": (10, 8),
         "west_exit": (0, 7),
+        # East toward New Bark (egg return / reverse of first crossing).
+        "east_exit": (59, 8),
     },
     "26:1": {
         # Live ROM: Mr. Pokemon door warp is (17, 5) → map 26:10 (pret warp_event 17,5).
         "mr_pokemon_gate": (17, 5),
         # North map connection to Route 31 is on the west corridor (tiles ~4-7, y=0).
-        # Approach via western path after crossing from the east fork near y=6-7.
-        "route_31_gate": (5, 0),
+        # Live gym22 warped at (6,0); prefer x=6 to avoid soft-lock thrash at (4,4)/(4,5).
+        "route_31_gate": (6, 0),
+        # Alias for map-edge north (same tiles as route_31_gate).
+        "north_exit": (6, 0),
+        # South map edge into Cherrygrove (egg return / post-Mr.P southbound).
+        # Live Silver: only x=6..7 connect y=48→53→Cherry; x=8..12 cliff at y=49.
+        "south_exit": (7, 53),
     },
     "26:3": {
         "north_exit": (16, 0),  # ROM: Cherrygrove north warp → Route 30
+        # Live Silver: east map edge into Route 29 (reverse of R29 west_exit).
+        "east_exit": (39, 7),
     },
     "26:2": {
-        "west_gate": (0, 8),
+        # pret Route31.asm warp_event 4,6 / 4,7 → ROUTE_31_VIOLET_GATE.
+        "west_gate": (4, 7),
+    },
+    "26:11": {
+        # pret Route31VioletGate: east warps (9,4)/(9,5)↔R31; west (0,4)/(0,5)↔Violet.
+        "east_exit": (9, 5),
+        "west_exit": (0, 5),
     },
     "10:5": {
         # pret VIOLET_CITY gym warp is near SE of map; coarse open-grid seed.
         "gym_entrance": (18, 17),
+        # East entry from R31 gate lands near (39, 25).
+        "east_entry": (39, 25),
     },
     "24:5": {
-        "desk_approach": (4, 3),
+        # Live Silver egg-return: (5,3) face-up + many A delivers egg (~50+ pages).
+        # (4,2)/(4,3) may open other dialogs or fail on soft-locked approach.
+        "desk_approach": (5, 3),
         "ball_approach": (6, 4),
         "south_exit": (4, 11),
     },
@@ -131,14 +153,23 @@ MAP_GRIDS: dict[str, list[list[int]]] = {
             "111111111111111100000011010000111111110000000011111111111111",  # y=3
             "110000111111111100000001000000111100000000001111111111111111",  # y=4
             "110100011111111100011000000000011100000000001111111111111111",  # y=5
-            "000000001000000000111000000000000000001100111111100000111111",  # y=6
+            # y6: close x9-16 false-opens that A* used as a west dead-end after
+            # (16,4) down. Live westbound from mid/east uses (17,6) then y7 left
+            # (validated ROM: (36,10)/(59,8) → west_exit). Keep x17 open as the
+            # vertical drop from the y4 north bridge.
+            # Note: (18–20,6) are live walls — do not false-open (bed_egg_to_gym6
+            # right-from-17,6 failed). Egg-return walks (17,5) *without* A
+            # (supervisor egg_return_no_a); tile itself is walkable.
+            "000000001111111110111000000000000000001100111111100000111111",  # y=6
             "000000001000000000111110000000000000001100111110000100111111",  # y=7 west_exit
             "011100001000000111111110000001001111001100010000000000000000",  # y=8
             "011100001110111111111111111111111111001100010000000000000000",  # y=9
             "111100000000000011111111000010000000000000010000000000111111",  # y=10 gap x=28
             "111100000000000011111100000010000000000000010000000000111111",  # y=11
-            "111100000011100011111110000010000001110000010000001000111111",  # y=12
-            "111100000011111111111100000011101111111111110000000000111111",  # y=13 climbs 22-27,31
+            # y12–13: open x16–17 for live egg-return (15,12)→(17,12)↓(17,14)
+            # (manual + BFS bedroom_egg_r29). Was false wall L/R thrash x14–15.
+            "111100000011100000111110000010000001110000010000001000111111",  # y=12
+            "111100000011111000111100000011101111111111110000000000111111",  # y=13
             "111100001111110000000000000000000011110000000000111111111111",  # y=14
             "111100001111110000000000000000000011110000000000111111111111",  # y=15
             "111111111111111111111111000100000000000000001111111111111111",  # y=16
@@ -168,7 +199,10 @@ MAP_GRIDS: dict[str, list[list[int]]] = {
             "1111111111111111001111111111111111111111",  # y=3
             "1111111111110000000000000000000011111111",  # y=4
             "1111111111110000000000000000000011111111",  # y=5
-            "1111111111000000111100000000000010000000",  # y=6
+            # y=6–7: east corridor x=33–39 open to Route 29 (live Silver).
+            # Rival coord_events at (33,6)/(33,7) — A* to east_exit must step on these
+            # (do not force a y=9-only detour that skips SCENE_CHERRYGROVECITY_MEET_RIVAL).
+            "1111111111000000111100000000000000000000",  # y=6 east bridge open
             "1111111111000000111100100000000000000000",  # y=7
             "1111111111000000000000001111001000111111",  # y=8
             "1111111111000000000000011111000000111111",  # y=9
@@ -182,41 +216,90 @@ MAP_GRIDS: dict[str, list[list[int]]] = {
             "1111111111111111111111111111111111111111",  # y=17
         ]
     ),
-    "26:2": _grid_from_rows(  # Route 31 open seed
-        ["0" * 40 for _ in range(18)]
+    # Route 31 (40×18): live Silver BFS from east entry (post-egg thrash).
+    # Open-grid pure-left false-paths through trees (x≈21–23 wall at y=11–15).
+    # Gate warps at (4,6)/(4,7) left → 26:11; south y=17 warps → R30.
+    # Live BFS from bed_chain_r31 (30,14) → gate (4,7) (2026-07-17):
+    #   y9 west to (16,9) → down (16,10–12) → west on y12 (x16→x9) → north to
+    #   y8 west strip → (4,7). Never enters Wade LOS (18,12–15; trainer at 18,15
+    #   facing up, sight 3). y8 x13 is a live wall — keep blocked so A* does not
+    #   false-left at (14,8). Open (16,11) so the live vertical corridor exists.
+    "26:2": _grid_from_rows(
+        [
+            "1111111111111111111111111111111111111111",  # y0
+            "1111111111111111111111111111111111111111",  # y1
+            "1111111111111111111111111111111111111111",  # y2
+            "1111111111111111111111111111111111111111",  # y3
+            "1111110000000111111111111111000011111111",  # y4
+            "1111110100000100111111111111010111111111",  # y5
+            "1111000000000100000011111111000000000011",  # y6
+            "1111000000000100110011111111000000000011",  # y7 gate (4,7)
+            "1111110000000100000000000000000000000111",  # y8 x13 wall (live solid)
+            "1111111110111100000000000000000000000111",  # y9
+            "1111110000000011000000111111111100000111",  # y10 open x16
+            # y11: open x16 (live BFS vertical (16,10)↔(16,12)); block Wade x18
+            "1111110000000011011011110011111100001111",  # y11
+            # y12–15: block Wade column x18 (trainer 18,15 facing north)
+            "1111111100000000001000110001111100001111",  # y12 open x12–17 west of Wade
+            "1111111100000000001001110001111110001111",  # y13 + (32,13) A-spam
+            # y14: live walk (27,14)→(28,14)→(29,14) (probe bed_chain_r30_y13).
+            # Keeping (28,14) blocked forced A* onto (28,15) which hard-freezes
+            # SCRIPT_READ textbox that pure A never clears (live gym47/48 probe).
+            "1111111111000000001001110000000000111111",  # y14 open x24–33 incl (28,14)
+            "1111111111000000001001110000000000111111",  # y15 Wade (18,15)
+            "1111111111111111111111110000111111111111",  # y16
+            "1111111111111111111111110000111111111111",  # y17 R30 edge
+        ]
     ),
-    # Route 30: 0=walkable. Live Silver BFS (post EVENT_ROUTE_30_BATTLE):
-    # - North exit to R31 is west corridor x=4..7 at y=0 (not east).
-    # - East (Mr Pokemon) and west corridors stay separated north of ~y=15.
-    # - South climb to north only at x=12 from y=48 (see ROUTE_30_Y48_NORTH_X).
+    # Route 30: 0=walkable. Live Silver BFS (egg-return + climb seeds):
+    # - East pocket false-opens (e.g. (9,8)) caused pure-down thrash after Mr.P.
+    # - Mid/east walkability from live BFS; west x0-5 + y0-5 union preserves R31.
+    # - South climb north only at x=12 from y=48 (ROUTE_30_Y48_NORTH_X).
+    # - y48-49 open x6-13; y50-53 south to Cherry only x6-7.
+    # - Soft-lock SCRIPT_READ is from A-spam on signs/NPCs, not the tile itself
+    #   (live BFS walks (12,14)/(10,19) fine without A). Prefer geometry fixes.
+    # - East mid (x≥10, y≤17) cannot cross west until ~y24 (live BFS); y18–23
+    #   must not false-join or A* detours into thrash then A-spam soft-lock.
+    # - Live (12,12) left is solid wall — keep x11 blocked on y11–13.
+    # - Live west join path: (12,12)↓(12,16)←(10,17)↓(10,23)→(14,23)↓(15,30)←(5,30).
     "26:1": _grid_from_rows(
         [
-            "11000000111111111111",  # y0  R31 edge x2-7 (live warps x4-7)
-            "11000000111111111111",  # y1
-            "11000000111111111111",  # y2
-            "11000000111100001111",  # y3  east pocket x12-15; west x2-7
-            "11000000110000001111",  # y4
-            "11000011110100000011",  # y5  west x2-5; Mr P door (17,5); barrier mid
-            "00001111100000000000",  # y6  west x0-3 | east x9+
-            "00001111100000000000",  # y7
-            "00001111000000000000",  # y8  east open from x8 (test start mid)
-            "00001111000000000000",  # y9
-            "00001111000000000011",  # y10
-            "00001111000000000011",  # y11
-            "00000011000000000011",  # y12 west expands + east
-            "00000011000000000011",  # y13
-            "00000011000000110000",  # y14
-            "00000011000000110000",  # y15
-            "00000011000000111100",  # y16
-            "00000011000000111100",  # y17
-            "00000000000011110000",  # y18 mid join toward south
-            "00000000000011110000",  # y19
-            "00000000000011000011",  # y20
-            "00000000000011000011",  # y21
-            "00000000000000001111",  # y22
-            "00000000000000001111",  # y23 Mikey
-            "00000000000000001111",  # y24 Joey row (objects cleared by event)
-            "00000010000000001111",  # y25 narrow west gap + east open
+            # Live BFS (bed_chain_r30_y13 → R31): north edge only (6,0) walkable of
+            # west strip; path is x1 climb → (2,7)→(5,5)→(5,4)/(6,4)→(6,0).
+            # y0–4 false-opens caused pure-up thrash then (4,4) SCRIPT_READ pin.
+            "11111101111111111111",  # y0  live only (6,0) R31 warp
+            "11111000111111111111",  # y1  live x5-7
+            "11110000111111111111",  # y2  live x4-7
+            "11111100111100001111",  # y3  live x6-7; east pocket x12-15
+            # y4: live x4-7 but (4,4) soft-lock A-pin — keep blocked; use x5-7.
+            "11111000110000001111",  # y4  x0-4 blocked; approach via x5–7
+            "11000000110100010011",  # y5  Mr P door (17,5); mid barrier; live x2-7
+            "00000000100000000000",  # y6  live: no false-open at x9 south
+            # y7: live BFS walks (2,7); keep (4,7) blocked (not in live set).
+            # Soft-lock was A-spam residue, not the tile (open (2,7) for R31 path).
+            "00001000100000000000",  # y7  (2,7) open live; (4,7) blocked; (9,7) thrash
+            "00000001110000000000",  # y8  (9,8) solid live — force east then south
+            # y9–10: wall x6–7 only (post-rival (8,10) + east pocket stay open).
+            # y11–17: wall x6–11 so live (12,12) cannot false-left; east is x12+.
+            # Live BFS: pure-up at x2–5 into y11 fails — only (0,11)/(1,11).
+            "00000011000000000000",  # y9
+            "00000011000000000011",  # y10 post-rival (8,10)
+            "00111111111100000011",  # y11 live only x0-1 (x2-5 false-open pure-up)
+            "00000011111100000011",  # y12 live left from (12,12) fails
+            "00100011111100000011",  # y13 live (2,13) solid; x0-1,3-5 open
+            "00000011111100000000",  # y14 live BFS uses (12,14) south
+            "00000011111100000000",  # y15
+            "00000011111100000000",  # y16
+            "00000000110000000000",  # y17 live (10,17) east corridor
+            # y18-23: east corridor x10–15; barrier x8-9 until y24 full join.
+            "00000000110000000000",  # y18
+            "00000000110000000000",  # y19 live (10,19)
+            "00000000110000000000",  # y20
+            "00000000110000000000",  # y21
+            "00000000110000000000",  # y22
+            "00000000110000000000",  # y23 live (10,23)/(12,23)/(14,23)
+            "00000000000000001111",  # y24 live west↔east join
+            "00000010000000001111",  # y25
             "00000000000011001111",  # y26
             "00000000000011001111",  # y27
             "11000000001100001111",  # y28
@@ -232,32 +315,66 @@ MAP_GRIDS: dict[str, list[list[int]]] = {
             "11000011111100111111",  # y38
             "11000111111100111111",  # y39 berry house (7,39)
             "11000000000000111111",  # y40
-            "11100000000000111111",  # y41
+            "11000000000000111111",  # y41
             "11111100000000111111",  # y42
             "11111100010000111111",  # y43
-            "11111110000000111111",  # y44
-            "11111111000000111111",  # y45
-            "11111111100000111111",  # y46
+            "11111100000000111111",  # y44
+            "11111100000000111111",  # y45
+            "11111100000000111111",  # y46
             "11111111111100111111",  # y47
-            "11111100000001111111",  # y48 climb x12 only (directional)
-            "11111100000001111111",  # y49
-            "11111100000001111111",  # y50
-            "11111100000001111111",  # y51
-            "11111100000001111111",  # y52
-            "11111100000001111111",  # y53 south to Cherry
+            # y48-49: open x6-13 (north climb only x=12). y50-53: x6-7 only.
+            "11111100000000111111",  # y48
+            "11111100000000111111",  # y49
+            "11111100111111111111",  # y50
+            "11111100111111111111",  # y51
+            "11111100111111111111",  # y52
+            "11111100111111111111",  # y53 south to Cherry
         ]
     ),
-    "26:11": _grid_from_rows(  # Route 31 Violet Gate interior
+    "26:11": _grid_from_rows(  # Route 31 Violet Gate (10x9; pret warps y=4/5)
         [
-            "1111111111",
-            "1000000001",
-            "1000000001",
-            "1000000001",
-            "1111111111",
+            "1111111111",  # y0
+            "1111111111",  # y1
+            "1000000001",  # y2
+            "1000000001",  # y3
+            "0000000000",  # y4 west↔Violet, east↔R31
+            "0000000000",  # y5
+            "1111111111",  # y6
+            "1111111111",  # y7
+            "1111111111",  # y8
         ]
     ),
-    "10:5": _grid_from_rows(  # Violet City open seed
-        ["0" * 20 for _ in range(20)]
+    # Violet City: 20×18 blocks → 40×36 tiles.
+    # Live bed_chain_gym43 / r31_gym: pure-left on y=17 from x=22 fails (wall at
+    # x=21); door is entered from (18,18)↑(18,17). A* must route y=18 west then
+    # up, not north thrash at x=22 (false-open (21,y) for y≤17).
+    # Also block non-gym warps + east false-up walls (up from y=24 at x≥28 fails).
+    "10:5": _grid_from_rows(
+        [
+            "".join(
+                "1"
+                if (x, y)
+                in {
+                    (9, 17),  # mart
+                    (30, 17),  # academy
+                    (3, 15),  # nickname house
+                    (31, 25),  # pokecenter
+                    (21, 29),  # kyle house
+                    (23, 5),  # sprout tower
+                    (39, 24),  # gate (stay on y=25 corridor)
+                    # Gym building: east wall x=21 (y≤17) + south face except door.
+                    # Door tile (18,17) stays open (warp into 10:7).
+                    *{(21, yy) for yy in range(18)},
+                    (19, 17),
+                    (20, 17),
+                    # East approach: live up from (x,24) x=28–38 hits solid y=23.
+                    *{(xx, 23) for xx in range(28, 39)},
+                }
+                else "0"
+                for x in range(40)
+            )
+            for y in range(36)
+        ]
     ),
     "10:7": _grid_from_rows(  # Violet Gym interior (5x8 blocks)
         [
@@ -401,6 +518,14 @@ def _warp_row_step_penalty(
     north_row = hints.get("north")
     if north_row is not None and end_y < y and end_y == north_row and ny != north_row:
         penalty += 2
+    # Route 30 northbound to R31 gate (6,0): live BFS climbs x0–1 at y12–7 then
+    # east via (2,7)→(6,0). Grid already blocks y11 x2–5; bias A* onto x0–1
+    # while still south of y8; prefer x2–7 only on the north approach ledge.
+    if map_key == "26:1" and end_y == 0 and end_x <= 7 and end_y < y:
+        if y >= 8 and 0 <= nx <= 1 and ny <= y:
+            penalty -= 4
+        if y <= 7 and 2 <= nx <= 7 and ny <= y:
+            penalty -= 2
     penalty += _route_29_gate_step_penalty(
         map_key, x, y, nx, ny, end_x=end_x, end_y=end_y
     )
@@ -558,8 +683,12 @@ _DIRECTION_DELTA: dict[str, tuple[int, int]] = {
 }
 
 # Route 29 south-facing ledge (y=13→14 down OK; y=14→13 up only at climb gaps).
-# Confirmed via live ROM BFS from route29_gate_approach (Silver/Gold layout).
-ROUTE_29_Y14_CLIMB_X: frozenset[int] = frozenset({22, 23, 24, 25, 26, 27, 31})
+# Mid gaps 22–27,31: live westbound climb. East gaps 44–47: required for egg-return
+# eastbound (westbound A* reverse needs those climbs; without them max-x≈47).
+# Low gaps 4–7: also dual-walkable on the static grid.
+ROUTE_29_Y14_CLIMB_X: frozenset[int] = frozenset(
+    {4, 5, 6, 7, 22, 23, 24, 25, 26, 27, 31, 44, 45, 46, 47}
+)
 
 # Route 30 south approach: from y=48 only x=12 climbs north (live ROM probe).
 ROUTE_30_Y48_NORTH_X: frozenset[int] = frozenset({12})
@@ -626,21 +755,56 @@ def map_edge_exit_direction(
     gs: GameState,
     *,
     heading_west: bool = False,
+    heading_east: bool = False,
+    heading_south: bool = False,
+    heading_north: bool = False,
 ) -> str | None:
-    """Cardinal to cross an outdoor map-edge warp on a warp-hint row."""
+    """Cardinal to cross an outdoor map-edge warp on a warp-hint row.
+
+    Edge presses are gated on explicit heading flags so entry tiles (e.g. R29
+    east_exit while westbound, R30 south_exit while northbound) do not bounce
+    the agent back through the warp they just used.
+    """
     hints = MAP_WARP_HINT_ROWS.get(gs.map_key, {})
-    west_row = hints.get("west")
-    if west_row is None or not heading_west or gs.player.y != west_row:
-        return None
-    edge = MAP_LANDMARK_ANCHORS.get(gs.map_key, {}).get("west_exit")
-    if edge is None:
-        return None
-    edge_x, edge_y = edge
+    anchors = MAP_LANDMARK_ANCHORS.get(gs.map_key, {})
     pos = (gs.player.x, gs.player.y)
-    if pos == (edge_x, edge_y):
-        return "left"
-    if pos == (edge_x + 1, edge_y):
-        return "left"
+    # West map-edge (Route 29 → Cherrygrove, Route 31 → Violet, …).
+    west_row = hints.get("west")
+    if west_row is not None and heading_west and gs.player.y == west_row:
+        edge = anchors.get("west_exit") or anchors.get("west_gate")
+        if edge is not None:
+            edge_x, edge_y = edge
+            if pos in {(edge_x, edge_y), (edge_x + 1, edge_y)}:
+                return "left"
+    # North map-edge (Cherrygrove → Route 30). Standing on north_exit needs "up".
+    north_row = hints.get("north")
+    north_exit = anchors.get("north_exit")
+    if (
+        heading_north
+        and north_row is not None
+        and north_exit is not None
+        and gs.player.y == north_row
+        and pos[0] in {north_exit[0], north_exit[0] - 1, north_exit[0] + 1}
+    ):
+        if pos == north_exit or abs(pos[0] - north_exit[0]) <= 1:
+            return "up"
+    # South map-edge (Route 30 → Cherrygrove). Live warp at x=6..7, y=53.
+    south_row = hints.get("south")
+    south_exit = anchors.get("south_exit")
+    if heading_south and south_row is not None and gs.player.y == south_row:
+        if south_exit is not None and abs(pos[0] - south_exit[0]) <= 1:
+            return "down"
+        if south_exit is None and 6 <= gs.player.x <= 7:
+            return "down"
+    # East map-edge only when explicitly heading east (egg-return).
+    east_exit = anchors.get("east_exit")
+    if (
+        heading_east
+        and east_exit is not None
+        and gs.player.x == east_exit[0]
+        and abs(gs.player.y - east_exit[1]) <= 1
+    ):
+        return "right"
     return None
 
 
@@ -675,6 +839,52 @@ def approach_direction_toward_target(
     return None if toward == "a" else toward
 
 
+# pret wPlayerStruct direction: 0 down, 4 up, 8 left, 12 right.
+_FACING_TO_DIRECTION: dict[int, str] = {0: "down", 4: "up", 8: "left", 12: "right"}
+_DIRECTION_TO_FACING: dict[str, int] = {v: k for k, v in _FACING_TO_DIRECTION.items()}
+
+
+def facing_to_direction(facing: int) -> str | None:
+    return _FACING_TO_DIRECTION.get(int(facing))
+
+
+def interact_face_direction(
+    map_key: str,
+    x: int,
+    y: int,
+    target: tuple[int, int],
+    *,
+    state: dict | None = None,
+    approach_from: tuple[int, int] | None = None,
+) -> str | None:
+    """Cardinal the player must face to interact with the blocked-ahead object."""
+    from src.graph.generic_interact import INDOOR_NAV_STUCK_MAPS
+
+    if (x, y) != target or map_key not in INDOOR_NAV_STUCK_MAPS:
+        return None
+    primary: str | None = None
+    if approach_from is not None:
+        primary = approach_direction_toward_target(
+            approach_from[0], approach_from[1], target
+        )
+    if primary is None:
+        for direction in ("up", "down", "left", "right"):
+            if _is_perimeter_side_wall(map_key, x, y, direction):
+                continue
+            if direction_blocked_ahead(
+                map_key, x, y, direction, state=state, require_in_bounds=True
+            ):
+                primary = direction
+                break
+    if primary is None or _is_perimeter_side_wall(map_key, x, y, primary):
+        return None
+    if not direction_blocked_ahead(
+        map_key, x, y, primary, state=state, require_in_bounds=True
+    ):
+        return None
+    return primary
+
+
 def at_target_blocked_ahead_interact_eligible(
     map_key: str,
     x: int,
@@ -685,31 +895,16 @@ def at_target_blocked_ahead_interact_eligible(
     approach_from: tuple[int, int] | None = None,
 ) -> bool:
     """At nav target when the primary approach direction hits a blocked tile (indoor only)."""
-    from src.graph.generic_interact import INDOOR_NAV_STUCK_MAPS
-
-    if (x, y) != target:
-        return False
-    if map_key not in INDOOR_NAV_STUCK_MAPS:
-        return False
-
-    primary: str | None = None
-    if approach_from is not None:
-        primary = approach_direction_toward_target(
-            approach_from[0], approach_from[1], target
+    return (
+        interact_face_direction(
+            map_key,
+            x,
+            y,
+            target,
+            state=state,
+            approach_from=approach_from,
         )
-    if primary is None:
-        for direction in _DIRECTION_DELTA:
-            if _is_perimeter_side_wall(map_key, x, y, direction):
-                continue
-            if direction_blocked_ahead(
-                map_key, x, y, direction, state=state, require_in_bounds=True
-            ):
-                primary = direction
-                break
-    if primary is None or _is_perimeter_side_wall(map_key, x, y, primary):
-        return False
-    return direction_blocked_ahead(
-        map_key, x, y, primary, state=state, require_in_bounds=True
+        is not None
     )
 
 
@@ -746,8 +941,11 @@ def find_path(
     grid = MAP_GRIDS.get(map_key)
     session_walkable = session_walkable_for_map(state, map_key)
     session_blocked = session_blocked_for_map(state, map_key)
-    # Route 29 west exit needs ~55+ steps via the y=14 climb then north corridor.
-    if map_key == "24:3" and max_steps < 100:
+    # Route 29 west exit needs ~100 steps from east entry (y14 climb + north bridge).
+    if map_key == "24:3" and max_steps < 120:
+        max_steps = 120
+    # Route 31 west to Violet gate detours around tree walls (~50 steps).
+    if map_key == "26:2" and max_steps < 100:
         max_steps = 100
     if _allow_backoff:
         backoff = _east_row_session_backoff_prefix(
@@ -777,7 +975,24 @@ def find_path(
                 state=state,
                 _allow_backoff=False,
             )
-            return backoff + remainder
+            # Only accept backoff if remainder actually reaches the goal (or is empty
+            # because backoff already landed on the goal). Incomplete A* prefixes
+            # thrash (Route 29 gate left/left without a west path).
+            if (bx, by) == (end_x, end_y):
+                return backoff
+            if remainder:
+                rx, ry = bx, by
+                for direction in remainder:
+                    dx, dy = {
+                        "up": (0, -1),
+                        "down": (0, 1),
+                        "left": (-1, 0),
+                        "right": (1, 0),
+                    }[direction]
+                    rx, ry = rx + dx, ry + dy
+                if (rx, ry) == (end_x, end_y):
+                    return backoff + remainder
+            # Fall through to full A* without the broken prefix.
 
     goal = (end_x, end_y)
     open_set: list[tuple[int, int, int, int, list[Direction]]] = []
@@ -786,8 +1001,10 @@ def find_path(
 
     while open_set:
         _, cost, x, y, path = heapq.heappop(open_set)
+        # Do not return incomplete paths when the step budget is hit — that caused
+        # Route 29 gate thrash (A* handed left/left without reaching west gap).
         if len(path) >= max_steps:
-            return path
+            continue
 
         for direction, dx, dy in [
             ("up", 0, -1),
@@ -901,6 +1118,9 @@ def _greedy_directions(
             moved = True
         if not moved:
             break
+    # Incomplete greedy prefixes thrash (e.g. gate left/left without a west path).
+    if (cx, cy) != (tx, ty):
+        return []
     return directions
 
 

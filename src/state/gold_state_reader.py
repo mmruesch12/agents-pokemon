@@ -109,6 +109,12 @@ ADDR_DEFERRED_SCRIPT_BANK = 0xD175  # wDeferredScriptBank
 ADDR_DEFERRED_SCRIPT_ADDR = 0xD176  # wDeferredScriptAddr (16-bit)
 ADDR_JOYPAD_DISABLE = 0xD8BA  # wJoypadDisable
 ADDR_PLAYERS_HOUSE_1F_SCENE_ID = 0xD6CD  # wPlayersHouse1FSceneID
+# pret wram order after wPlayersHouse1FSceneID:
+# wRoute29SceneID, wCherrygroveCitySceneID, wMrPokemonsHouseSceneID, ...
+ADDR_CHERRYGROVE_CITY_SCENE_ID = ADDR_PLAYERS_HOUSE_1F_SCENE_ID + 2  # 0xD6CF
+# maps/CherrygroveCity.asm scene_script order
+SCENE_CHERRYGROVECITY_NOOP = 0
+SCENE_CHERRYGROVECITY_MEET_RIVAL = 1
 ADDR_MUSIC_PLAYING = 0xC000  # wMusicPlaying (WRAM0)
 
 PLAYERS_HOUSE_1F_DOOR = (6, 7)
@@ -382,6 +388,7 @@ class GoldStateReader:
         has_starter = has_event_flag(r, EVENT_GOT_A_POKEMON_FROM_ELM)
         has_mystery_egg = has_event_flag(r, EVENT_GOT_MYSTERY_EGG_FROM_MR_POKEMON)
         egg_delivered = has_event_flag(r, EVENT_GAVE_MYSTERY_EGG_TO_ELM)
+        cherrygrove_scene = r.read_byte(ADDR_CHERRYGROVE_CITY_SCENE_ID)
         script_active = bool(script_flags & SCRIPT_FLAG_SCRIPT_RUNNING)
         return {
             "script_flags": script_flags,
@@ -396,6 +403,10 @@ class GoldStateReader:
             "has_starter": has_starter,
             "has_mystery_egg": has_mystery_egg,
             "egg_delivered": egg_delivered,
+            # pret: SCENE_CHERRYGROVECITY_MEET_RIVAL after Mr. Pokemon; cleared in FinishRival
+            "cherrygrove_scene_id": cherrygrove_scene,
+            "cherrygrove_rival_pending": cherrygrove_scene
+            == SCENE_CHERRYGROVECITY_MEET_RIVAL,
             "in_script": script_active
             and script_mode in (SCRIPT_READ, SCRIPT_WAIT_MOVEMENT, SCRIPT_WAIT),
         }

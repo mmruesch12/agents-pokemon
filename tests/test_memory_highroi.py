@@ -174,6 +174,21 @@ def test_visit_aware_path_step_prefers_unvisited_over_path_zero():
     assert step == "left"
 
 
+def test_visit_aware_path_step_ignores_unwalkable_later_path_steps():
+    """Sequential A* path must not pick a later step into a solid as first move.
+
+    Elm desk (4,2)→ball (6,4) is down-first; path later includes right, but
+    (5,2) is solid. Visit-aware must not prefer that unvisited wall tile.
+    """
+    gs = GameState(player={"map_group": 24, "map_id": 5, "x": 4, "y": 2})
+    state = initial_agent_state(gs)
+    # Mark south (desk approach) visited so naive visit-aware would prefer right.
+    state["visited_positions"] = [f"{gs.map_key}:4:3"]
+    path = ["down", "down", "right", "right"]
+    step = visit_aware_path_step(path, gs, state)
+    assert step == "down"
+
+
 def test_select_navigation_action_preserves_door_exit_priority():
     gs = GameState(player={"x": 8, "y": 12})
     state = initial_agent_state(gs)

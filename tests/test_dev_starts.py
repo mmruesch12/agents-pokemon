@@ -127,6 +127,41 @@ def test_seed_lab_agent_state_at_ball_row_sets_ball_subgoal():
     assert "Poke Ball" in result["active_subgoal"]
 
 
+def test_seed_lab_keeps_static_ball_and_desk_landmarks():
+    """seed_lab must merge interior discovery, not wipe map-anchor landmarks."""
+    from src.graph.navigation_resolve import resolve_navigation_target
+    from src.memory.landmarks import (
+        ELMS_LAB_BALL_APPROACH_ID,
+        ELMS_LAB_DESK_APPROACH_ID,
+        find_landmark,
+    )
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 5, "x": 6, "y": 4, "facing": 4},
+        party_count=0,
+        raw_metadata={"has_starter": False},
+    )
+    state = initial_agent_state(gs)
+    # Desk visits so subgoal advances to ball pick.
+    state["visited_positions"] = ["24:5:4:2", "24:5:5:2"]
+    result = seed_lab_agent_state(state, gs)
+    assert find_landmark(
+        result.get("known_landmarks", []), landmark_id=ELMS_LAB_BALL_APPROACH_ID
+    )
+    assert find_landmark(
+        result.get("known_landmarks", []), landmark_id=ELMS_LAB_DESK_APPROACH_ID
+    )
+    # After seed, force ball subgoal via desk visits again (seed may clear at y<=2 only).
+    result["visited_positions"] = list(
+        set(result.get("visited_positions", [])) | {"24:5:4:2", "24:5:5:2"}
+    )
+    from src.graph.phases import starter_quest
+
+    starter_quest.sync_subgoals(gs, result)
+    assert "Poke Ball" in result["active_subgoal"]
+    assert resolve_navigation_target(gs, result) == (6, 4)
+
+
 def test_install_route_29_gate_from_save(tmp_path: Path):
     source = tmp_path / "stuck_113.state"
     source.write_bytes(b"gate-approach")
@@ -174,3 +209,32 @@ def test_emulator_state_rejects_start_bedroom():
     )
     with pytest.raises(ValueError, match="only one"):
         runner.run()
+
+
+def test_hard_reload_candidates_exclude_foreign_bed_chain():
+    """Hard soft-lock must not teleport to foreign session seeds mid-run."""
+    from src.run.autonomous_runner import AutonomousRunner
+
+    plain = AutonomousRunner(rom_path="roms/pokemon_gold.gb", max_steps=1)
+    # Before this run stamps free progress, ignore leftover progress_checkpoint*.
+    assert plain._hard_reload_candidates(progress_written=False) == []
+    names = plain._hard_reload_candidates(progress_written=True)
+    assert names == [
+        "progress_checkpoint_safe",
+        "progress_checkpoint_prev",
+        "progress_checkpoint",
+    ]
+    assert not any(n.startswith("bed_chain") for n in names)
+    assert "bedroom_egg_r29" not in names
+
+    bedroom = AutonomousRunner(
+        rom_path="roms/pokemon_gold.gb", max_steps=1, start_bedroom=True
+    )
+    assert "bedroom_start" in bedroom._hard_reload_candidates(progress_written=False)
+
+    emu = AutonomousRunner(
+        rom_path="roms/pokemon_gold.gb",
+        max_steps=1,
+        emulator_state="route29_gate_approach",
+    )
+    assert "route29_gate_approach" in emu._hard_reload_candidates()

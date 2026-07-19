@@ -312,8 +312,9 @@ def test_post_rival_emulator_reaches_cherrygrove_within_budget(new_bark_ram: dic
     """Post-rival macro steps reach Cherrygrove entry within step budget.
 
     Fake PostRivalEmulator warps R30→Cherry at y<=3. Live-accurate Route 30 grid
-    keeps east/west corridors separate, so mid-east starts need a longer detour
-    onto the west path before the north edge (~40 BFS steps).
+    keeps east/west corridors separate and blocks y11 x2–5 (pure-up false-opens),
+    so mid-east (8,10) detours south to the west join then climbs the x0–1
+    corridor (~58 A* steps to the north edge).
     """
     from tests.fake_emulator import PostRivalEmulator
 
@@ -324,7 +325,7 @@ def test_post_rival_emulator_reaches_cherrygrove_within_budget(new_bark_ram: dic
     mem[0xDA03] = 10
     emu = PostRivalEmulator(mem)
     state = _state(emu.get_game_state())
-    budget = 50
+    budget = 80
     for step in range(budget):
         sup = supervisor_node(state)
         assert sup["next_node"] != "idle"

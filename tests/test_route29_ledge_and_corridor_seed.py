@@ -93,14 +93,35 @@ def test_seed_corridor_violet_gym_targets_falkner_not_entrance():
 
 
 def test_route_30_west_path_reaches_route_31_gate():
-    """Live R30: west corridor reaches north edge (5,0); east mid does not short-cut."""
-    path = find_path(5, 30, 5, 0, map_key="26:1")
+    """Live R30: west corridor reaches north edge (6,0); east mid does not short-cut."""
+    path = find_path(5, 30, 6, 0, map_key="26:1")
     assert path
     assert len(path) >= 20
     # East of the mid barrier should not have a 1–5 step false path to the gate.
-    short = find_path(16, 7, 5, 0, map_key="26:1")
+    short = find_path(16, 7, 6, 0, map_key="26:1")
     if short:
         assert len(short) > 10
+
+
+def test_route_30_mid_east_path_false_left_blocked_reaches_gate():
+    """From (12,12) A* must not start left into wall; must reach (6,0) via south/west."""
+    path = find_path(12, 12, 6, 0, map_key="26:1", max_steps=250)
+    assert path
+    assert len(path) > 20
+    assert path[0] != "left"  # live left from (12,12) is solid
+    x, y = 12, 12
+    for step in path:
+        if step == "left":
+            x -= 1
+        elif step == "right":
+            x += 1
+        elif step == "up":
+            y -= 1
+        elif step == "down":
+            y += 1
+    assert (x, y) == (6, 0)
+    # Live BFS joins west around y24–30; path should go that deep south first.
+    assert path.count("down") >= 10
 
 
 def test_seed_route_29_still_used_on_route_29_snapshot():
@@ -123,6 +144,23 @@ def test_route_30_y48_north_only_at_gap():
     assert path
     # Must move horizontally before climbing the y=48 gap.
     assert path[0] in ("left", "right")
+
+
+def test_route_30_egg_return_from_east_pocket_avoids_false_down():
+    """Live: (9,8) is solid; egg-return A* must not pure-down thrash at (9,7)."""
+    path = find_path(9, 7, 6, 53, map_key="26:1", max_steps=200)
+    assert path
+    assert len(path) >= 40
+    # First step must leave the false vertical (right/left), not down into wall.
+    assert path[0] in ("right", "left", "up")
+    # Path must eventually go south to Cherry edge.
+    assert path.count("down") >= 20
+
+
+def test_route_30_egg_return_from_mr_pokemon_door():
+    path = find_path(17, 5, 6, 53, map_key="26:1", max_steps=200)
+    assert path
+    assert len(path) >= 40
 
 
 def test_cherrygrove_path_from_east_entry_reaches_north_exit():

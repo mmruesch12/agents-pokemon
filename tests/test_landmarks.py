@@ -18,6 +18,7 @@ from src.memory.landmarks import (
     MR_POKEMONS_HOUSE_ENTRANCE_ID,
     NEW_BARK_WEST_EXIT_ID,
     ROUTE_29_NORTH_GATE_ID,
+    ROUTE_29_WEST_EXIT_ID,
     ROUTE_30_NORTH_GATE_ID,
     discover_elms_lab_landmarks,
     discover_mr_pokemon_entrance_landmark,
@@ -371,16 +372,16 @@ def test_navigation_wrong_map_west_landmark_uses_frontier():
             kind="map_visit",
         ),
         make_landmark(
-            landmark_id=ROUTE_29_NORTH_GATE_ID,
-            name="Route 29 north gate",
+            landmark_id=ROUTE_29_WEST_EXIT_ID,
+            name="Route 29 west exit to Cherrygrove",
             map_key="24:3",
-            x=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"][0],
-            y=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"][1],
+            x=MAP_LANDMARK_ANCHORS["24:3"]["west_exit"][0],
+            y=MAP_LANDMARK_ANCHORS["24:3"]["west_exit"][1],
             kind="map_visit",
         ),
     ]
     target = _navigation_target(gs, state=state)
-    assert target == MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"]
+    assert target == MAP_LANDMARK_ANCHORS["24:3"]["west_exit"]
     assert target != (0, 8)
 
 
@@ -404,11 +405,11 @@ def test_hydrate_state_enables_west_exit_navigation():
         )
         mem.add_landmark(
             make_landmark(
-                landmark_id=ROUTE_29_NORTH_GATE_ID,
-                name="Route 29 north gate",
+                landmark_id=ROUTE_29_WEST_EXIT_ID,
+                name="Route 29 west exit to Cherrygrove",
                 map_key="24:3",
-                x=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"][0],
-                y=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"][1],
+                x=MAP_LANDMARK_ANCHORS["24:3"]["west_exit"][0],
+                y=MAP_LANDMARK_ANCHORS["24:3"]["west_exit"][1],
                 kind="map_visit",
             )
         )
@@ -422,8 +423,7 @@ def test_hydrate_state_enables_west_exit_navigation():
             party_count=1,
         )
         hydrated_route = mem.hydrate_state({**hydrated, "game_state": gs_route.model_dump()})
-        assert _navigation_target(gs_route, state=hydrated_route) == MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"]
-        assert _navigation_target(gs_route, state=hydrated_route) == MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"]
+        assert _navigation_target(gs_route, state=hydrated_route) == MAP_LANDMARK_ANCHORS["24:3"]["west_exit"]
 
 
 def test_hydrate_mr_entrance_enables_interior_navigation():
@@ -523,15 +523,15 @@ def test_navigation_uses_route_29_landmark():
     state["house_exit_complete"] = True
     state["known_landmarks"] = [
         make_landmark(
-            landmark_id=ROUTE_29_NORTH_GATE_ID,
-            name="Route 29 north gate",
+            landmark_id=ROUTE_29_WEST_EXIT_ID,
+            name="Route 29 west exit to Cherrygrove",
             map_key="24:3",
-            x=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"][0],
-            y=MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"][1],
+            x=MAP_LANDMARK_ANCHORS["24:3"]["west_exit"][0],
+            y=MAP_LANDMARK_ANCHORS["24:3"]["west_exit"][1],
             kind="map_visit",
         )
     ]
-    assert _navigation_target(gs, state=state) == MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"]
+    assert _navigation_target(gs, state=state) == MAP_LANDMARK_ANCHORS["24:3"]["west_exit"]
 
 
 def test_exploration_hint_targets_lab_warp():

@@ -17,6 +17,16 @@ INDOOR_INTERACT_STUCK = int(os.getenv("INDOOR_INTERACT_STUCK", "2"))
 INTERACT_NO_PROGRESS_RECOVERY = int(
     os.getenv("INTERACT_NO_PROGRESS_RECOVERY", "22")
 )
+# Outdoor multi-page NPC dialog can need many A presses; keep this below the
+# thrash budget so gate/sign residue cannot soft-lock forever (live R29 gate).
+OUTDOOR_OPEN_TEXTBOX_RECOVERY = int(
+    os.getenv("OUTDOOR_OPEN_TEXTBOX_RECOVERY", "18")
+)
+# When script_pos freezes under outdoor A, abort far sooner — further A can
+# hard-lock the overworld (live Route 30 (13,24) script_pos stuck forever).
+OUTDOOR_FROZEN_SCRIPT_RECOVERY = int(
+    os.getenv("OUTDOOR_FROZEN_SCRIPT_RECOVERY", "5")
+)
 # Faster escape for same-tile A-spam when script flags stay sticky (e.g. post-Mom).
 INTERACT_STALL_STREAK = int(os.getenv("INTERACT_STALL_STREAK", "8"))
 INTERACT_STALL_MIN_HISTORY = int(os.getenv("INTERACT_STALL_MIN_HISTORY", "5"))
@@ -75,18 +85,32 @@ def clear_interact_stall_escape(state: dict[str, Any]) -> None:
 def should_arm_interact_stall(gs: GameState, count: int) -> bool:
     """True when a fruitless interact streak is long enough to prefer navigation.
 
-    Live multi-page SCRIPT_READ (e.g. post-Mom MeetMom follow-up) keeps
-    ``in_text_box`` true for many A presses; ``script_pos`` only advances every
-    few presses (gaps of ~8 observed on Silver). The short INTERACT_STALL_STREAK
-    therefore arms only when the textbox is already closed (sticky residue
-    without open text). An open textbox requires INTERACT_NO_PROGRESS_RECOVERY
-    so remaining dialog finishes with A instead of nav thrash at the entry tile.
+    Open textbox (indoor *or* outdoor): never arm nav-escape. Movement cannot
+    dismiss story/NPC dialog, and outdoor B/nav while SCRIPT_READ is open
+    soft-locks the overworld (live Route 30 (14,23) after B recovery).
+
+    Closed-textbox residue uses the short INTERACT_STALL_STREAK.
     """
-    if count < INTERACT_STALL_STREAK:
+    if gs.in_text_box:
         return False
-    if gs.in_text_box and count < INTERACT_NO_PROGRESS_RECOVERY:
+    return count >= INTERACT_STALL_STREAK
+
+
+def outdoor_script_frozen(gs: GameState, state: dict[str, Any]) -> bool:
+    """True when outdoor script residue is frozen *without* an open textbox.
+
+    While ``in_text_box`` is true, keep A — arming nav-escape lets recovery
+    press B, which hard-locks SCRIPT_READ dialogs (live R30 stuck_122).
+    """
+    if gs.map_key in INDOOR_NAV_STUCK_MAPS:
         return False
-    return True
+    if gs.in_text_box:
+        return False
+    meta = _meta(gs)
+    if not (meta.get("in_script") or meta.get("script_active")):
+        return False
+    frozen = int(state.get("outdoor_script_frozen_count", 0))
+    return frozen >= OUTDOOR_FROZEN_SCRIPT_RECOVERY
 
 
 def interact_stall_recovery_active(gs: GameState, state: dict[str, Any]) -> bool:
@@ -102,8 +126,7 @@ def interact_stall_recovery_active(gs: GameState, state: dict[str, Any]) -> bool
     Guards:
     - MeetMom pending: movement is locked; never nav-escape mid-scene.
     - Joypad hard-disabled: movement cannot succeed; keep A/B.
-    - Live textbox: short streak alone must not arm (post-event multi-page dialog);
-      require should_arm_interact_stall / long recovery threshold.
+    - Live open textbox: never nav-escape (long multi-page freezes still need A).
     - Require interact_no_progress_count + same-tile streak (not history alone) so
       post-Mom live dialog after EVENT_PLAYERS_HOUSE_MOM_1 still finishes with A.
     """
@@ -120,13 +143,9 @@ def interact_stall_recovery_active(gs: GameState, state: dict[str, Any]) -> bool
             clear_interact_stall_escape(state)
         return False
     count = int(state.get("interact_no_progress_count", 0))
-    # Live textbox under the long recovery threshold: never stay on nav latch.
-    # Covers false-arm mid multi-page dialog (post-Mom) so A can finish the scene.
-    if (
-        state.get("interact_stall_escape")
-        and gs.in_text_box
-        and count < INTERACT_NO_PROGRESS_RECOVERY
-    ):
+    # Any open textbox clears nav latch — keep A until dialog closes.
+    # Outdoor B/nav mid-SCRIPT_READ soft-locks (live Route 30 (14,23)).
+    if state.get("interact_stall_escape") and gs.in_text_box:
         clear_interact_stall_escape(state)
     elif state.get("interact_stall_escape"):
         return True
@@ -149,16 +168,27 @@ def interact_stall_recovery_active(gs: GameState, state: dict[str, Any]) -> bool
 def outdoor_interact_recovery_active(gs: GameState, state: dict[str, Any]) -> bool:
     """Outdoor maps: prefer navigation after unproductive interact spam.
 
-    High stuck_count with no-progress interacts (trainer/script soft-lock) also
-    forces nav recovery even while ROM still reports dialog residue — otherwise
-    the agent can spam A forever on Route 30/31 signs and trainer LOS edges.
+    Never nav-escape while ``in_text_box`` is open — pure A eventually clears
+    multi-page NPC/sign dialog (observed 2–36 A presses). Escaping to navigator
+    injects B, which hard-locks SCRIPT_READ (live Route 30 stuck_122).
+
+    Closed-textbox script residue and high stuck still arm recovery.
     """
     if gs.map_key in INDOOR_NAV_STUCK_MAPS:
+        return False
+    if gs.in_text_box:
         return False
     if interact_stall_recovery_active(gs, state):
         return True
     stuck = int(state.get("stuck_count", 0))
     no_progress = int(state.get("interact_no_progress_count", 0))
+    # Soft outdoor thrash: same tile A-spam with mild stuck (live Route 29 gate).
+    if stuck >= 2 and no_progress >= INTERACT_STALL_STREAK:
+        arm_interact_stall_escape(state)
+        return True
+    if outdoor_script_frozen(gs, state):
+        arm_interact_stall_escape(state)
+        return True
     if stuck >= 5 and no_progress >= 2:
         arm_interact_stall_escape(state)
         return True
@@ -172,6 +202,14 @@ def is_rom_interact_signal(gs: GameState) -> bool:
     meta = _meta(gs)
     joypad_disable = meta.get("joypad_disable", 0)
     blocked = joypad_input_blocked(joypad_disable)
+    outdoor = gs.map_key not in INDOOR_NAV_STUCK_MAPS
+    # Outdoor: only open textbox is a real dialog signal. Sticky SCRIPT_READ /
+    # in_script / joypad-disable *without* a textbox is residue — forcing A
+    # soft-locks the overworld (live R30 (1,11)/(3,18); R31 (28,15) after R30
+    # entry; gym22/47). Walk path0 instead; real NPC/sign pages set in_text_box.
+    # Joypad-disable during an open textbox still needs A (trainer/rival cutscene).
+    if outdoor:
+        return bool(gs.in_text_box)
     if dialog_or_script_active(gs) and not blocked:
         return True
     # SCRIPT_READ alone is idle residue; require an active script bit.
@@ -250,9 +288,27 @@ def navigate_stuck_at_tile(gs: GameState, state: dict[str, Any]) -> bool:
     return tile or pocket_navigate_stuck(state)
 
 
+def _lab_ball_pick_nav_preferred(gs: GameState, state: dict[str, Any]) -> bool:
+    """True when Elm desk intro is done and we should walk to the balls, not A-spam.
+
+    Sticky SCRIPT_READ residue at the desk (no open textbox) kept the bedroom
+    burn soft-lock reloading while never choosing a starter.
+    """
+    if gs.map_key != MAP_KEY_ELMS_LAB or gs.in_text_box:
+        return False
+    subgoal = (state.get("active_subgoal") or "").lower()
+    return "poke ball" in subgoal or "potion" in subgoal
+
+
 def generic_is_interact_needed(gs: GameState, state: dict[str, Any]) -> bool:
     """True when ROM signals expect A/B instead of movement."""
     if interact_stall_recovery_active(gs, state):
+        return False
+    # Soft-lock tiles session-blocked after hard reload: do not re-pin interactor
+    # for sticky residue (live R30 (12,14) A-spam). Still A if a textbox is open.
+    if _standing_on_session_blocked_tile(gs, state) and not gs.in_text_box:
+        return False
+    if _lab_ball_pick_nav_preferred(gs, state):
         return False
     return is_rom_interact_signal(gs)
 
@@ -260,6 +316,10 @@ def generic_is_interact_needed(gs: GameState, state: dict[str, Any]) -> bool:
 def generic_force_interactor(gs: GameState, state: dict[str, Any]) -> bool:
     """Supervisor must route to interactor before navigator (active dialog/script)."""
     if interact_stall_recovery_active(gs, state):
+        return False
+    if _standing_on_session_blocked_tile(gs, state) and not gs.in_text_box:
+        return False
+    if _lab_ball_pick_nav_preferred(gs, state):
         return False
     return is_rom_interact_signal(gs)
 
@@ -277,7 +337,7 @@ def generic_prefer_interact_candidate(gs: GameState, state: dict[str, Any]) -> b
     """Navigator should offer interact when ROM signals expect dialog input."""
     if interact_stall_recovery_active(gs, state):
         return False
-    if _standing_on_session_blocked_tile(gs, state):
+    if _standing_on_session_blocked_tile(gs, state) and not gs.in_text_box:
         return False
     return is_rom_interact_signal(gs)
 

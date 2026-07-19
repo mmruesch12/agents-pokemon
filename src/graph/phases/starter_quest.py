@@ -36,6 +36,8 @@ STARTER_QUEST_MAPS = frozenset(
         MAP_KEY_ROUTE_29,
         MAP_KEY_ROUTE_30,
         MAP_KEY_MR_POKEMONS_HOUSE,
+        # Rival fires on Cherrygrove east edge (before/after egg delivery).
+        MAP_KEY_CHERRYGROVE_CITY,
     }
 )
 
@@ -75,6 +77,10 @@ def in_starter_quest(gs: GameState, state: dict[str, Any] | None = None) -> bool
         return False
     if state.get("starter_quest_complete"):
         return False
+    # Illegal skip recovery: egg delivered but FinishRival still pending — stay
+    # in starter quest on any map so subgoals re-target Cherrygrove rival.
+    if _meta(gs).get("cherrygrove_rival_pending"):
+        return True
     return gs.map_key in STARTER_QUEST_MAPS or not _egg_delivered(gs)
 
 
@@ -118,14 +124,21 @@ def ensure_lab_desk_visits_for_snapshot(gs: GameState, state: dict[str, Any]) ->
 def _subgoal_index(gs: GameState, state: dict[str, Any]) -> int:
     if not has_starter(gs):
         if gs.map_key == MAP_KEY_ELMS_LAB:
+            # After the player has stood on the desk tiles, move on to ball pick
+            # unless an *open textbox* is still finishing Elm's intro. Sticky
+            # SCRIPT_READ / in_script residue (no textbox) must not pin
+            # "Talk to Elm" forever — live bedroom burn soft-lock reloaded 13×
+            # at (4,2) while balls were never chosen.
+            if _desk_area_visited(state):
+                if (
+                    lab_scene_pending(gs)
+                    and gs.in_text_box
+                    and (gs.player.x, gs.player.y) in ELMS_LAB_DESK_TILES
+                ):
+                    return 0
+                return 1
             if lab_scene_pending(gs):
                 return 0
-            if _desk_area_visited(state) and not lab_scene_pending(gs):
-                pos = (gs.player.x, gs.player.y)
-                if gs.player.y >= 3:
-                    return 1
-                if pos in ELMS_LAB_DESK_TILES:
-                    return 1
         return 0
     if not _has_egg(gs):
         if gs.map_key in (
@@ -206,7 +219,30 @@ def door_exit_direction(
 ) -> str | None:
     """Cardinal to step through a discovered warp tile (caller supplies landmark coords)."""
     if gs.map_key == MAP_KEY_ELMS_LAB and starter_flag_set(gs):
-        if (gs.player.x, gs.player.y) in (ELMS_LAB_EXIT, (5, 11)):
+        # After starter: leave south — but NOT while returning with the Mystery
+        # Egg (live thrash: enter (4,11) → forced down → New Bark forever).
+        if _has_egg(gs) and not _egg_delivered(gs):
+            return None
+        # Door tiles; approach tiles step toward the door first.
+        pos = (gs.player.x, gs.player.y)
+        if pos in (ELMS_LAB_EXIT, (5, 11)):
+            return "down"
+        if gs.player.y == 11 and gs.player.x in (3, 6):
+            return "right" if gs.player.x < 4 else "left"
+        if gs.player.y == 10 and gs.player.x in (4, 5):
+            return "down"
+    # Mr. Pokemon house: after receiving the egg, leave via door (2,7).
+    # Live bedroom burn: pure-down from (3,6) fails forever (stuck 1–10 then
+    # hard-reload); warp is the west door column — left to x=2 then down.
+    if gs.map_key == MAP_KEY_MR_POKEMONS_HOUSE and _has_egg(gs):
+        px, py = gs.player.x, gs.player.y
+        if (px, py) == (2, 7):
+            return "down"
+        if py >= 6 and px > 2:
+            return "left"
+        if px == 2 and py < 7:
+            return "down"
+        if py >= 6 and 2 <= px <= 5:
             return "down"
     if door is None:
         return None
@@ -255,9 +291,61 @@ def on_starter_quest_complete(state: dict[str, Any], gs: GameState) -> None:
     state["starter_quest_complete"] = True
 
 
+def _rival_battle_context(gs: GameState) -> bool:
+    """True when a trainer battle is the Cherrygrove egg-return rival (or lab fallback).
+
+    Canon (pret CherrygroveCity.asm): rival coord_events at (33,6)/(33,7) fire on
+    SCENE_CHERRYGROVECITY_MEET_RIVAL *before* the egg is given to Elm — not in the lab.
+
+    Do **not** treat arbitrary outdoor trainers (Route 30 Joey/Mikey, etc.) as the
+    First rival just because the egg is held or delivered.
+    """
+    if not _in_rival_battle(gs):
+        return False
+    meta = _meta(gs)
+    # Canon: Cherrygrove east-edge rival during egg-return.
+    if gs.map_key == MAP_KEY_CHERRYGROVE_CITY:
+        return bool(
+            meta.get("has_mystery_egg")
+            or meta.get("egg_delivered")
+            or meta.get("cherrygrove_rival_pending")
+        )
+    # Historical/eval only: lab map after egg delivery (missed overworld frame).
+    if gs.map_key == MAP_KEY_ELMS_LAB:
+        return bool(meta.get("egg_delivered"))
+    return False
+
+
+def maybe_complete_starter_quest(gs: GameState, state: dict[str, Any]) -> bool:
+    """Mark starter quest done when egg path and rival scene are both finished.
+
+    Completes only when:
+    - Egg has been delivered to Elm, and
+    - Cherrygrove rival scene is no longer pending (FinishRival ran, or never
+      required after a valid live rival / seed that cleared the scene).
+
+    Does **not** complete on \"First rival battle\" alone: canon order is rival
+    *before* egg delivery, so a rival milestone must not hand off to early
+    progression while the egg is still held.
+
+    Does *not* complete if egg was delivered but rival scene is still MEET_RIVAL
+    (illegal skip of (33,6)/(33,7)) — agent should return to Cherrygrove.
+    """
+    if state.get("starter_quest_complete"):
+        return False
+    meta = _meta(gs)
+    if not meta.get("egg_delivered"):
+        return False
+    # Pending rival after Mr. Pokemon: do not hand off to early progression yet.
+    if meta.get("cherrygrove_rival_pending"):
+        return False
+    on_starter_quest_complete(state, gs)
+    return True
+
+
 def starter_milestone(gs: GameState, maps_visited: list[str]) -> str | None:
     meta = _meta(gs)
-    if _in_rival_battle(gs) and (meta.get("egg_delivered") or gs.map_key == MAP_KEY_ELMS_LAB):
+    if _rival_battle_context(gs):
         return MILESTONE_RIVAL_BATTLE
     if meta.get("egg_delivered"):
         return MILESTONE_EGG_DELIVERED

@@ -161,8 +161,8 @@ def test_live_textbox_short_stall_does_not_escape():
     assert result["next_node"] == "interactor"
 
 
-def test_live_textbox_long_stall_still_escapes():
-    """Open textbox with long fruitless streak (true sticky residue) → navigate."""
+def test_live_textbox_long_stall_keeps_interactor():
+    """Open textbox with long fruitless streak still routes to A (not navigate)."""
     gs = GameState(
         player={"map_group": 24, "map_id": 6, "x": 9, "y": 1},
         in_text_box=True,
@@ -178,10 +178,11 @@ def test_live_textbox_long_stall_still_escapes():
     state["bootstrap_complete"] = True
     state["interact_no_progress_count"] = 22
     state["short_term_history"] = ["interact:a@9,1"] * 5
-    assert interact_stall_recovery_active(gs, state) is True
-    assert needs_interaction(gs, state) is False
+    state["interact_stall_escape"] = True  # stale latch must clear
+    assert interact_stall_recovery_active(gs, state) is False
+    assert needs_interaction(gs, state) is True
     result = supervisor_node(state)
-    assert result["next_node"] == "navigator"
+    assert result["next_node"] == "interactor"
 
 
 def test_post_mom_short_interact_streak_does_not_escape():

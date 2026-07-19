@@ -198,6 +198,33 @@ class AutonomousRunner:
         )
         return state
 
+    def _hard_reload_candidates(self, *, progress_written: bool = False) -> list[str]:
+        """Save basenames to try on hard soft-lock recovery (first existing wins).
+
+        Prefer free progress tiles written *this run* (when ``progress_written``),
+        then *this run's* original fast-start snapshot. Never hardcode foreign
+        session basenames (``bed_chain_*``, ``bedroom_egg_*``) — those teleport
+        mid-quest and invalidate continuous bedroom_start proof. Also skip
+        leftover ``progress_checkpoint*`` files from prior processes until this
+        run has stamped free progress itself.
+        """
+        candidates: list[str] = []
+        if progress_written:
+            candidates.extend(
+                [
+                    "progress_checkpoint_safe",
+                    "progress_checkpoint_prev",
+                    "progress_checkpoint",
+                ]
+            )
+        if self.emulator_state:
+            candidates.append(self.emulator_state)
+        if self.start_bedroom:
+            candidates.append("bedroom_start")
+        if self.start_lab:
+            candidates.append("lab_desk_start")
+        return candidates
+
     def _load_latest_emulator_state(self, emu: Any) -> str | None:
         """Load the newest emulator .state file (headed watch resume)."""
         states = sorted(
@@ -379,6 +406,13 @@ class AutonomousRunner:
                 start_steps = state.get("metrics", {}).get("steps", 0)
                 target_steps = start_steps + self.max_steps
                 milestones: list[str] = list(state.get("milestones", []))
+                last_progress_pos: str | None = None
+                softlock_reloads = 0
+                # Runner-local: only trust progress_checkpoint* files after *this*
+                # run stamps free progress (ignore leftover files from prior runs).
+                progress_written = False
+                progress_safe_map: str | None = None
+                progress_safe_pos: str | None = None
 
                 while state.get("metrics", {}).get("steps", 0) < target_steps:
                     current = state.get("metrics", {}).get("steps", 0)
@@ -415,15 +449,251 @@ class AutonomousRunner:
                     if state.get("known_landmarks"):
                         self.memory.sync_landmarks_from_state(state)
 
-                    if state.get("stuck_count", 0) >= self.stuck_threshold:
-                        logger.warning(
-                            "Stuck count=%d (failed moves), saving state",
-                            state["stuck_count"],
+                    # Progress checkpoint: freely-moving tile with real displacement
+                    # so hard soft-lock reload does not land on the same stuck tile
+                    # (live R30 (14,23) overwrote checkpoint then reloaded itself).
+                    # Never checkpoint while outdoor textbox/script is open — that
+                    # saved (1,7)/(12,14) soft-locks as "progress" (bed_chain_gym).
+                    gs_now = GameState.model_validate(state.get("game_state", {}))
+                    pos_now = gs_now.position_key
+                    meta_now = gs_now.raw_metadata or {}
+                    script_open = bool(
+                        gs_now.in_text_box
+                        or meta_now.get("in_script")
+                        or meta_now.get("script_active")
+                        or int(meta_now.get("script_mode") or 0) != 0
+                    )
+                    frozen_now = int(state.get("outdoor_script_frozen_count", 0))
+                    if (
+                        int(state.get("stuck_count", 0)) == 0
+                        and pos_now
+                        and not script_open
+                        and frozen_now == 0
+                    ):
+                        prev = last_progress_pos
+                        far_enough = True
+                        if prev and prev.count(":") == 3 and pos_now.count(":") == 3:
+                            try:
+                                pm, px, py = prev.rsplit(":", 2)
+                                nm, nx, ny = pos_now.rsplit(":", 2)
+                                far_enough = pm != nm or abs(int(px) - int(nx)) + abs(
+                                    int(py) - int(ny)
+                                ) >= 3
+                            except ValueError:
+                                far_enough = pos_now != prev
+                        else:
+                            far_enough = pos_now != prev
+                        if far_enough:
+                            try:
+                                import shutil
+
+                                # Keep previous good tile for double-buffer reload.
+                                if (self.save_dir / "progress_checkpoint.state").is_file():
+                                    shutil.copy(
+                                        self.save_dir / "progress_checkpoint.state",
+                                        self.save_dir / "progress_checkpoint_prev.state",
+                                    )
+                                emu.save_state("progress_checkpoint")
+                                # Safe snapshot for hard reload: create once, then
+                                # refresh on map advance OR significant free progress
+                                # on the same map (live gym29: whole R30 is one map —
+                                # map-only refresh left safe at west seed and a soft-
+                                # lock reload wiped ~50 northbound steps).
+                                safe = self.save_dir / "progress_checkpoint_safe.state"
+                                cur_map = gs_now.map_key
+                                map_advanced = (
+                                    progress_safe_map is not None
+                                    and progress_safe_map != cur_map
+                                )
+                                # Same-map: require Manhattan ≥8 from last safe tile so
+                                # we keep free mid-route recovery without thrash-overwrite.
+                                significant_same = False
+                                if (
+                                    progress_safe_map == cur_map
+                                    and progress_safe_pos
+                                    and progress_safe_pos.count(":") == 3
+                                    and pos_now.count(":") == 3
+                                ):
+                                    try:
+                                        _sm, sx, sy = progress_safe_pos.rsplit(":", 2)
+                                        _nm, nx, ny = pos_now.rsplit(":", 2)
+                                        significant_same = (
+                                            abs(int(sx) - int(nx))
+                                            + abs(int(sy) - int(ny))
+                                            >= 8
+                                        )
+                                    except ValueError:
+                                        significant_same = False
+                                # First free progress of the run: always stamp safe to
+                                # the current free tile (pre-copied seed files must not
+                                # block updates — live gym29 left safe at (5,30) forever).
+                                first_safe = progress_safe_map is None
+                                if (
+                                    (not safe.is_file())
+                                    or map_advanced
+                                    or significant_same
+                                    or first_safe
+                                ):
+                                    shutil.copy(
+                                        self.save_dir / "progress_checkpoint.state",
+                                        safe,
+                                    )
+                                    progress_safe_map = cur_map
+                                    progress_safe_pos = pos_now
+                                    logger.info(
+                                        "Updated progress_checkpoint_safe on map %s @ %s",
+                                        cur_map,
+                                        pos_now,
+                                    )
+                                last_progress_pos = pos_now
+                                progress_written = True
+                            except Exception as exc:
+                                logger.debug("progress checkpoint save failed: %s", exc)
+
+                    stuck_now = int(state.get("stuck_count", 0))
+                    frozen_now = int(state.get("outdoor_script_frozen_count", 0))
+                    no_prog_now = int(state.get("interact_no_progress_count", 0))
+                    # Outdoor SCRIPT_READ soft-lock: pure A never clears — also
+                    # trigger hard reload from long freeze alone (stuck may lag).
+                    # Thresholds sit *above* supervisor outdoor breakout (frozen≥5 /
+                    # no_prog≥6) so path0 can leave the tile before we reload.
+                    outdoor_softlock = (
+                        frozen_now >= 14
+                        or no_prog_now >= 14
+                        or (frozen_now >= 8 and no_prog_now >= 10)
+                        or (stuck_now >= 8 and frozen_now >= 6)
+                    )
+                    if stuck_now >= self.stuck_threshold or outdoor_softlock:
+                        if stuck_now >= self.stuck_threshold:
+                            logger.warning(
+                                "Stuck count=%d (failed moves), saving state",
+                                stuck_now,
+                            )
+                            emu.save_state(f"stuck_{steps}")
+                            state["should_replan"] = True
+                            gs = GameState.model_validate(state.get("game_state", {}))
+                            self.memory.capture_stuck_episode(state, gs)
+                        # Hard soft-lock: stuck high on one tile — reload last good
+                        # progress (live R30 (13,24)/(12,14) frozen script_pos;
+                        # pure A/B never clear). Threshold lowered from +10/18 so
+                        # thrash-elevated stuck triggers reload before step budget dies.
+                        frozen = frozen_now
+                        # Always allow hard reload at stuck_threshold once stuck
+                        # saves fire — outdoor soft-locks often have frozen=0 while
+                        # navigate_a thrash keeps stuck elevated (live R30 (4,4)).
+                        hard_need = (
+                            max(self.stuck_threshold - 2, 6)
+                            if frozen >= 4
+                            else max(self.stuck_threshold, 10)
                         )
-                        emu.save_state(f"stuck_{steps}")
-                        state["should_replan"] = True
-                        gs = GameState.model_validate(state.get("game_state", {}))
-                        self.memory.capture_stuck_episode(state, gs)
+                        # Multi-page Elm egg-return dialog at the lab desk needs
+                        # dozens of A presses; hard-reload to door (4,11) aborts
+                        # delivery (live bed_egg_to_gym17). Skip indoor lab reloads
+                        # while egg is still held.
+                        gs_sl = GameState.model_validate(state.get("game_state", {}))
+                        meta_sl = gs_sl.raw_metadata or {}
+                        egg_lab_dialog = bool(
+                            gs_sl.map_key in ("24:5", "24:4")
+                            and meta_sl.get("has_mystery_egg")
+                            and not meta_sl.get("egg_delivered")
+                        )
+                        if (
+                            (
+                                int(state.get("stuck_count", 0)) >= hard_need
+                                or outdoor_softlock
+                            )
+                            and softlock_reloads < 24
+                            and not egg_lab_dialog
+                        ):
+                            reload_name = None
+                            candidates = self._hard_reload_candidates(
+                                progress_written=progress_written
+                            )
+                            for candidate in candidates:
+                                if (self.save_dir / f"{candidate}.state").is_file():
+                                    reload_name = candidate
+                                    break
+                            if reload_name:
+                                try:
+                                    emu.load_state(reload_name)
+                                    gs_reload = emu.get_game_state()
+                                    # Prefer prev if current softlock pos matches checkpoint.
+                                    if (
+                                        reload_name == "progress_checkpoint"
+                                        and gs_reload.position_key == pos_now
+                                        and (
+                                            self.save_dir / "progress_checkpoint_prev.state"
+                                        ).is_file()
+                                    ):
+                                        emu.load_state("progress_checkpoint_prev")
+                                        gs_reload = emu.get_game_state()
+                                        reload_name = "progress_checkpoint_prev"
+                                    # Skip checkpoint if it is itself soft-locked text.
+                                    meta_r = gs_reload.raw_metadata or {}
+                                    if gs_reload.in_text_box or meta_r.get("in_script"):
+                                        alt = (
+                                            "progress_checkpoint_prev"
+                                            if reload_name == "progress_checkpoint"
+                                            else None
+                                        )
+                                        if alt and (
+                                            self.save_dir / f"{alt}.state"
+                                        ).is_file():
+                                            emu.load_state(alt)
+                                            gs_reload = emu.get_game_state()
+                                            reload_name = alt
+                                            meta_r = gs_reload.raw_metadata or {}
+                                        if gs_reload.in_text_box or meta_r.get(
+                                            "in_script"
+                                        ):
+                                            logger.warning(
+                                                "Hard soft-lock: checkpoint %s also "
+                                                "in script/textbox — skip reload",
+                                                reload_name,
+                                            )
+                                            raise RuntimeError(
+                                                "softlock checkpoint unusable"
+                                            )
+                                    from src.graph.state import update_game_state
+                                    from src.graph.pathfinding import record_session_blocked
+
+                                    # Remember soft-lock tile before state rewrite.
+                                    soft_pos = pos_now
+                                    state = update_game_state(state, gs_reload)
+                                    state["stuck_count"] = 0
+                                    state["interact_no_progress_count"] = 0
+                                    state["outdoor_script_frozen_count"] = 0
+                                    state["recent_nav_positions"] = []
+                                    state["stuck_replan_loops"] = 0
+                                    state["interact_stall_escape_fails"] = 0
+                                    state["interact_stall_escape"] = False
+                                    state["pocket_stuck_count"] = 0
+                                    state["pocket_nav_positions"] = []
+                                    # Keep only the soft-lock tile blocked — wiping
+                                    # everything then re-blocking that tile. Accumulating
+                                    # dozens of session blocks after many reloads forced
+                                    # worse paths into more soft-locks (live gym25).
+                                    state["session_blocked"] = {}
+                                    if soft_pos and soft_pos.count(":") == 3:
+                                        try:
+                                            sm, sx, sy = soft_pos.rsplit(":", 2)
+                                            record_session_blocked(
+                                                state, sm, int(sx), int(sy)
+                                            )
+                                        except ValueError:
+                                            pass
+                                    state["should_replan"] = True
+                                    softlock_reloads += 1
+                                    logger.warning(
+                                        "Hard soft-lock recovery: reloaded %s (%s) reload#%d",
+                                        reload_name,
+                                        gs_reload.position_key,
+                                        softlock_reloads,
+                                    )
+                                except Exception as exc:
+                                    logger.warning(
+                                        "Hard soft-lock reload failed: %s", exc
+                                    )
 
                     if steps > 0 and steps % 100 == 0:
                         scores = evaluate_run(state)

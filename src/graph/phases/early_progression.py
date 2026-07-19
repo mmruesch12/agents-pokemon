@@ -84,8 +84,10 @@ def decompose_subgoals(gs: GameState) -> list[str] | None:
     if gs.map_key == MAP_KEY_ROUTE_29:
         return ["Travel west on Route 29", "Reach Cherrygrove City"]
     if gs.map_key == MAP_KEY_ROUTE_30:
+        # Do not mention Cherrygrove here — that string is a westbound egg-return
+        # cue elsewhere and was biasing outdoor recovery back south.
         return [
-            "Travel toward Cherrygrove or Route 31",
+            "Travel north on Route 30 toward Route 31",
             "Continue toward Violet City",
         ]
     if gs.map_key == MAP_KEY_CHERRYGROVE_CITY:

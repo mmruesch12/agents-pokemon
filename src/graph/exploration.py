@@ -38,6 +38,15 @@ def exploration_hint_text(state: dict[str, Any], gs: GameState) -> str:
     return " ".join(hints)
 
 
+_WESTBOUND_MARKERS = (
+    "travel west",
+    "cherrygrove",
+    "reach cherrygrove",
+    "cross route 29",
+    "enter route 29",
+)
+
+
 def exploration_heading_west(
     gs: GameState,
     state: dict[str, Any],
@@ -52,10 +61,20 @@ def exploration_heading_west(
         marker in text for marker in _ROUTE_29_EXIT_MARKERS
     ):
         return True
+    if gs.map_key == MAP_KEY_ROUTE_29 and any(
+        marker in text for marker in _WESTBOUND_MARKERS
+    ):
+        return True
     west_row = MAP_WARP_HINT_ROWS.get(gs.map_key, {}).get("west")
     west_anchor = MAP_LANDMARK_ANCHORS.get(gs.map_key, {}).get("west_exit")
     if west_row is not None and west_anchor and gs.player.y == west_row:
-        return gs.player.x > west_anchor[0]
+        # Include standing on the west_exit tile so map_edge_exit can step left.
+        return gs.player.x >= west_anchor[0]
+    # East-entry y (R29 east_exit is y=8) while targeting west_exit (y=7): still westbound.
+    if west_anchor is not None and gs.player.x > west_anchor[0]:
+        east_exit = MAP_LANDMARK_ANCHORS.get(gs.map_key, {}).get("east_exit")
+        if east_exit is not None and abs(gs.player.y - east_exit[1]) <= 1:
+            return True
     return False
 
 
@@ -75,7 +94,18 @@ def exploration_heading_route_30_gate(
     if gs.map_key != MAP_KEY_ROUTE_29:
         return False
     text = exploration_hint_text(state, gs).lower()
-    if "cross route 29" not in text and "visit mr" not in text:
+    # Match early_progression ("Travel west on Route 29") and starter-quest
+    # ("Cross Route 29") plus Mr. Pokemon / Cherrygrove corridor language.
+    west_markers = (
+        "cross route 29",
+        "travel west",
+        "route 29",
+        "cherrygrove",
+        "visit mr",
+        "mr. pokemon",
+        "mr pokemon",
+    )
+    if not any(marker in text for marker in west_markers):
         return False
     gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
     if not gate:
@@ -129,6 +159,14 @@ def exploration_target(
     hint_west = exploration_heading_west(gs, state, hint_tile=hint_tile)
     hint_gate = exploration_heading_route_30_gate(gs, state, hint_tile=hint_tile)
     gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
+    west_exit = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("west_exit")
+    # East ledge wall (x≥44, y≤11): south detour first; north bias causes thrash.
+    east_ledge_detour = (
+        gs.map_key == MAP_KEY_ROUTE_29
+        and hint_gate
+        and gs.player.x >= 40
+        and gs.player.y <= 11
+    )
     while open_set:
         _, x, y, dist = heapq.heappop(open_set)
         pos_key = f"{gs.map_key}:{x}:{y}"
@@ -140,13 +178,21 @@ def exploration_target(
                 elif y == west_row:
                     score += 4.0
             if hint_gate and gate is not None:
-                gate_x, gate_y = gate
-                if y < gs.player.y:
-                    score += 6.0 + (gs.player.y - y)
-                if x < gs.player.x:
-                    score += 4.0 + (gs.player.x - x) * 0.5
-                if north_row is not None and y == north_row and y < gs.player.y:
-                    score += 8.0
+                if east_ledge_detour:
+                    # Prefer south corridor (y≥14) then west — not north pocket tiles.
+                    if y > gs.player.y:
+                        score += 8.0 + (y - gs.player.y)
+                    if y >= 14 and x < gs.player.x:
+                        score += 12.0 + (gs.player.x - x) * 0.5
+                    if y < gs.player.y:
+                        score -= 6.0
+                else:
+                    if y < gs.player.y:
+                        score += 6.0 + (gs.player.y - y)
+                    if x < gs.player.x:
+                        score += 4.0 + (gs.player.x - x) * 0.5
+                    if north_row is not None and y == north_row and y < gs.player.y:
+                        score += 8.0
             if score > best_score:
                 best_score, best_unvisited = score, (x, y)
         for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
@@ -165,8 +211,30 @@ def exploration_target(
             heapq.heappush(open_set, (dist + 1, nx, ny, dist + 1))
     if best_unvisited:
         return best_unvisited
+    if east_ledge_detour:
+        south = (14, 14)
+        if find_path(
+            gs.player.x,
+            gs.player.y,
+            south[0],
+            south[1],
+            map_key=gs.map_key,
+            state=state,
+        ):
+            return south
+        if west_exit is not None and find_path(
+            gs.player.x,
+            gs.player.y,
+            west_exit[0],
+            west_exit[1],
+            map_key=gs.map_key,
+            state=state,
+        ):
+            return west_exit
     if hint_gate and gate is not None:
         gate_x, gate_y = gate
+        if east_ledge_detour:
+            return (gs.player.x, min(gs.player.y + 1, 14))
         if gs.player.y > gate_y:
             return (gs.player.x, max(0, gs.player.y - 1))
         if gs.player.x > gate_x:

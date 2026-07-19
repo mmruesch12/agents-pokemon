@@ -20,10 +20,15 @@ NEW_BARK_WEST_EXIT_ID = "new_bark_west_exit"
 # Deprecated alias — Route 29 is west of New Bark, not east.
 NEW_BARK_EAST_EXIT_ID = NEW_BARK_WEST_EXIT_ID
 ROUTE_29_NORTH_GATE_ID = "route_29_north_gate"
+ROUTE_29_WEST_EXIT_ID = "route_29_west_exit"
+ROUTE_29_EAST_EXIT_ID = "route_29_east_exit"
 ROUTE_30_NORTH_GATE_ID = "route_30_north_gate"
 ROUTE_30_TO_ROUTE_31_ID = "route_30_to_route_31"
+ROUTE_30_SOUTH_EXIT_ID = "route_30_south_exit"
 CHERRYGROVE_NORTH_EXIT_ID = "cherrygrove_north_exit"
+CHERRYGROVE_EAST_EXIT_ID = "cherrygrove_east_exit"
 ROUTE_31_WEST_GATE_ID = "route_31_west_gate"
+ROUTE_31_VIOLET_GATE_WEST_ID = "route_31_violet_gate_west"
 VIOLET_GYM_ENTRANCE_ID = "violet_gym_entrance"
 MR_POKEMONS_HOUSE_ENTRANCE_ID = "mr_pokemons_house_entrance"
 
@@ -308,6 +313,7 @@ def seed_static_map_landmarks(state: dict[str, Any]) -> list[dict[str, Any]]:
     route_30 = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_30, {})
     cherry = MAP_LANDMARK_ANCHORS.get(MAP_KEY_CHERRYGROVE_CITY, {})
     route_31 = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_31, {})
+    route_31_gate = MAP_LANDMARK_ANCHORS.get("26:11", {})
     violet = MAP_LANDMARK_ANCHORS.get(MAP_KEY_VIOLET_CITY, {})
     elms_lab = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ELMS_LAB, {})
     west_row = MAP_WARP_HINT_ROWS.get(MAP_KEY_NEW_BARK_TOWN, {}).get("west", 8)
@@ -342,6 +348,24 @@ def seed_static_map_landmarks(state: dict[str, Any]) -> list[dict[str, Any]]:
             metadata={"transition": "route_29_to_route_30", "seed": "map_anchors"},
         ),
         make_landmark(
+            landmark_id=ROUTE_29_WEST_EXIT_ID,
+            name="Route 29 west exit to Cherrygrove",
+            map_key=MAP_KEY_ROUTE_29,
+            x=route_29.get("west_exit", (0, 7))[0],
+            y=route_29.get("west_exit", (0, 7))[1],
+            kind=LANDMARK_KIND_MAP_VISIT,
+            metadata={"transition": "route_29_to_cherrygrove", "seed": "map_anchors"},
+        ),
+        make_landmark(
+            landmark_id=ROUTE_29_EAST_EXIT_ID,
+            name="Route 29 east exit to New Bark",
+            map_key=MAP_KEY_ROUTE_29,
+            x=route_29.get("east_exit", (59, 8))[0],
+            y=route_29.get("east_exit", (59, 8))[1],
+            kind=LANDMARK_KIND_MAP_VISIT,
+            metadata={"transition": "route_29_to_new_bark", "seed": "map_anchors"},
+        ),
+        make_landmark(
             landmark_id=ROUTE_30_NORTH_GATE_ID,
             name="Route 30 north approach",
             map_key=MAP_KEY_ROUTE_30,
@@ -360,6 +384,15 @@ def seed_static_map_landmarks(state: dict[str, Any]) -> list[dict[str, Any]]:
             metadata={"transition": "route_30_to_route_31", "seed": "map_anchors"},
         ),
         make_landmark(
+            landmark_id=ROUTE_30_SOUTH_EXIT_ID,
+            name="Route 30 south exit to Cherrygrove",
+            map_key=MAP_KEY_ROUTE_30,
+            x=route_30.get("south_exit", (7, 53))[0],
+            y=route_30.get("south_exit", (7, 53))[1],
+            kind=LANDMARK_KIND_MAP_VISIT,
+            metadata={"transition": "route_30_to_cherrygrove", "seed": "map_anchors"},
+        ),
+        make_landmark(
             landmark_id=CHERRYGROVE_NORTH_EXIT_ID,
             name="Cherrygrove north exit",
             map_key=MAP_KEY_CHERRYGROVE_CITY,
@@ -369,13 +402,31 @@ def seed_static_map_landmarks(state: dict[str, Any]) -> list[dict[str, Any]]:
             metadata={"transition": "cherrygrove_to_route_30", "seed": "map_anchors"},
         ),
         make_landmark(
+            landmark_id=CHERRYGROVE_EAST_EXIT_ID,
+            name="Cherrygrove east exit to Route 29",
+            map_key=MAP_KEY_CHERRYGROVE_CITY,
+            x=cherry.get("east_exit", (39, 7))[0],
+            y=cherry.get("east_exit", (39, 7))[1],
+            kind=LANDMARK_KIND_MAP_VISIT,
+            metadata={"transition": "cherrygrove_to_route_29", "seed": "map_anchors"},
+        ),
+        make_landmark(
             landmark_id=ROUTE_31_WEST_GATE_ID,
             name="Route 31 west toward Violet",
             map_key=MAP_KEY_ROUTE_31,
-            x=route_31.get("west_gate", (0, 8))[0],
-            y=route_31.get("west_gate", (0, 8))[1],
+            x=route_31.get("west_gate", (4, 7))[0],
+            y=route_31.get("west_gate", (4, 7))[1],
             kind=LANDMARK_KIND_MAP_VISIT,
             metadata={"transition": "route_31_to_violet", "seed": "map_anchors"},
+        ),
+        make_landmark(
+            landmark_id=ROUTE_31_VIOLET_GATE_WEST_ID,
+            name="Route 31 Violet Gate west to city",
+            map_key="26:11",
+            x=route_31_gate.get("west_exit", (0, 5))[0],
+            y=route_31_gate.get("west_exit", (0, 5))[1],
+            kind=LANDMARK_KIND_MAP_VISIT,
+            metadata={"transition": "gate_to_violet", "seed": "map_anchors"},
         ),
         make_landmark(
             landmark_id=VIOLET_GYM_ENTRANCE_ID,

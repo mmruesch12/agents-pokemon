@@ -519,7 +519,11 @@ def seed_lab_agent_state(
     state["bootstrap_action_index"] = INDOOR_BOOTSTRAP_ACTIONS
     state["movement_observed"] = True
     state["house_exit_complete"] = True
-    state["starter_quest_complete"] = False
+    meta = gs.raw_metadata or {}
+    post_rival = bool(meta.get("egg_delivered")) and not bool(
+        meta.get("cherrygrove_rival_pending")
+    )
+    state["starter_quest_complete"] = post_rival
     state["should_replan"] = False
     state["stuck_count"] = 0
     state["maps_visited"] = [
@@ -536,16 +540,32 @@ def seed_lab_agent_state(
     ):
         if milestone not in milestones:
             milestones.append(milestone)
+    if post_rival:
+        for milestone in (
+            starter_quest.MILESTONE_CHOSE_STARTER,
+            starter_quest.MILESTONE_MR_POKEMON,
+            starter_quest.MILESTONE_EGG_DELIVERED,
+            starter_quest.MILESTONE_RIVAL_BATTLE,
+        ):
+            if milestone not in milestones:
+                milestones.append(milestone)
     state["milestones"] = milestones
     if reset_lab_counters:
         state["short_term_history"] = []
         state["should_replan"] = False
         state["replan_count"] = 0
-    from src.memory.landmarks import discover_elms_lab_landmarks, seed_static_map_landmarks
+    from src.memory.landmarks import (
+        discover_elms_lab_landmarks,
+        merge_landmark,
+        seed_static_map_landmarks,
+    )
 
     seed_static_map_landmarks(state)
-
-    state["known_landmarks"] = discover_elms_lab_landmarks(gs)
+    # Merge interior discovery; do not replace static ball/desk/exit anchors.
+    known = list(state.get("known_landmarks", []))
+    for landmark in discover_elms_lab_landmarks(gs):
+        known = merge_landmark(known, landmark)
+    state["known_landmarks"] = known
     starter_quest.ensure_lab_desk_visits_for_snapshot(gs, state)
     if gs.player.y <= 2 and not starter_quest.has_starter(gs):
         desk_keys = {
@@ -553,7 +573,12 @@ def seed_lab_agent_state(
         }
         visited = list(state.get("visited_positions", []))
         state["visited_positions"] = [v for v in visited if v not in desk_keys]
-    starter_quest.sync_subgoals(gs, state)
+    if post_rival:
+        from src.graph.phases import early_progression
+
+        early_progression.sync_subgoals(gs, state)
+    else:
+        starter_quest.sync_subgoals(gs, state)
     return state
 
 
@@ -590,9 +615,11 @@ def seed_route_29_agent_state(
     state["bootstrap_action_index"] = INDOOR_BOOTSTRAP_ACTIONS
     state["movement_observed"] = True
     state["house_exit_complete"] = True
-    # Post-rival Route 29 snapshots (egg already delivered) enter early progression.
+    # Post-rival: egg delivered and Cherrygrove rival scene cleared (FinishRival).
     meta = gs.raw_metadata or {}
-    post_rival = bool(meta.get("egg_delivered"))
+    post_rival = bool(meta.get("egg_delivered")) and not bool(
+        meta.get("cherrygrove_rival_pending")
+    )
     state["starter_quest_complete"] = post_rival
     state["early_progression_complete"] = False
     state["should_replan"] = False
@@ -684,8 +711,10 @@ def seed_corridor_agent_state(
     state["movement_observed"] = True
     state["house_exit_complete"] = True
     meta = gs.raw_metadata or {}
-    post_rival = bool(meta.get("egg_delivered"))
-    # Corridor maps beyond Route 29 imply starter; post-rival if egg already delivered.
+    post_rival = bool(meta.get("egg_delivered")) and not bool(
+        meta.get("cherrygrove_rival_pending")
+    )
+    # Corridor maps beyond Route 29 imply starter; post-rival after egg + rival scene.
     state["starter_quest_complete"] = post_rival
     state["early_progression_complete"] = gs.map_key == MAP_KEY_VIOLET_GYM
     state["should_replan"] = False
@@ -841,7 +870,17 @@ def seed_agent_state_for_map(state: dict, gs: GameState) -> dict:
             maps.append(MAP_KEY_NEW_BARK_TOWN)
         state["maps_visited"] = maps
         seed_static_map_landmarks(state)
-        starter_quest.sync_subgoals(gs, state)
+        meta = gs.raw_metadata or {}
+        post_rival = bool(meta.get("egg_delivered")) and not bool(
+            meta.get("cherrygrove_rival_pending")
+        )
+        if post_rival:
+            from src.graph.phases import early_progression
+
+            state["starter_quest_complete"] = True
+            early_progression.sync_subgoals(gs, state)
+        else:
+            starter_quest.sync_subgoals(gs, state)
     return state
 
 

@@ -36,6 +36,10 @@ class AgentState(TypedDict, total=False):
     stuck_count: int
     interact_no_progress_count: int
     interact_stall_escape: bool
+    interact_stall_escape_fails: int
+    outdoor_script_frozen_count: int
+    recent_nav_positions: list[tuple[str, int, int]]
+    stuck_replan_loops: int
     pocket_stuck_count: int
     pocket_nav_positions: list[str]
     session_id: str
@@ -88,6 +92,10 @@ def initial_agent_state(game_state: GameState | dict | None = None) -> AgentStat
         stuck_count=0,
         interact_no_progress_count=0,
         interact_stall_escape=False,
+        interact_stall_escape_fails=0,
+        outdoor_script_frozen_count=0,
+        recent_nav_positions=[],
+        stuck_replan_loops=0,
         pocket_stuck_count=0,
         pocket_nav_positions=[],
         session_id="",

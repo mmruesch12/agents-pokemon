@@ -22,6 +22,8 @@ from src.memory.landmarks import (
     ELMS_LAB_EXIT_ID,
     ELMS_LAB_INTERIOR_ID,
     MR_POKEMONS_HOUSE_ENTRANCE_ID,
+    ROUTE_29_EAST_EXIT_ID,
+    ROUTE_29_WEST_EXIT_ID,
     find_landmark,
     landmark_coords,
 )
@@ -88,11 +90,59 @@ def _route_29_gate_south_corridor_waypoint(
     target: tuple[int, int],
     state: dict[str, Any] | None = None,
 ) -> tuple[int, int]:
-    """Interim ROM-valid target before the north gate when east of the west corridor."""
+    """Interim ROM-valid target before the north gate when east of the west corridor.
+
+    Once the player reaches the west-corridor gate approach column (or is already
+    west of it on the corridor rows), hand off to ``west_exit`` so pathfinding
+    continues into Cherrygrove instead of thrashing on the gate tile or turning
+    back east toward the gate from the map edge.
+    """
     gate = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("route_30_gate")
     if gate is None or target != gate or gs.map_key != MAP_KEY_ROUTE_29:
         return target
     px, py = gs.player.x, gs.player.y
+    west_exit = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ROUTE_29, {}).get("west_exit")
+    # Mid-north pocket east of the ledge connector (x>27, y<=11): never send the
+    # agent back to south corridor (14,14) — path[0] becomes "down" and fights
+    # climb forces (live thrash at 30,10↔30,11 with stuck_count=0). Leave ledge
+    # connector / west-descent tiles (x<=27) to the existing climb handoffs.
+    if py <= 11 and 28 <= px <= 42:
+        approach = ROUTE_29_WEST_GATE_APPROACH
+        if find_path(
+            px, py, approach[0], approach[1], map_key=gs.map_key, state=state
+        ):
+            return approach
+        if west_exit is not None and find_path(
+            px, py, west_exit[0], west_exit[1], map_key=gs.map_key, state=state
+        ):
+            return west_exit
+    # At/near gate approach column on corridor rows → Cherrygrove edge.
+    # Allow a few tiles east of the gate column so x=11 thrash still hands off
+    # west instead of oscillating gate↔column.
+    #
+    # Wall at x=8 on y=6–8 blocks direct left from the gate. A* to west_exit from
+    # (10,7)/(10,8) steps *east* first then south — thrash + NPC traps. Prefer the
+    # open y=10 gap west of the wall, then the map edge.
+    west_south_gap = (4, 10)
+    if west_exit is not None and px <= gate[0] + 3 and py <= gate[1] + 2:
+        if (px, py) == west_exit:
+            return west_exit
+        # Still east of the x=8 wall: south gap first (path is left-only once there).
+        if px >= 8:
+            if find_path(
+                px, py, west_south_gap[0], west_south_gap[1],
+                map_key=gs.map_key, state=state,
+            ):
+                return west_south_gap
+        if find_path(
+            px, py, west_exit[0], west_exit[1], map_key=gs.map_key, state=state
+        ):
+            return west_exit
+        if find_path(
+            px, py, west_south_gap[0], west_south_gap[1],
+            map_key=gs.map_key, state=state,
+        ):
+            return west_south_gap
     reentry = ROUTE_29_CORRIDOR_EAST_REENTRY
     ledge = ROUTE_29_LEDGE_CONNECTOR
     climb = ROUTE_29_LEDGE_CLIMB
@@ -161,6 +211,13 @@ def _route_29_gate_south_corridor_waypoint(
         ):
             return ledge
     if py == ledge[1] and ROUTE_29_GATE_APPROACH_X <= px < ledge[0]:
+        # At y=10 on the approach column (live route29_gate_approach): south
+        # corridor is west progress; east to ledge (27,10) re-enters climb thrash.
+        corridor = ROUTE_29_SOUTH_CORRIDOR
+        if find_path(
+            px, py, corridor[0], corridor[1], map_key=gs.map_key, state=state
+        ):
+            return corridor
         if find_path(
             px, py, ledge[0], ledge[1], map_key=gs.map_key, state=state
         ):
@@ -250,6 +307,13 @@ def _route_29_gate_south_corridor_waypoint(
     ):
         return target
     if on_gate_approach_column and py <= climb[1]:
+        # Prefer south corridor west of the climb thrash when already at/west of
+        # the approach column — ledge connector (27,10) is *east* and re-opens
+        # the y=14 climb loop (live gate_approach thrash at 22,13↔22,14).
+        if find_path(
+            px, py, corridor[0], corridor[1], map_key=gs.map_key, state=state
+        ):
+            return corridor
         if find_path(
             px, py, ledge[0], ledge[1], map_key=gs.map_key, state=state
         ):
@@ -319,12 +383,21 @@ def _starter_quest_landmark_id(gs: GameState, state: dict[str, Any]) -> str | No
         and starter_quest._has_egg(gs)
         and not starter_quest._egg_delivered(gs)
     ):
-        interior = find_landmark(
-            list(state.get("known_landmarks", [])),
-            landmark_id=ELMS_LAB_INTERIOR_ID,
-        )
+        # Prefer desk approach (seeded or known) — interior may be stamped at
+        # door (4,11) on entry and would keep the agent on the warp tile.
+        from src.memory.landmarks import ELMS_LAB_DESK_APPROACH_ID
+
+        landmarks = list(state.get("known_landmarks", []))
+        desk = find_landmark(landmarks, landmark_id=ELMS_LAB_DESK_APPROACH_ID)
+        if desk is not None:
+            return ELMS_LAB_DESK_APPROACH_ID
+        interior = find_landmark(landmarks, landmark_id=ELMS_LAB_INTERIOR_ID)
         if interior is not None:
-            return ELMS_LAB_INTERIOR_ID
+            # Only use interior if it is not the south door (egg-return thrash).
+            ix, iy = interior.get("x"), interior.get("y")
+            if not (iy == 11 and ix in (4, 5)):
+                return ELMS_LAB_INTERIOR_ID
+        return ELMS_LAB_DESK_APPROACH_ID
     return retired_geography_landmark_id(gs, state)
 
 
@@ -333,14 +406,45 @@ def resolve_landmark_navigation_target(
     state: dict[str, Any],
 ) -> tuple[int, int] | None:
     """Resolve target from known_landmarks for the current map and quest stage."""
+    from src.memory.landmarks import ELMS_LAB_DESK_APPROACH_ID
+
     landmarks = list(state.get("known_landmarks", []))
     landmark_id = _starter_quest_landmark_id(gs, state)
     if landmark_id:
         coords = _landmark_target_on_map(landmarks, landmark_id, gs.map_key)
+        if coords is None and landmark_id == ELMS_LAB_DESK_APPROACH_ID:
+            # Seeded anchor when desk landmark not yet in known_landmarks.
+            coords = MAP_LANDMARK_ANCHORS.get(MAP_KEY_ELMS_LAB, {}).get(
+                "desk_approach", (4, 3)
+            )
         if coords is not None:
             if landmark_id == ELMS_LAB_ENTRANCE_ID:
                 return _lab_entrance_approach(gs, coords, state)
-            return _route_29_gate_south_corridor_waypoint(gs, coords, state)
+            # West-corridor handoffs only for westbound R29 targets. Applying them
+            # to route_29_east_exit hijacked egg-return into (10,8)/(4,10) west
+            # thrash (live bed_egg_to_gym5: target [10,8] while subgoal was
+            # "Give Mystery Egg to Elm").
+            if landmark_id == ROUTE_29_EAST_EXIT_ID:
+                # Live BFS (bed_egg bedroom_egg_r29): east is via south y14–16
+                # corridor, not (17,5)/(17,6) which soft-locks. Pull south first.
+                px, py = gs.player.x, gs.player.y
+                if px < 45 and py < 14:
+                    south_wp = (min(max(px, 14), 32), 14)
+                    if find_path(
+                        px, py, south_wp[0], south_wp[1],
+                        map_key=gs.map_key, state=state,
+                    ):
+                        return south_wp
+                return coords
+            if landmark_id == ROUTE_29_WEST_EXIT_ID or (
+                gs.map_key == MAP_KEY_ROUTE_29 and coords[0] < gs.player.x
+            ):
+                return _route_29_gate_south_corridor_waypoint(gs, coords, state)
+            # Other same-map landmarks on R29: west-corridor handoffs only when
+            # the landmark itself is west of the player.
+            if gs.map_key == MAP_KEY_ROUTE_29 and coords[0] < gs.player.x:
+                return _route_29_gate_south_corridor_waypoint(gs, coords, state)
+            return coords
 
     return None
 
@@ -361,6 +465,33 @@ def resolve_navigation_target(
 
     landmark_target = resolve_landmark_navigation_target(gs, state)
     if landmark_target is not None:
+        # Route 30 post-rival: east pocket thrash (x≥8, y≈6–40) — A* detours
+        # south instead of west corridor to R31. Commit west strip first.
+        if (
+            state.get("starter_quest_complete")
+            and gs.map_key == "26:1"
+            and landmark_target[1] < gs.player.y
+            and gs.player.x >= 8
+            and 5 <= gs.player.y <= 45
+        ):
+            # East pocket (x≥8, y≤20) cannot go west on same row — drop to y=20
+            # mid-join then west strip (live grid barrier at x6–7 north of ~y15).
+            west_y = 20 if gs.player.y < 20 else min(gs.player.y, 30)
+            west_strip = (5, west_y)
+            if find_path(
+                gs.player.x,
+                gs.player.y,
+                west_strip[0],
+                west_strip[1],
+                map_key="26:1",
+                max_steps=80,
+                state=state,
+            ):
+                return west_strip
+        # Route 29 westbound: do not force a y=14 south-corridor interim from the
+        # mid/north strip. Live Silver path from (36,10)/(59,8) goes via the y4
+        # north bridge and y7 (grid closes y6 x9-16 false-opens). South detours
+        # are already chosen by A* when the player is south of a one-way ledge.
         return landmark_target
 
     if state.get("starter_quest_complete"):

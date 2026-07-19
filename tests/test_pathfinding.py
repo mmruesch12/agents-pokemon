@@ -96,36 +96,32 @@ def test_route_29_gate_waypoint_east_reentry_from_west_corridor():
     )
 
 
-def test_route_29_gate_waypoint_gate_approach_column_routes_ledge_then_gate():
+def test_route_29_gate_waypoint_gate_approach_column_routes_south_corridor():
+    """Column x=24 prefers south corridor west, not east ledge re-climb thrash."""
     from src.graph.navigation_resolve import (
-        ROUTE_29_LEDGE_CONNECTOR,
         ROUTE_29_SOUTH_CORRIDOR,
         _route_29_gate_south_corridor_waypoint,
     )
 
     gate = MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"]
-    for y in (10, 11):
+    for y in (10, 11, 14):
         gs = GameState(
             player={"map_group": 24, "map_id": 3, "x": 24, "y": y},
             party_count=1,
         )
-        assert _route_29_gate_south_corridor_waypoint(gs, gate, {}) == ROUTE_29_LEDGE_CONNECTOR
+        assert _route_29_gate_south_corridor_waypoint(gs, gate, {}) == ROUTE_29_SOUTH_CORRIDOR
+    # Mid-column south of approach still targets the gate when corridor is not needed.
     for y in (12, 13):
         gs = GameState(
             player={"map_group": 24, "map_id": 3, "x": 24, "y": y},
             party_count=1,
         )
         assert _route_29_gate_south_corridor_waypoint(gs, gate, {}) == gate
-    gs = GameState(
-        player={"map_group": 24, "map_id": 3, "x": 24, "y": 14},
-        party_count=1,
-    )
-    assert _route_29_gate_south_corridor_waypoint(gs, gate, {}) == ROUTE_29_SOUTH_CORRIDOR
 
 
-def test_route_29_gate_waypoint_prefers_ledge_from_gate_approach():
+def test_route_29_gate_waypoint_prefers_south_corridor_from_gate_approach():
     from src.graph.navigation_resolve import (
-        ROUTE_29_LEDGE_CONNECTOR,
+        ROUTE_29_SOUTH_CORRIDOR,
         _route_29_gate_south_corridor_waypoint,
     )
 
@@ -134,7 +130,9 @@ def test_route_29_gate_waypoint_prefers_ledge_from_gate_approach():
         party_count=1,
         raw_metadata={"has_starter": True},
     )
-    assert _route_29_gate_south_corridor_waypoint(gs, MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"], {}) == ROUTE_29_LEDGE_CONNECTOR
+    assert _route_29_gate_south_corridor_waypoint(
+        gs, MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"], {}
+    ) == ROUTE_29_SOUTH_CORRIDOR
 
 
 def test_route_29_gate_waypoint_east_ledge_dead_end_uses_south_corridor():
@@ -149,6 +147,35 @@ def test_route_29_gate_waypoint_east_ledge_dead_end_uses_south_corridor():
         raw_metadata={"has_starter": True},
     )
     assert _route_29_gate_south_corridor_waypoint(gs, MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"], {}) == ROUTE_29_SOUTH_CORRIDOR
+
+
+def test_route_29_gate_handoff_uses_west_south_gap_not_east_detour():
+    """Near gate column, hand off via y=10 gap west of x=8 wall (not A* east)."""
+    from src.graph.navigation_resolve import _route_29_gate_south_corridor_waypoint
+    from src.graph.pathfinding import find_path
+
+    gate = MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"]
+    west_exit = MAP_LANDMARK_ANCHORS["24:3"]["west_exit"]
+    gap = (4, 10)
+    for x, y in ((10, 7), (10, 8), (11, 7), (9, 7)):
+        gs = GameState(
+            player={"map_group": 24, "map_id": 3, "x": x, "y": y},
+            party_count=1,
+            raw_metadata={"has_starter": True},
+        )
+        target = _route_29_gate_south_corridor_waypoint(gs, gate, {})
+        assert target == gap, f"at {(x, y)} got {target}"
+        path = find_path(x, y, *gap, map_key="24:3")
+        assert path
+        # Must not start by walking further into the east dead-end pocket.
+        if x <= 11:
+            assert path[0] != "left" or x > 8
+    # West of the wall: hand off to map-edge Cherrygrove exit.
+    gs_west = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 4, "y": 10},
+        party_count=1,
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs_west, gate, {}) == west_exit
 
 
 def test_route_29_gate_waypoint_post_west_descent_uses_gate_approach_row():
@@ -222,6 +249,64 @@ def test_find_path_post_west_descent_prefers_south_then_west_corridor():
     assert west_row[0] == "down"
 
 
+def test_route_29_at_or_west_of_gate_hands_off_to_west_exit():
+    """Gate approach must not thrash or reverse east; continue to Cherrygrove edge."""
+    from src.graph.navigation_resolve import _route_29_gate_south_corridor_waypoint
+    from src.graph.pathfinding import map_edge_exit_direction
+    from src.graph.exploration import exploration_heading_west
+
+    gate = MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"]
+    west_exit = MAP_LANDMARK_ANCHORS["24:3"]["west_exit"]
+    west_south_gap = (4, 10)
+    assert west_exit == (0, 7)
+
+    # Still east of x=8 wall: south gap first (A* east detour thrash).
+    for x, y in ((10, 8), (10, 7), (11, 6), (12, 6), (9, 7)):
+        gs = GameState(
+            player={"map_group": 24, "map_id": 3, "x": x, "y": y},
+            party_count=1,
+            raw_metadata={"has_starter": True},
+        )
+        assert _route_29_gate_south_corridor_waypoint(gs, gate, {}) == west_south_gap, (
+            x,
+            y,
+        )
+
+    # West of the wall: map-edge Cherrygrove exit.
+    for x, y in ((5, 7), (2, 7), (0, 7), (4, 10)):
+        gs = GameState(
+            player={"map_group": 24, "map_id": 3, "x": x, "y": y},
+            party_count=1,
+            raw_metadata={"has_starter": True},
+        )
+        assert _route_29_gate_south_corridor_waypoint(gs, gate, {}) == west_exit, (
+            x,
+            y,
+        )
+
+    # Still approaching from south of gate column: keep gate target.
+    gs_south = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 10, "y": 11},
+        party_count=1,
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs_south, gate, {}) == gate
+
+    # Standing on west_exit must arm map-edge left under heading_west.
+    gs_edge = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 0, "y": 7},
+        party_count=1,
+    )
+    state = {
+        "house_exit_complete": True,
+        "starter_quest_complete": True,
+        "active_subgoal": "Travel west on Route 29",
+        "subgoals": ["Travel west on Route 29", "Reach Cherrygrove City"],
+        "known_landmarks": [],
+    }
+    assert exploration_heading_west(gs_edge, state, hint_tile=west_exit) is True
+    assert map_edge_exit_direction(gs_edge, heading_west=True) == "left"
+
+
 def test_route_29_grid_blocks_sign_tile():
     grid = MAP_GRIDS["24:3"]
     assert _is_walkable(grid, 25, 10) is True
@@ -229,6 +314,43 @@ def test_route_29_grid_blocks_sign_tile():
     assert _is_walkable(grid, 13, 14) is False
     assert _is_walkable(grid, 14, 14) is True
     assert _is_walkable(grid, 22, 12) is False
+
+
+def test_route_29_grid_blocks_y6_false_open_west_dead_end():
+    """y6 x9-16 are live false-opens that trapped A* after the y4 north bridge."""
+    grid = MAP_GRIDS["24:3"]
+    for x in range(9, 17):
+        assert _is_walkable(grid, x, 6) is False, f"expected blocked y6 x={x}"
+    # Vertical drop (17,6) and west edge strip must stay open.
+    assert _is_walkable(grid, 17, 6) is True
+    assert _is_walkable(grid, 5, 6) is True
+
+
+def test_find_path_route_29_westbound_from_mid_uses_north_bridge():
+    """From thrash pocket (36,10), path west via y7/y4 — not a y6 dead-end."""
+    west_exit = MAP_LANDMARK_ANCHORS["24:3"]["west_exit"]
+    path = find_path(36, 10, *west_exit, map_key="24:3")
+    assert path
+    assert len(path) <= 120
+    # First progress is north toward the y7 corridor (not pure east thrash).
+    assert path[0] == "up"
+    # Simulate path never steps onto closed y6 false-opens.
+    x, y = 36, 10
+    for step in path:
+        dx, dy = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}[step]
+        x, y = x + dx, y + dy
+        if y == 6:
+            assert x not in range(9, 17), f"path entered false-open ({x},{y})"
+    assert (x, y) == tuple(west_exit)
+
+
+def test_find_path_route_29_westbound_from_east_entry():
+    """New Bark → Route 29 east tile can reach west_exit within budget."""
+    west_exit = MAP_LANDMARK_ANCHORS["24:3"]["west_exit"]
+    path = find_path(59, 8, *west_exit, map_key="24:3")
+    assert path
+    assert len(path) <= 120
+    assert path[0] == "left"
 
 
 def test_find_path_route_29_sign_pocket_avoids_west_on_y14():
@@ -498,6 +620,31 @@ def test_map_edge_exit_direction_at_west_edge_and_approach():
     assert map_edge_exit_direction(gs_edge, heading_west=False) is None
 
 
+def test_route29_east_entry_does_not_force_right_when_westbound():
+    """Post-rival entry at (59,8): must walk left toward Cherry, not right to New Bark."""
+    from src.graph.nodes import _players_house_door_exit, navigator_node
+    from src.graph.state import initial_agent_state
+    from src.memory.landmarks import seed_static_map_landmarks
+    from src.graph.phases import early_progression
+
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 59, "y": 8},
+        raw_metadata={"has_starter": True, "egg_delivered": True},
+        party_count=1,
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["starter_quest_complete"] = True
+    seed_static_map_landmarks(state)
+    early_progression.sync_subgoals(gs, state)
+    assert map_edge_exit_direction(gs, heading_west=True) is None
+    assert map_edge_exit_direction(gs, heading_east=False) is None
+    assert map_edge_exit_direction(gs, heading_east=True) == "right"
+    assert _players_house_door_exit(gs, state) is None
+    out = navigator_node(state)
+    assert out["last_action"] == "navigate_left"
+
+
 def test_navigator_at_west_edge_forces_left():
     from src.graph.nodes import navigator_node
     from src.graph.state import initial_agent_state
@@ -531,3 +678,41 @@ def _positions_after(sx: int, sy: int, path: list[str]) -> list[tuple[int, int]]
             y += 1
         out.append((x, y))
     return out
+
+def test_find_path_does_not_return_incomplete_greedy():
+    """Greedy fallback must reach the goal or return empty (no thrash prefixes)."""
+    from src.graph.pathfinding import record_session_blocked
+
+    state: dict = {}
+    record_session_blocked(state, "24:3", 11, 9)
+    path = find_path(11, 8, 4, 10, map_key="24:3", state=state)
+    if path:
+        x, y = 11, 8
+        for step in path:
+            dx, dy = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}[step]
+            x, y = x + dx, y + dy
+        assert (x, y) == (4, 10)
+    # Unblocked path still reaches the west south gap.
+    clean = find_path(11, 8, 4, 10, map_key="24:3")
+    assert clean
+    x, y = 11, 8
+    for step in clean:
+        dx, dy = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}[step]
+        x, y = x + dx, y + dy
+    assert (x, y) == (4, 10)
+
+
+def test_route_29_gate_approach_prefers_south_corridor_not_east_ledge():
+    """route29_gate_approach (24,10) must not route east into climb thrash."""
+    from src.graph.navigation_resolve import (
+        ROUTE_29_SOUTH_CORRIDOR,
+        _route_29_gate_south_corridor_waypoint,
+    )
+
+    gate = MAP_LANDMARK_ANCHORS["24:3"]["route_30_gate"]
+    gs = GameState(
+        player={"map_group": 24, "map_id": 3, "x": 24, "y": 10},
+        party_count=1,
+        raw_metadata={"has_starter": True},
+    )
+    assert _route_29_gate_south_corridor_waypoint(gs, gate, {}) == ROUTE_29_SOUTH_CORRIDOR

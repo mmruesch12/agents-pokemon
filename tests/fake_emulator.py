@@ -135,7 +135,12 @@ class MutableRamEmulator:
             self._memory[ADDR_X_COORD] = 15
             self._memory[ADDR_Y_COORD] = 8
             return
-        if group == MAPGROUP_JOHTO_ROUTES and map_id == MAP_ROUTE_31 and x <= 0:
+        # pret gate tiles are (4,6)/(4,7); accept approach at x<=4 on gate rows.
+        if (
+            group == MAPGROUP_JOHTO_ROUTES
+            and map_id == MAP_ROUTE_31
+            and (x <= 0 or (x <= 4 and 6 <= y <= 7))
+        ):
             self._memory[ADDR_MAP_GROUP] = MAPGROUP_VIOLET
             self._memory[ADDR_MAP_NUMBER] = MAP_VIOLET_CITY
             self._memory[ADDR_X_COORD] = 10
