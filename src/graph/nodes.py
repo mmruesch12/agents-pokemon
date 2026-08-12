@@ -635,17 +635,6 @@ def visit_aware_path_step(
 _FACING_TO_DIRECTION = {0: "down", 4: "up", 8: "left", 12: "right"}
 
 
-def _egg_lab_desk_interact_tile(gs: GameState) -> bool:
-    """True when returning the Mystery Egg and standing where Elm can be spoken to."""
-    meta = gs.raw_metadata or {}
-    if gs.map_key != MAP_KEY_ELMS_LAB:
-        return False
-    if not (meta.get("has_mystery_egg") and not meta.get("egg_delivered")):
-        return False
-    # Live: only (5,3) face-up completes egg delivery; (4,3) opens a non-egg dialog.
-    return (gs.player.x, gs.player.y) == (5, 3)
-
-
 def _interact_candidate_justified(
     gs: GameState,
     state: AgentState,
@@ -655,8 +644,8 @@ def _interact_candidate_justified(
     """True when 'a' is in candidates for ROM signal, stuck fallback, or blocked-ahead."""
     if "a" not in candidates:
         return False
-    # Egg desk: never let interact-stall escape suppress A (live thrash navigate_down).
-    if _egg_lab_desk_interact_tile(gs):
+    # Egg desk ROM gate: never let interact-stall escape suppress A.
+    if starter_quest.egg_delivery_interact_needed(gs):
         clear_interact_stall_escape(state)
         return True
     if outdoor_interact_recovery_active(gs, state) or interact_stall_recovery_active(
@@ -667,9 +656,7 @@ def _interact_candidate_justified(
         gs, state
     ):
         return True
-    if house_exit.stuck_interact_fallback(gs, state) or generic_stuck_interact_fallback(
-        gs, state
-    ):
+    if generic_stuck_interact_fallback(gs, state):
         return True
     if (gs.player.x, gs.player.y) == target and at_target_blocked_ahead_interact_eligible(
         gs.map_key,
@@ -694,14 +681,8 @@ def select_navigation_action(
     target: tuple[int, int],
 ) -> str:
     """Pick direction: door priority, stuck override, visit-aware path, LLM, fallback."""
-    # Egg-return desk: hard-prefer A (after brief face-up). Live thrash stayed on
-    # navigate_down/up forever while egg never delivered; (5,3)+A×50+ works.
-    if _egg_lab_desk_interact_tile(gs) or (
-        gs.map_key == MAP_KEY_ELMS_LAB
-        and (gs.raw_metadata or {}).get("has_mystery_egg")
-        and not (gs.raw_metadata or {}).get("egg_delivered")
-        and gs.in_text_box
-    ):
+    # Egg-return ROM gate: prefer A (after brief face-up) at Elm delivery tile.
+    if starter_quest.egg_delivery_interact_needed(gs):
         clear_interact_stall_escape(state)
         if gs.in_text_box:
             return "a"
@@ -2044,12 +2025,10 @@ def _navigation_candidates(
     if not recovery and (
         house_exit.prefer_interact_candidate(gs, state)
         or generic_prefer_interact_candidate(gs, state)
+        or starter_quest.egg_delivery_interact_needed(gs)
     ):
         candidates.insert(0, "a")
-    elif not recovery and (
-        house_exit.stuck_interact_fallback(gs, state)
-        or generic_stuck_interact_fallback(gs, state)
-    ):
+    elif not recovery and generic_stuck_interact_fallback(gs, state):
         candidates.append("a")
     elif not recovery and at_target_blocked_ahead_interact_eligible(
         gs.map_key,
@@ -2059,16 +2038,6 @@ def _navigation_candidates(
         state=state,
     ):
         candidates.append("a")
-    meta = gs.raw_metadata or {}
-    if (
-        not recovery
-        and gs.map_key == MAP_KEY_ELMS_LAB
-        and meta.get("has_mystery_egg")
-        and not meta.get("egg_delivered")
-        and (gs.player.x, gs.player.y)
-        in starter_quest.ELMS_LAB_DESK_TILES | {(5, 3), (4, 3)}
-    ):
-        candidates.insert(0, "a")
     if not candidates:
         candidates = cardinals or _direction_candidates(
             gs.player.x, gs.player.y, target[0], target[1]

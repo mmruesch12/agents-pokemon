@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from src.graph.generic_interact import (
+    blocked_ahead_after_failed_nav,
     dialog_or_script_active,
+    generic_force_interactor,
     generic_is_interact_needed,
     generic_stuck_interact_fallback,
     interact_stall_recovery_active,
@@ -14,7 +16,7 @@ from src.graph.nodes import needs_interaction, navigator_node, supervisor_node
 from src.graph.phases import starter_quest
 from src.graph.state import initial_agent_state
 from src.state.models import GameState
-from src.state.script_constants import SCRIPT_READ
+from src.state.script_constants import JOYPAD_DISABLE_INPUT_MASK, SCRIPT_READ
 
 
 def _gs(**kwargs) -> GameState:
@@ -86,11 +88,106 @@ def test_starter_quest_has_no_lab_phase_enum():
     source = inspect.getsource(starter_quest)
     assert "LabPhase" not in source
     assert "resolve_lab_pre_starter" not in source
+    assert "needs_lab_interaction" not in source
+    assert "lab_ball_picking_active" not in source
+    assert "_lab_ball_pick_nav_preferred" not in source
 
 
 def test_navigation_target_returns_none():
     gs = _gs(raw_metadata={"has_starter": False})
     assert starter_quest.navigation_target(gs) is None
+
+
+def test_phase2_rule_textbox_or_script_routes_interactor():
+    """Rule 1: open textbox → interactor (indoor)."""
+    gs = _gs(in_text_box=True, raw_metadata={"in_script": True, "has_starter": False})
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["bootstrap_complete"] = True
+    assert is_rom_interact_signal(gs) is True
+    assert generic_force_interactor(gs, state) is True
+    assert supervisor_node(state)["next_node"] == "interactor"
+
+
+def test_phase2_rule_sticky_script_without_textbox_does_not_force_a():
+    """Closed-textbox sticky in_script is residue — walk, do not A-spam."""
+    gs = _gs(
+        in_text_box=False,
+        raw_metadata={
+            "in_script": True,
+            "script_active": True,
+            "script_mode": SCRIPT_READ,
+            "has_starter": False,
+            "joypad_disable": 0,
+        },
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["bootstrap_complete"] = True
+    state["active_subgoal"] = "Pick a Poke Ball"
+    assert is_rom_interact_signal(gs) is False
+    assert generic_is_interact_needed(gs, state) is False
+    assert needs_interaction(gs, state) is False
+
+
+def test_phase2_rule_joypad_blocked_facing_object_routes_interactor():
+    """Rule 2 (joypad): movement disabled while script expects dialog → interact."""
+    gs = _gs(
+        in_text_box=False,
+        raw_metadata={
+            "script_mode": SCRIPT_READ,
+            "script_active": True,
+            "in_script": True,
+            "joypad_disable": JOYPAD_DISABLE_INPUT_MASK,
+            "has_starter": False,
+        },
+    )
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["bootstrap_complete"] = True
+    assert is_rom_interact_signal(gs) is True
+    assert generic_force_interactor(gs, state) is True
+    assert supervisor_node(state)["next_node"] == "interactor"
+
+
+def test_phase2_rule_nav_stuck_same_tile_routes_interactor():
+    """Rule 3: stuck_count >= N on navigate at same indoor tile → interactor."""
+    gs = _gs(in_text_box=False, raw_metadata={"has_starter": False, "joypad_disable": 0})
+    state = initial_agent_state(gs)
+    state["house_exit_complete"] = True
+    state["bootstrap_complete"] = True
+    state["stuck_count"] = 2
+    state["last_action"] = "navigate_up"
+    assert navigate_stuck_at_tile(gs, state) is True
+    assert generic_is_interact_needed(gs, state) is True
+    assert supervisor_node(state)["next_node"] == "interactor"
+
+
+def test_phase2_blocked_ahead_after_failed_nav():
+    """Rule 2 (geometry): failed indoor navigate into solid → interact signal."""
+    # Lab (5,3) facing up into ball row solid/object tiles.
+    gs = GameState(
+        player={"map_group": 24, "map_id": 5, "x": 5, "y": 3, "facing": 4},
+        in_text_box=False,
+        raw_metadata={"has_starter": False, "joypad_disable": 0},
+    )
+    state = {
+        "stuck_count": 1,
+        "last_action": "navigate_up",
+        "house_exit_complete": True,
+        "bootstrap_complete": True,
+    }
+    assert blocked_ahead_after_failed_nav(gs, state) is True
+    assert generic_is_interact_needed(gs, state) is True
+
+
+def test_generic_interact_has_no_lab_ball_pick_exception():
+    import inspect
+    from src.graph import generic_interact
+
+    source = inspect.getsource(generic_interact)
+    assert "_lab_ball_pick_nav_preferred" not in source
+    assert "needs_lab_interaction" not in source
 
 
 def test_script_read_alone_without_active_script_is_not_interact_signal():

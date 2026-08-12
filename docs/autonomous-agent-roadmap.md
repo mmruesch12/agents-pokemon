@@ -1,6 +1,6 @@
 # Autonomous Agent Roadmap — Minimal Prescription, Strong Self-Correction
 
-**Status (2026-06):** Active design doc. Phase 1 (feedback loop) is implemented or in progress; Phases 2–4 are planned.
+**Status (2026-08):** Active design doc. Phase 1 (feedback loop) and Phase 2 (generic interact) are implemented; Phases 3–4 continue (landmark-first nav partially landed; eval gates partial).
 
 **Goal:** The agent should progress with **quest-level knowledge** (subgoals, ROM event flags) and **generic policies** (dialog → interact, blocked move → try something else), not tile-by-tile walkthrough scripts. When stuck, it should **self-correct** via context-rich replanning, navigator arbitration, and episode memory — not new `(x, y)` special cases.
 
@@ -61,17 +61,17 @@ Phase modules (`house_exit`, `starter_quest`) become **milestone checkers** — 
 
 **Goal:** Replace lab-specific interact routing with ROM-signal rules.
 
-Collapse `needs_lab_interaction`, `lab_ball_picking_active`, `force_interactor`, etc. into:
+**Status:** Done. Lab-specific interact force paths (`needs_lab_interaction`, `lab_ball_picking_active`, `LabPhase`, `resolve_lab_pre_starter`, `_lab_ball_pick_nav_preferred`) are gone. Supervisor / navigator use `src/graph/generic_interact.py`:
 
-1. `in_text_box` or `in_script` → interactor
-2. Movement blocked and facing object/warp → interactor
-3. `stuck_count >= N` on navigate at same tile → interactor, then replan
+1. Open `in_text_box` → interactor (indoor + outdoor). Bare sticky `in_script` without a textbox is residue — do **not** force A.
+2. Movement blocked (joypad-disable facing dialog, or indoor failed navigate into solid/object/warp) → interactor
+3. `stuck_count >= N` on navigate at same **indoor** tile → interactor (then critic/replan as usual)
 
-**Keep:** ROM gates (e.g. lab exit blocked until `EVENT_GOT_A_POKEMON_FROM_ELM`).
+**Keep:** ROM gates (e.g. lab exit blocked until `EVENT_GOT_A_POKEMON_FROM_ELM`; egg delivery tile; MeetMom event flag via `house_exit.needs_house_interaction`).
 
-**Delete (behind eval):** `LabPhase` enum, `resolve_lab_pre_starter`, coordinate nav targets in `starter_quest.navigation_target()`.
+**Deleted / shrunk:** `LabPhase` enum, `resolve_lab_pre_starter`, coordinate `starter_quest.navigation_target()` (returns `None`; landmarks + exploration own nav). Phase modules trend toward milestone checkers.
 
-**Success metric:** `--start-lab` still reaches New Bark in ≤ ~80 steps; `starter_quest.py` shrinks materially.
+**Success metric:** `--start-lab` still reaches New Bark in ≤ ~80 steps conceptually; CI: `starter_quest.py` is a milestone module + ROM gates; ROM-free `tests/test_generic_interact.py` covers the three rules.
 
 ---
 
@@ -122,9 +122,9 @@ Move down one level per milestone, gated by eval. Do not delete `house_exit` / `
 ## Recommended execution order
 
 ```
-Phase 1 (M3 → M11 → M4)   ← current
-Phase 2 (generic interact)
-Phase 3 (landmark-first nav)
+Phase 1 (M3 → M11 → M4)   ← done
+Phase 2 (generic interact) ← done
+Phase 3 (landmark-first nav) ← current / partial
 Phase 4 (eval gates, ongoing)
 ```
 
@@ -138,7 +138,7 @@ See also: [memory-analysis.md](memory-analysis.md) for the full M0–M12 matrix.
 
 The lab stuck-loop fixes (stall detector, party inference, pathfinding grid, `--start-lab` landmark seeding) were **Level 3 scaffolding** — necessary to prove the control plane works, but not aligned with the long-term goal.
 
-Observability fixes (RAM flags, stuck-meter semantics) are **permanent**. Tile-level rules (`resolve_lab_pre_starter`, `ELMS_LAB_EXIT` strict path) are **candidates for Phase 2 removal** once Phase 1 self-correction passes eval gates.
+Observability fixes (RAM flags, stuck-meter semantics) are **permanent**. Tile-level interact routing (`resolve_lab_pre_starter`, lab force-interactor) was removed in Phase 2; remaining coordinates are ROM gates (blocked lab exit, egg delivery tile) or warp step helpers — candidates for Phase 3 landmark replacement.
 
 ---
 

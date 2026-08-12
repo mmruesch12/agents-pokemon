@@ -58,6 +58,36 @@ def joypad_blocked_facing_object(gs: GameState) -> bool:
     return dialog_or_script_active(gs)
 
 
+def blocked_ahead_after_failed_nav(gs: GameState, state: dict[str, Any]) -> bool:
+    """Indoor: last navigate failed into a blocked tile (NPC / object / warp).
+
+    Roadmap Phase 2 rule 2 — prefer interact over more walking when the attempted
+    cardinal is solid ahead. Outdoor maps keep path0 / recovery (no A spam).
+    """
+    if gs.map_key not in INDOOR_NAV_STUCK_MAPS:
+        return False
+    if int(state.get("stuck_count", 0)) < 1:
+        return False
+    last = state.get("last_action", "")
+    if not (last.startswith("navigate_") and not last.endswith("_a")):
+        return False
+    direction = last[len("navigate_") :]
+    if direction not in ("up", "down", "left", "right"):
+        return False
+    from src.graph.pathfinding import direction_blocked_ahead
+
+    return bool(
+        direction_blocked_ahead(
+            gs.map_key,
+            gs.player.x,
+            gs.player.y,
+            direction,
+            state=state,
+            require_in_bounds=True,
+        )
+    )
+
+
 def _same_tile_interact_streak(history: list[str], *, min_count: int) -> bool:
     """True when the last min_count history entries are interact at one tile."""
     if len(history) < min_count:
@@ -198,23 +228,26 @@ def outdoor_interact_recovery_active(gs: GameState, state: dict[str, Any]) -> bo
 
 
 def is_rom_interact_signal(gs: GameState) -> bool:
-    """True when ROM-derived state expects dialog/button input."""
-    meta = _meta(gs)
-    joypad_disable = meta.get("joypad_disable", 0)
-    blocked = joypad_input_blocked(joypad_disable)
+    """True when ROM-derived state expects dialog/button input.
+
+    Phase 2 policy (map-agnostic):
+    1. Open textbox → interact (indoor and outdoor).
+    2. Joypad-blocked while script/dialog expects input → interact (indoor;
+       outdoor joypad residue without a textbox is not trusted — see below).
+
+    Bare ``in_script`` / SCRIPT_READ without an open textbox is *not* a force-A
+    signal. On live reads, SCRIPT_READ+active already sets ``in_text_box``; the
+    remaining closed-textbox script bits are WAIT residue or sticky flags that
+    soft-lock if A-spammed (lab desk after Elm intro, outdoor R30/R31).
+    """
     outdoor = gs.map_key not in INDOOR_NAV_STUCK_MAPS
     # Outdoor: only open textbox is a real dialog signal. Sticky SCRIPT_READ /
     # in_script / joypad-disable *without* a textbox is residue — forcing A
     # soft-locks the overworld (live R30 (1,11)/(3,18); R31 (28,15) after R30
     # entry; gym22/47). Walk path0 instead; real NPC/sign pages set in_text_box.
-    # Joypad-disable during an open textbox still needs A (trainer/rival cutscene).
     if outdoor:
         return bool(gs.in_text_box)
-    if dialog_or_script_active(gs) and not blocked:
-        return True
-    # SCRIPT_READ alone is idle residue; require an active script bit.
-    script_live = bool(meta.get("script_active") or meta.get("in_script"))
-    if meta.get("script_mode") == SCRIPT_READ and script_live and not blocked:
+    if gs.in_text_box:
         return True
     if joypad_blocked_facing_object(gs):
         return True
@@ -288,40 +321,31 @@ def navigate_stuck_at_tile(gs: GameState, state: dict[str, Any]) -> bool:
     return tile or pocket_navigate_stuck(state)
 
 
-def _lab_ball_pick_nav_preferred(gs: GameState, state: dict[str, Any]) -> bool:
-    """True when Elm desk intro is done and we should walk to the balls, not A-spam.
-
-    Sticky SCRIPT_READ residue at the desk (no open textbox) kept the bedroom
-    burn soft-lock reloading while never choosing a starter.
-    """
-    if gs.map_key != MAP_KEY_ELMS_LAB or gs.in_text_box:
+def _indoor_nav_stuck_interact(gs: GameState, state: dict[str, Any]) -> bool:
+    """Phase 2 rule 3: stuck navigating the same indoor tile → try interact."""
+    if gs.map_key not in INDOOR_NAV_STUCK_MAPS:
         return False
-    subgoal = (state.get("active_subgoal") or "").lower()
-    return "poke ball" in subgoal or "potion" in subgoal
+    return navigate_stuck_at_tile(gs, state)
 
 
 def generic_is_interact_needed(gs: GameState, state: dict[str, Any]) -> bool:
-    """True when ROM signals expect A/B instead of movement."""
+    """True when ROM signals or generic stuck/blocked policy expect A/B."""
     if interact_stall_recovery_active(gs, state):
         return False
     # Soft-lock tiles session-blocked after hard reload: do not re-pin interactor
     # for sticky residue (live R30 (12,14) A-spam). Still A if a textbox is open.
     if _standing_on_session_blocked_tile(gs, state) and not gs.in_text_box:
         return False
-    if _lab_ball_pick_nav_preferred(gs, state):
-        return False
-    return is_rom_interact_signal(gs)
+    if is_rom_interact_signal(gs):
+        return True
+    if blocked_ahead_after_failed_nav(gs, state):
+        return True
+    return _indoor_nav_stuck_interact(gs, state)
 
 
 def generic_force_interactor(gs: GameState, state: dict[str, Any]) -> bool:
-    """Supervisor must route to interactor before navigator (active dialog/script)."""
-    if interact_stall_recovery_active(gs, state):
-        return False
-    if _standing_on_session_blocked_tile(gs, state) and not gs.in_text_box:
-        return False
-    if _lab_ball_pick_nav_preferred(gs, state):
-        return False
-    return is_rom_interact_signal(gs)
+    """Supervisor must route to interactor before navigator (dialog / stuck)."""
+    return generic_is_interact_needed(gs, state)
 
 
 def _standing_on_session_blocked_tile(gs: GameState, state: dict[str, Any]) -> bool:
@@ -334,20 +358,22 @@ def _standing_on_session_blocked_tile(gs: GameState, state: dict[str, Any]) -> b
 
 
 def generic_prefer_interact_candidate(gs: GameState, state: dict[str, Any]) -> bool:
-    """Navigator should offer interact when ROM signals expect dialog input."""
+    """Navigator should lead with interact for ROM dialog or blocked-ahead."""
     if interact_stall_recovery_active(gs, state):
         return False
     if _standing_on_session_blocked_tile(gs, state) and not gs.in_text_box:
         return False
-    return is_rom_interact_signal(gs)
+    if is_rom_interact_signal(gs):
+        return True
+    return blocked_ahead_after_failed_nav(gs, state)
 
 
 def generic_stuck_interact_fallback(gs: GameState, state: dict[str, Any]) -> bool:
     """Append interact candidate after navigate stuck — indoor maps only."""
     if interact_stall_recovery_active(gs, state):
         return False
-    if is_rom_interact_signal(gs) and not _standing_on_session_blocked_tile(gs, state):
+    if _standing_on_session_blocked_tile(gs, state) and not gs.in_text_box:
+        return False
+    if is_rom_interact_signal(gs) or blocked_ahead_after_failed_nav(gs, state):
         return True
-    if gs.map_key in INDOOR_NAV_STUCK_MAPS:
-        return navigate_stuck_at_tile(gs, state)
-    return False
+    return _indoor_nav_stuck_interact(gs, state)
