@@ -251,3 +251,31 @@ def test_door_exit_direction_uses_landmark_door():
     assert starter_quest.door_exit_direction(gs, door=(6, 3)) == "up"
     at_exit = _gs(24, 5, 4, 11, meta={"has_starter": True}, party_count=1)
     assert starter_quest.door_exit_direction(at_exit) == "down"
+
+
+def test_egg_delivery_interact_rom_gate():
+    """ROM gate: egg hand-in only at delivery tile or while dialog is open."""
+    at_tile = _gs(
+        24,
+        5,
+        *starter_quest.ELMS_LAB_EGG_DELIVERY_TILE,
+        meta={"has_mystery_egg": True, "egg_delivered": False},
+        party_count=1,
+    )
+    assert starter_quest.egg_delivery_interact_needed(at_tile) is True
+    wrong_tile = _gs(
+        24,
+        5,
+        4,
+        3,
+        meta={"has_mystery_egg": True, "egg_delivered": False},
+        party_count=1,
+    )
+    assert starter_quest.egg_delivery_interact_needed(wrong_tile) is False
+    dialog = GameState(
+        player={"map_group": 24, "map_id": 5, "x": 4, "y": 3},
+        party_count=1,
+        in_text_box=True,
+        raw_metadata={"has_mystery_egg": True, "egg_delivered": False},
+    )
+    assert starter_quest.egg_delivery_interact_needed(dialog) is True

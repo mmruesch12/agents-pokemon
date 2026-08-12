@@ -23,9 +23,11 @@ MILESTONE_MR_POKEMON = "Reached Mr. Pokemon's house"
 MILESTONE_EGG_DELIVERED = "Delivered Mystery Egg to Elm"
 MILESTONE_RIVAL_BATTLE = "First rival battle"
 
-# ROM-gate coordinates only (not navigation sources).
+# ROM-gate coordinates only (not navigation sources / interact routing).
 ELMS_LAB_EXIT = (4, 11)
 ELMS_LAB_DESK_TILES = frozenset({(4, 2), (5, 2)})
+# Live ROM: egg delivery dialog completes only when facing Elm from (5, 3).
+ELMS_LAB_EGG_DELIVERY_TILE = (5, 3)
 POST_WARP_WAIT_TICKS = 90
 SCRIPT_WAIT_TICKS = 45
 
@@ -263,6 +265,18 @@ def blocked_lab_exit(gs: GameState) -> bool:
     if gs.map_key != MAP_KEY_ELMS_LAB or starter_flag_set(gs):
         return False
     return (gs.player.x, gs.player.y) in ((4, 6), (5, 6))
+
+
+def egg_delivery_interact_needed(gs: GameState) -> bool:
+    """ROM gate: Mystery Egg hand-in requires A at Elm's delivery tile / dialog."""
+    if gs.map_key != MAP_KEY_ELMS_LAB:
+        return False
+    meta = _meta(gs)
+    if not (meta.get("has_mystery_egg") and not meta.get("egg_delivered")):
+        return False
+    if gs.in_text_box:
+        return True
+    return (gs.player.x, gs.player.y) == ELMS_LAB_EGG_DELIVERY_TILE
 
 
 def on_map_change(
