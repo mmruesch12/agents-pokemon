@@ -4,21 +4,21 @@ alwaysApply: true
 ---
 # pstack model configuration. One line per role. Delete a line to fall back to the skill default.
 # `inherit-parent` or `auto` as a value: the role runs on the parent chat model (omit Task `model`). Alias entries in a panel list still count toward its fan-out.
-# budget: medium (high) — mid-tier Claude mapping, chosen by Matt 2026-10-15 to save non-Grok usage. No Opus.
+# budget: Grok only, chosen by Matt 2026-10-18. Every role, including judgment, prose and panels, runs on grok-4.7-xhigh-fast (the strongest Grok tier in use). No Claude, no other providers.
 feature, refactoring: grok-4.7-xhigh-fast
 bug-fix: grok-4.7-xhigh-fast
 perf-issue: grok-4.7-xhigh-fast
 hillclimb: grok-4.7-xhigh-fast
-judgment and prose: claude-sonnet-5-5-high
-hardest tasks: claude-sonnet-5-5-high
+judgment and prose: grok-4.7-xhigh-fast
+hardest tasks: grok-4.7-xhigh-fast
 how explorer: grok-4.7-xhigh-fast
-how explainer: claude-sonnet-5-5-high
+how explainer: grok-4.7-xhigh-fast
 why investigators: grok-4.7-xhigh-fast
-why synthesizer: claude-sonnet-5-5-high
+why synthesizer: grok-4.7-xhigh-fast
 reflect tooling: grok-4.7-xhigh-fast
-reflect judgment, divergent, synthesizer: claude-sonnet-5-5-high
+reflect judgment, divergent, synthesizer: grok-4.7-xhigh-fast
 arena runners: grok-4.7-xhigh-fast
-arena cross-judge pool: claude-sonnet-5-5-high, grok-4.7-xhigh-fast
+arena cross-judge pool: grok-4.7-xhigh-fast
 swarm workers: grok-4.7-xhigh-fast
-architect runners: claude-sonnet-5-5-high
-interrogate reviewers: claude-sonnet-5-5-high
+architect runners: grok-4.7-xhigh-fast
+interrogate reviewers: grok-4.7-xhigh-fast
