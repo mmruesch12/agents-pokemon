@@ -4,21 +4,21 @@ alwaysApply: true
 ---
 # pstack model configuration. One line per role. Delete a line to fall back to the skill default.
 # `inherit-parent` or `auto` as a value: the role runs on the parent chat model (omit Task `model`). Alias entries in a panel list still count toward its fan-out.
-# budget: Grok only, chosen by Matt 2026-10-18. Every role, including judgment, prose and panels, runs on grok-4.7-xhigh-fast (the strongest Grok tier in use). No Claude, no other providers.
-feature, refactoring: grok-4.7-xhigh-fast
-bug-fix: grok-4.7-xhigh-fast
-perf-issue: grok-4.7-xhigh-fast
-hillclimb: grok-4.7-xhigh-fast
-judgment and prose: grok-4.7-xhigh-fast
-hardest tasks: grok-4.7-xhigh-fast
-how explorer: grok-4.7-xhigh-fast
-how explainer: grok-4.7-xhigh-fast
-why investigators: grok-4.7-xhigh-fast
-why synthesizer: grok-4.7-xhigh-fast
-reflect tooling: grok-4.7-xhigh-fast
-reflect judgment, divergent, synthesizer: grok-4.7-xhigh-fast
-arena runners: grok-4.7-xhigh-fast
-arena cross-judge pool: grok-4.7-xhigh-fast
-swarm workers: grok-4.7-xhigh-fast
-architect runners: grok-4.7-xhigh-fast
-interrogate reviewers: grok-4.7-xhigh-fast
+# budget: Grok only, no Fast mode (Matt 2026-10-19: fast=false always unless Matt explicitly says urgency/speed matters). Every role, including judgment, prose and panels, runs on grok-4.7-xhigh. No Claude, no other providers.
+feature, refactoring: grok-4.7-xhigh
+bug-fix: grok-4.7-xhigh
+perf-issue: grok-4.7-xhigh
+hillclimb: grok-4.7-xhigh
+judgment and prose: grok-4.7-xhigh
+hardest tasks: grok-4.7-xhigh
+how explorer: grok-4.7-xhigh
+how explainer: grok-4.7-xhigh
+why investigators: grok-4.7-xhigh
+why synthesizer: grok-4.7-xhigh
+reflect tooling: grok-4.7-xhigh
+reflect judgment, divergent, synthesizer: grok-4.7-xhigh
+arena runners: grok-4.7-xhigh
+arena cross-judge pool: grok-4.7-xhigh
+swarm workers: grok-4.7-xhigh
+architect runners: grok-4.7-xhigh
+interrogate reviewers: grok-4.7-xhigh
